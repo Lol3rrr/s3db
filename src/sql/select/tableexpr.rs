@@ -127,20 +127,34 @@ pub fn table_expression(i: &[u8]) -> IResult<&[u8], TableExpression> {
 
         let (remaining, other_table) = base(remaining)?;
 
-        let (remaining, _) = nom::sequence::tuple((
+        let on_condition: IResult<_, _> = nom::sequence::tuple((
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("ON"),
             nom::character::complete::multispace1,
-        ))(remaining)?;
+        ))(remaining);
 
-        let (remaining, condition) = sql::condition::condition(remaining)?;
+        match on_condition {
+            Ok((remaining, _)) => {
+                let (remaining, condition) = sql::condition::condition(remaining)?;
 
-        outer_remaining = remaining;
-        table = TableExpression::Join {
-            left: Box::new(table),
-            right: Box::new(other_table),
-            kind: join_kind,
-            condition,
+                outer_remaining = remaining;
+                table = TableExpression::Join {
+                    left: Box::new(table),
+                    right: Box::new(other_table),
+                    kind: join_kind,
+                    condition,
+                };
+            }
+            Err(e) => {
+                outer_remaining = remaining;
+
+                table = TableExpression::Join {
+                    left: Box::new(table),
+                    right: Box::new(other_table),
+                    kind: join_kind,
+                    condition: Condition::And(vec![]),
+                };
+            }
         };
     }
 
@@ -168,5 +182,42 @@ impl<'s> TableExpression<'s> {
             },
             Self::SubQuery(inner) => TableExpression::SubQuery(Box::new(inner.to_static())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sql::{ColumnReference, ValueExpression};
+
+    use super::*;
+
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn join_on_suquery() {
+        let query_str = "first INNER JOIN (SELECT name FROM second)";
+        let (remaining, table) = table_expression(query_str.as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            TableExpression::Join {
+                left: Box::new(TableExpression::Relation("first".into())),
+                right: Box::new(TableExpression::SubQuery(Box::new(Select {
+                    values: vec![ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "name".into(),
+                    })],
+                    table: Some(TableExpression::Relation("second".into())),
+                    where_condition: None,
+                    order_by: None,
+                    group_by: None,
+                    limit: None,
+                    for_update: None,
+                    combine: None
+                }))),
+                kind: JoinKind::Inner,
+                condition: Condition::And(vec![])
+            },
+            table
+        );
     }
 }

@@ -59,12 +59,15 @@ where
             for row in content.parts.into_iter().flat_map(|p| p.rows.into_iter()) {
                 tracing::trace!("Row: {:?}", row);
 
-                MessageResponse::DataRow {
-                    values: row.data.iter().map(|r| r.serialize()).collect(),
-                }
-                .send(writer)
-                .await
-                .unwrap();
+                let values: Vec<_> = row
+                    .data
+                    .iter()
+                    .map(|r| r.serialize().ok_or(()))
+                    .collect::<Result<_, _>>()?;
+                MessageResponse::DataRow { values }
+                    .send(writer)
+                    .await
+                    .unwrap();
             }
 
             MessageResponse::CommandComplete {
@@ -153,12 +156,15 @@ where
 
             if returning.len() > 0 {
                 for row in returning {
-                    MessageResponse::DataRow {
-                        values: row.iter().map(|r| r.serialize()).collect(),
-                    }
-                    .send(writer)
-                    .await
-                    .unwrap();
+                    let values: Vec<_> = row
+                        .iter()
+                        .map(|r| r.serialize().ok_or(()))
+                        .collect::<Result<_, _>>()?;
+
+                    MessageResponse::DataRow { values }
+                        .send(writer)
+                        .await
+                        .unwrap();
                 }
             }
 

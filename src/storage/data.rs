@@ -116,10 +116,8 @@ impl Data {
         }
     }
 
-    pub fn serialize(&self) -> Cow<'_, [u8]> {
-        // TODO
-
-        match self {
+    pub fn serialize(&self) -> Option<Cow<'_, [u8]>> {
+        let tmp = match self {
             Self::Null => Cow::Borrowed("NULL".as_bytes()),
             Self::Name(n) => Cow::Borrowed(n.as_bytes()),
             Self::Varchar(c) => Cow::Owned(c.into_iter().map(|c| *c as u8).collect()),
@@ -131,8 +129,9 @@ impl Data {
             Self::BigInt(v) => Cow::Owned(v.to_be_bytes().to_vec()),
             Self::Boolean(true) => Cow::Borrowed("true".as_bytes()),
             Self::Boolean(false) => Cow::Borrowed("false".as_bytes()),
-            other => todo!("Serializing: {:?}", other),
-        }
+            _ => return None,
+        };
+        Some(tmp)
     }
 
     pub fn from_literal(lit: &sql::Literal<'_>) -> Self {

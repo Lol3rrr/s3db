@@ -62,7 +62,7 @@ impl<'s> Query<'s> {
         'r: 's,
     {
         let (remaining, query) = nom::combinator::complete(query)(raw).map_err(|e| {
-            dbg!(&e);
+            dbg!(&e.map_input(|d| core::str::from_utf8(d)));
             ()
         })?;
 

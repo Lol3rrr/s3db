@@ -25,6 +25,10 @@ pub enum FunctionCall<'s> {
     Lower {
         value: Box<ValueExpression<'s>>,
     },
+    Substr {
+        value: Box<ValueExpression<'s>>,
+        start: Box<ValueExpression<'s>>,
+    },
 }
 
 pub fn function_call(i: &[u8]) -> IResult<&[u8], FunctionCall<'_>> {
@@ -132,9 +136,9 @@ pub fn function_call(i: &[u8]) -> IResult<&[u8], FunctionCall<'_>> {
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             )),
-            |tmp| {
-                dbg!(&tmp);
-                todo!()
+            |(_, _, _, _, content, _, _, _, start, _, _)| FunctionCall::Substr {
+                value: Box::new(content),
+                start: Box::new(start),
             },
         ),
     ))(i)
@@ -170,6 +174,10 @@ impl<'s> FunctionCall<'s> {
             Self::Lower { value } => FunctionCall::Lower {
                 value: Box::new(value.to_static()),
             },
+            Self::Substr { value, start } => FunctionCall::Substr {
+                value: Box::new(value.to_static()),
+                start: Box::new(start.to_static()),
+            },
         }
     }
 
@@ -182,6 +190,10 @@ impl<'s> FunctionCall<'s> {
             Self::Exists { query } => query.max_parameter(),
             Self::SetValue { .. } => 0,
             Self::Lower { value } => value.max_parameter(),
+            Self::Substr { value, start } => [value.max_parameter(), start.max_parameter()]
+                .into_iter()
+                .max()
+                .unwrap_or(0),
         }
     }
 }
@@ -300,6 +312,19 @@ mod tests {
         assert_eq!(
             FunctionCall::Lower {
                 value: Box::new(ValueExpression::Placeholder(1))
+            },
+            call
+        );
+    }
+
+    #[test]
+    fn substr() {
+        let (remaining, call) = function_call("substr('content', 4)".as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            FunctionCall::Substr {
+                value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
+                start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
             },
             call
         );

@@ -767,6 +767,16 @@ where
                             }
                         }                        
                     }
+                    ra::RaFunction::Substr { str_value, start } => {
+                        dbg!(&str_value, &start);
+
+                        let str_value = self.evaluate_ra_value(&str_value, row, columns, placeholders, ctes).await?;
+                        let start_value = self.evaluate_ra_value(&start, row, columns, placeholders, ctes).await?;
+
+                        dbg!(&str_value, &start_value);
+
+                        Err(EvaulateRaError::Other("Executing Substr function"))
+                    }
                 },
                 ra::RaValueExpression::Renamed { name, value } => {
                     dbg!(&name, &value);

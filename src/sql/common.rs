@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use nom::{IResult, Parser};
+use nom::{error::dbg_dmp, IResult, Parser};
 
 mod functions;
 pub use functions::FunctionCall;
@@ -319,10 +319,12 @@ pub fn value_expression(i: &[u8]) -> IResult<&[u8], ValueExpression<'_>> {
             nom::combinator::map(
                 nom::sequence::tuple((
                     nom::bytes::complete::tag("("),
+                    nom::character::complete::multispace0,
                     select::select,
+                    nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),
                 )),
-                |(_, subquery, _)| ValueExpression::SubQuery(subquery),
+                |(_, _, subquery, _, _)| ValueExpression::SubQuery(subquery),
             ),
         ))(remaining)?
     } else {
@@ -866,6 +868,36 @@ mod tests {
                 })),
                 second: Box::new(ValueExpression::Placeholder(1)),
                 operator: BinaryOperator::Equal,
+            },
+            tmp
+        );
+    }
+
+    #[test]
+    fn something_in_subquery() {
+        let (remaining, tmp) =
+            value_expression("something IN ( SELECT name FROM users )".as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            ValueExpression::Operator {
+                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "something".into(),
+                })),
+                second: Box::new(ValueExpression::SubQuery(Select {
+                    values: vec![ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "name".into(),
+                    })],
+                    table: Some(TableExpression::Relation("users".into())),
+                    where_condition: None,
+                    order_by: None,
+                    group_by: None,
+                    limit: None,
+                    for_update: None,
+                    combine: None
+                })),
+                operator: BinaryOperator::In,
             },
             tmp
         );

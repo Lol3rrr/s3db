@@ -50,6 +50,10 @@ pub enum RaFunction {
         is_called: bool,
     },
     Lower(Box<RaValueExpression>),
+    Substr {
+        str_value: Box<RaValueExpression>,
+        start: Box<RaValueExpression>,
+    },
 }
 
 impl RaValueExpression {
@@ -229,6 +233,17 @@ impl RaValueExpression {
                         .ok_or_else(|| ParseSelectError::Other)?;
 
                     Ok(Self::Function(RaFunction::Lower(Box::new(ra_value))))
+                }
+                FunctionCall::Substr { value, start } => {
+                    let str_value =
+                        RaValueExpression::parse_internal(scope, &value, placeholders, ra_expr)?;
+                    let start =
+                        RaValueExpression::parse_internal(scope, &start, placeholders, ra_expr)?;
+
+                    Ok(Self::Function(RaFunction::Substr {
+                        str_value: Box::new(str_value),
+                        start: Box::new(start),
+                    }))
                 }
             },
             ValueExpression::Operator {
@@ -417,6 +432,9 @@ impl RaValueExpression {
                     is_called,
                 } => Ok(types::PossibleTypes::fixed(DataType::BigInteger)),
                 RaFunction::Lower(val) => Ok(types::PossibleTypes::fixed(DataType::Text)),
+                RaFunction::Substr { str_value, start } => {
+                    Ok(types::PossibleTypes::fixed(DataType::Text))
+                }
             },
             Self::Renamed { name, value } => value.possible_type(scope),
         }
@@ -466,6 +484,7 @@ impl RaValueExpression {
                     is_called,
                 } => Some(DataType::BigInteger),
                 RaFunction::Lower(_) => Some(DataType::Text),
+                RaFunction::Substr { str_value, start } => Some(DataType::Text),
             },
             Self::Renamed { name, value } => value.datatype(),
         }
