@@ -18,6 +18,9 @@ use super::select;
 pub enum ValueExpression<'s> {
     Literal(Literal<'s>),
     All,
+    AllFromRelation {
+        relation: Identifier<'s>,
+    },
     Null,
     ColumnReference(ColumnReference<'s>),
     Renamed {
@@ -76,6 +79,7 @@ impl<'s> ValueExpression<'s> {
         match self {
             Self::Literal(_) => false,
             Self::All => false,
+            Self::AllFromRelation { .. } => false,
             Self::Null => false,
             Self::ColumnReference(_) => false,
             Self::Renamed { inner, .. } => inner.is_aggregate(),
@@ -105,6 +109,9 @@ impl<'s> ValueExpression<'s> {
         match self {
             Self::Literal(lit) => ValueExpression::Literal(lit.to_static()),
             Self::All => ValueExpression::All,
+            Self::AllFromRelation { relation } => ValueExpression::AllFromRelation {
+                relation: relation.to_static(),
+            },
             Self::Null => ValueExpression::Null,
             Self::ColumnReference(cr) => ValueExpression::ColumnReference(cr.to_static()),
             Self::Renamed { inner, name } => ValueExpression::Renamed {
@@ -146,6 +153,7 @@ impl<'s> ValueExpression<'s> {
         match self {
             Self::Literal(_) => 0,
             Self::All => 0,
+            Self::AllFromRelation { .. } => 0,
             Self::Null => 0,
             Self::ColumnReference(_) => 0,
             Self::Renamed { inner, .. } => inner.max_parameter(),
@@ -213,6 +221,14 @@ pub fn value_expression(
                 nom::bytes::complete::tag(")"),
             )),
             |(_, _, s, _, _)| ValueExpression::SubQuery(s),
+        ),
+        nom::combinator::map(
+            nom::sequence::tuple((
+                identifier,
+                nom::bytes::complete::tag("."),
+                nom::bytes::complete::tag("*"),
+            )),
+            |(relation, _, _)| ValueExpression::AllFromRelation { relation },
         ),
         nom::combinator::map(
             nom::sequence::tuple((column_reference, nom::bytes::complete::tag("::"), data_type)),
@@ -791,6 +807,7 @@ mod tests {
                     ))])),
                     order_by: None,
                     group_by: None,
+                    having: None,
                     limit: None,
                     for_update: None,
                     combine: None
@@ -893,6 +910,7 @@ mod tests {
                     where_condition: None,
                     order_by: None,
                     group_by: None,
+                    having: None,
                     limit: None,
                     for_update: None,
                     combine: None

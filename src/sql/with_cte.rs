@@ -129,6 +129,7 @@ mod tests {
                         where_condition: None,
                         order_by: None,
                         group_by: None,
+                        having: None,
                         limit: None,
                         for_update: None,
                         combine: None
@@ -169,6 +170,7 @@ WITH regional_sales AS (
                             where_condition: None,
                             order_by: None,
                             group_by: None,
+                            having: None,
                             limit: None,
                             for_update: None,
                             combine: None
@@ -183,6 +185,7 @@ WITH regional_sales AS (
                             where_condition: None,
                             order_by: None,
                             group_by: None,
+                            having: None,
                             limit: None,
                             for_update: None,
                             combine: None
@@ -220,6 +223,7 @@ WITH regional_sales AS (
                         where_condition: None,
                         order_by: None,
                         group_by: None,
+                        having: None,
                         limit: None,
                         for_update: None,
                         combine: Some((
@@ -254,6 +258,7 @@ WITH regional_sales AS (
                                 )])),
                                 order_by: None,
                                 group_by: None,
+                                having: None,
                                 limit: None,
                                 for_update: None,
                                 combine: None

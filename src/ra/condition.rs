@@ -175,6 +175,7 @@ impl RaConditionValue {
                     BinaryOperator::In => RaComparisonOperator::In,
                     BinaryOperator::NotIn => RaComparisonOperator::NotIn,
                     BinaryOperator::Like => RaComparisonOperator::Like,
+                    BinaryOperator::ILike => RaComparisonOperator::ILike,
                     BinaryOperator::Is => RaComparisonOperator::Is,
                     BinaryOperator::IsNot => RaComparisonOperator::IsNot,
                     BinaryOperator::Less => RaComparisonOperator::Less,
@@ -188,8 +189,6 @@ impl RaConditionValue {
 
                 let (ra_first, ra_second) = match op {
                     RaComparisonOperator::In | RaComparisonOperator::NotIn => {
-                        dbg!(&first_types, &second_types);
-
                         let compatible_types = first_types.compatible(&second_types);
 
                         let resolved_type = compatible_types.resolve().ok_or_else(|| {

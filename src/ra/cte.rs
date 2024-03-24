@@ -195,6 +195,7 @@ mod tests {
                     where_condition: None,
                     order_by: None,
                     group_by: None,
+                    having: None,
                     limit: None,
                     for_update: None,
                     combine: None,
@@ -241,6 +242,7 @@ mod tests {
                     where_condition: None,
                     order_by: None,
                     group_by: None,
+                    having: None,
                     limit: None,
                     for_update: None,
                     combine: Some((
@@ -262,6 +264,7 @@ mod tests {
                             where_condition: None,
                             order_by: None,
                             group_by: None,
+                            having: None,
                             limit: None,
                             for_update: None,
                             combine: None,

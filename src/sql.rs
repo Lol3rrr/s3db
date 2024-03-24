@@ -331,6 +331,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None,
@@ -358,6 +359,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -408,6 +410,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -463,6 +466,7 @@ mod tests {
                     nulls: NullOrdering::Last
                 }]),
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -492,6 +496,7 @@ mod tests {
                     relation: None,
                     column: Identifier("id".into())
                 }]),
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None

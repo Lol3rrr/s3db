@@ -1,4 +1,4 @@
-use std::{collections::HashMap, thread::panicking};
+use std::{collections::HashMap};
 
 use futures::{future::LocalBoxFuture, FutureExt};
 
@@ -13,6 +13,7 @@ use super::{Context, Execute, ExecuteResult, PreparedStatement};
 mod aggregate;
 use aggregate::AggregateState;
 
+mod pattern;
 
 pub struct NaiveEngine<S> {
     storage: S,
@@ -582,7 +583,27 @@ where
                             }
                         },
                         ra::RaComparisonOperator::Like => {
-                            todo!("Performing Like Comparison")
+                            let haystack = match first_value {
+                                Data::Text(t) => t,
+                                other => {
+                                    tracing::warn!("Expected Text Data, got {:?}", other);
+                                    return Err(EvaulateRaError::Other("Wrong Type for Haystack"))
+                                },
+                            };
+                            let raw_pattern = match second_value {
+                                Data::Text(p) => p,
+                                other => {
+                                    tracing::warn!("Expected Text Data, got {:?}", other);
+                                    return Err(EvaulateRaError::Other("Wrong Type for Pattern"))
+                                },
+                            };
+
+                            let result = pattern::like_match(&haystack, &raw_pattern);
+
+                            Ok(result)
+                        }
+                        ra::RaComparisonOperator::ILike => {
+                            todo!("Perforing ILike Comparison")
                         }
                         ra::RaComparisonOperator::Is => match (first_value, second_value) {
                             (storage::Data::Boolean(val), storage::Data::Boolean(true)) => Ok(val),

@@ -68,6 +68,9 @@ impl RaValueExpression {
             ValueExpression::All => Err(ParseSelectError::NotImplemented(
                 "Parsing All Value Expression",
             )),
+            ValueExpression::AllFromRelation { .. } => Err(ParseSelectError::NotImplemented(
+                "Parse All from Relation Value Expression",
+            )),
             ValueExpression::Literal(lit) => Ok(Self::Literal(lit.to_static())),
             ValueExpression::Placeholder(p) => Ok(Self::Placeholder(*p)),
             ValueExpression::ColumnReference(cr) => {
@@ -527,7 +530,6 @@ impl RaValueExpression {
             }
             Self::SubQuery { query } => {
                 // TODO
-                dbg!(&query);
 
                 Some(Self::SubQuery { query })
             }

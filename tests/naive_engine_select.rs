@@ -979,3 +979,53 @@ async fn setval() {
         res
     );
 }
+
+#[tokio::test]
+async fn like_operation() {
+    let query_str = "SELECT name FROM org WHERE name LIKE 'test%'";
+    let query = Query::parse(query_str.as_bytes()).unwrap();
+
+    let storage = {
+        let storage = InMemoryStorage::new();
+
+        storage
+            .create_relation(
+                "org",
+                vec![
+                    ("id".into(), DataType::Serial, Vec::new()),
+                    ("name".into(), DataType::Text, Vec::new()),
+                ],
+            )
+            .await
+            .unwrap();
+
+        storage
+            .insert_rows(
+                "org",
+                &mut [
+                    vec![Data::Serial(1), Data::Text("testing".into())],
+                    vec![Data::Serial(2), Data::Text("other".into())],
+                ]
+                .into_iter(),
+            )
+            .await
+            .unwrap();
+
+        storage
+    };
+
+    let engine = NaiveEngine::new(storage);
+    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    assert_eq!(
+        ExecuteResult::Select {
+            content: storage::EntireRelation {
+                columns: vec![("name".into(), DataType::Text, Vec::new())],
+                parts: vec![storage::PartialRelation {
+                    rows: vec![storage::Row::new(0, vec![Data::Text("testing".into())])]
+                }]
+            }
+        },
+        res
+    );
+}

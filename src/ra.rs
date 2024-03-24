@@ -133,6 +133,7 @@ pub enum RaComparisonOperator {
     In,
     NotIn,
     Like,
+    ILike,
     Is,
     IsNot,
 }
@@ -183,6 +184,7 @@ struct Scope<'s> {
     context: Option<CustomCow<'s, ParsingContext>>,
     attribute_index: usize,
     named_tables: HashMap<String, Vec<(String, DataType)>>,
+    renamings: HashMap<String, String>,
 }
 
 impl<'s> Scope<'s> {
@@ -196,6 +198,7 @@ impl<'s> Scope<'s> {
             context: None,
             attribute_index: 0,
             named_tables: HashMap::new(),
+            renamings: HashMap::new(),
         }
     }
 
@@ -215,6 +218,39 @@ impl ProjectionAttribute {
     ) -> Result<Vec<ProjectionAttribute>, ParseSelectError> {
         if matches!(expr, ValueExpression::All) {
             let columns = table_expression.get_columns();
+
+            return Ok(columns
+                .into_iter()
+                .map(|column| ProjectionAttribute {
+                    id: scope.attribute_id(),
+                    name: column.0.clone(),
+                    value: RaValueExpression::Attribute {
+                        name: column.0.clone(),
+                        ty: column.1.clone(),
+                        a_id: column.2,
+                    },
+                })
+                .collect());
+        }
+
+        if let ValueExpression::AllFromRelation { relation } = &expr {
+            let mut columns = table_expression.get_columns();
+            dbg!(&columns);
+
+            let src_name = match scope.renamings.get(relation.0.as_ref()) {
+                Some(n) => n,
+                None => relation.0.as_ref(),
+            };
+
+            columns.retain(|(_, _, id)| match table_expression.get_source(*id) {
+                Some(expr) => match expr {
+                    RaExpression::BaseRelation { name, .. } => name.0.as_ref() == src_name,
+                    _ => false,
+                },
+                None => false,
+            });
+
+            dbg!(&columns);
 
             return Ok(columns
                 .into_iter()
@@ -450,6 +486,15 @@ impl RaExpression {
             }
             TableExpression::Renamed { inner, name } => {
                 let inner_result = Self::parse_table_expression(&inner, scope, placeholders)?;
+
+                match inner.as_ref() {
+                    TableExpression::Relation(inner_name) => {
+                        scope
+                            .renamings
+                            .insert(name.0.to_string(), inner_name.0.to_string());
+                    }
+                    other => {}
+                };
 
                 scope.named_tables.insert(
                     name.0.to_string(),

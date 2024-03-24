@@ -171,3 +171,30 @@ fn grafana_query_2() {
 
     let _ = result;
 }
+
+#[test]
+fn grafana_query_4() {
+    let query_str = "SELECT p.* FROM permission as p INNER JOIN role r on r.id = p.role_id WHERE r.id = $1 AND p.scope = $2";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    let schemas: Schemas = [
+        (
+            "permission".into(),
+            vec![
+                ("role_id".into(), DataType::Integer),
+                ("scope".into(), DataType::Text),
+            ],
+        ),
+        ("role".into(), vec![("id".into(), DataType::Integer)]),
+    ]
+    .into_iter()
+    .collect();
+
+    let result = RaExpression::parse_select(&select, &schemas).unwrap();
+
+    let _ = result;
+}

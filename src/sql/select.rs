@@ -34,6 +34,7 @@ pub struct Select<'s> {
     pub where_condition: Option<Condition<'s>>,
     pub order_by: Option<Vec<Ordering<'s>>>,
     pub group_by: Option<Vec<ColumnReference<'s>>>,
+    pub having: Option<Condition<'s>>,
     pub limit: Option<usize>,
     pub for_update: Option<()>,
     pub combine: Option<(Combination, Box<Select<'s>>)>,
@@ -59,6 +60,7 @@ impl<'s> Select<'s> {
                 .group_by
                 .as_ref()
                 .map(|idents| idents.iter().map(|i| i.to_static()).collect()),
+            having: self.having.as_ref().map(|h| h.to_static()),
             limit: self.limit,
             for_update: self.for_update.clone(),
             combine: self
@@ -110,6 +112,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
             something,
             order_by,
             group_by,
+            having,
             limit,
             for_update,
         ),
@@ -181,6 +184,15 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace1,
+                    nom::bytes::complete::tag_no_case("HAVING"),
+                    nom::character::complete::multispace1,
+                    condition,
+                ))
+                .map(|(_, _, _, cond)| cond),
+            ),
+            nom::combinator::opt(
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
                     nom::bytes::complete::tag_no_case("LIMIT"),
                     nom::character::complete::multispace1,
                     nom::character::complete::digit1
@@ -216,6 +228,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
             where_condition: where_exists,
             order_by,
             group_by,
+            having,
             limit,
             for_update,
             combine: something,
@@ -225,7 +238,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
 
 #[cfg(test)]
 mod tests {
-    use crate::sql::{self, AggregateExpression, BinaryOperator, Identifier, Query};
+    use crate::sql::{self, AggregateExpression, BinaryOperator, Identifier, Literal, Query};
 
     use super::*;
 
@@ -267,6 +280,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: Some(1),
                 for_update: None,
                 combine: None,
@@ -294,6 +308,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -334,6 +349,7 @@ mod tests {
                 ))])),
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -399,6 +415,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None,
@@ -462,6 +479,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -496,6 +514,7 @@ mod tests {
                     nulls: NullOrdering::Last
                 }]),
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -520,6 +539,7 @@ mod tests {
                 where_condition: None,
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: Some((
@@ -552,11 +572,49 @@ mod tests {
                         ))])),
                         order_by: None,
                         group_by: None,
+                        having: None,
                         limit: None,
                         for_update: None,
                         combine: None
                     })
                 )),
+            },
+            select
+        );
+    }
+
+    #[test]
+    fn having_clause() {
+        let query_str = "SELECT count(*) FROM orders GROUP BY uid HAVING uid > 0";
+
+        let (remaining, select) = select(query_str.as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+
+        assert_eq!(
+            Select {
+                values: vec![ValueExpression::AggregateExpression(
+                    AggregateExpression::Count(Box::new(ValueExpression::All))
+                )],
+                table: Some(TableExpression::Relation("orders".into())),
+                where_condition: None,
+                order_by: None,
+                group_by: Some(vec![ColumnReference {
+                    relation: None,
+                    column: "uid".into(),
+                }]),
+                having: Some(Condition::And(vec![Condition::Value(Box::new(
+                    ValueExpression::Operator {
+                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            relation: None,
+                            column: "uid".into(),
+                        })),
+                        second: Box::new(ValueExpression::Literal(Literal::SmallInteger(0))),
+                        operator: BinaryOperator::Greater
+                    }
+                ))])),
+                limit: None,
+                for_update: None,
+                combine: None,
             },
             select
         );

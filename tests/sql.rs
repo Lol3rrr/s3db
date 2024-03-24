@@ -61,6 +61,7 @@ fn insert_with_on_conflict() {
                 ))])),
                 order_by: None,
                 group_by: None,
+                having: None,
                 limit: None,
                 for_update: None,
                 combine: None
@@ -158,6 +159,7 @@ fn delete_test() {
                             ])),
                             order_by: None,
                             group_by: None,
+                            having: None,
                             limit: None,
                             for_update: None,
                             combine: None
@@ -226,6 +228,7 @@ fn select_for_update() {
             ))])),
             order_by: None,
             group_by: None,
+            having: None,
             limit: None,
             for_update: Some(()),
             combine: None
@@ -318,6 +321,7 @@ fn select_limit_offset() {
                 }
             ]),
             group_by: None,
+            having: None,
             limit: Some(1),
             for_update: None,
             combine: None,
@@ -376,6 +380,7 @@ fn select_something() {
             ])),
             order_by: None,
             group_by: None,
+            having: None,
             limit: None,
             for_update: None,
             combine: None
@@ -484,6 +489,7 @@ fn testing_subquery() {
             ])),
             order_by: None,
             group_by: None,
+            having: None,
             limit: None,
             for_update: None,
             combine: None,
@@ -511,6 +517,7 @@ fn testing_something() {
             where_condition: None,
             order_by: None,
             group_by: None,
+            having: None,
             limit: None,
             for_update: None,
             combine: None
@@ -570,6 +577,7 @@ fn select_aggregate_with_operator() {
             where_condition: None,
             order_by: None,
             group_by: None,
+            having: None,
             limit: None,
             for_update: None,
             combine: None

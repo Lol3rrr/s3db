@@ -173,8 +173,13 @@ impl Message {
         let mut result = Vec::with_capacity(count as usize);
         for _ in 0..count {
             let (rem, length) = nom::number::streaming::be_i32(i)?;
-            result.push(rem[..length as usize].to_vec());
-            i = &rem[length as usize..];
+            if length >= 0 {
+                result.push(rem[..length as usize].to_vec());
+                i = &rem[length as usize..];
+            } else {
+                result.push(Vec::new());
+                i = rem;
+            }
         }
 
         Ok((i, result))

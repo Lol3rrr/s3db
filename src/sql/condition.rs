@@ -450,6 +450,7 @@ mod tests {
                                 nulls: NullOrdering::First,
                             }]),
                             group_by: None,
+                            having: None,
                             limit: Some(1),
                             for_update: None,
                             combine: None
