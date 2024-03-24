@@ -21,7 +21,7 @@ pub enum NullOrdering {
     Last,
 }
 
-pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>> {
+pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::VerboseError<&[u8]>> {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("ORDER"),
         nom::character::complete::multispace1,

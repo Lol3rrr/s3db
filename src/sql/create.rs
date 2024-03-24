@@ -50,7 +50,7 @@ enum ParsedTableField<'s> {
     PrimaryKey(Vec<Identifier<'s>>),
 }
 
-pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable> {
+pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, if_not_exists, _, table_ident, _, _, _, raw_parts, _, _)) =
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("CREATE TABLE"),
@@ -125,7 +125,7 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable> {
     ))
 }
 
-pub fn create_index(i: &[u8]) -> IResult<&[u8], CreateIndex<'_>> {
+pub fn create_index(i: &[u8]) -> IResult<&[u8], CreateIndex<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, unique, _, _, _, name, _, table, _, _, columns, _)) =
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("CREATE"),
@@ -187,7 +187,7 @@ impl<'s> TableField<'s> {
     }
 }
 
-fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>> {
+fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
             identifier,

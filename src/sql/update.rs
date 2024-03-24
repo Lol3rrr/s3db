@@ -65,7 +65,7 @@ impl<'s> UpdateFrom<'s> {
     }
 }
 
-pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>> {
+pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("UPDATE"),
         nom::character::complete::multispace1,

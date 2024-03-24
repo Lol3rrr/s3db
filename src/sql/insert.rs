@@ -79,7 +79,7 @@ impl<'s> InsertValues<'s> {
     }
 }
 
-pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>> {
+pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, ident, _, _, fields, _, _, values, returning, on_conflict)) =
         nom::sequence::tuple((
             nom::sequence::tuple((
@@ -178,7 +178,7 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>> {
     ))
 }
 
-fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>> {
+fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::tuple((

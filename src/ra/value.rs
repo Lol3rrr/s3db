@@ -53,6 +53,7 @@ pub enum RaFunction {
     Substr {
         str_value: Box<RaValueExpression>,
         start: Box<RaValueExpression>,
+        count: Option<Box<RaValueExpression>>,
     },
 }
 
@@ -234,15 +235,28 @@ impl RaValueExpression {
 
                     Ok(Self::Function(RaFunction::Lower(Box::new(ra_value))))
                 }
-                FunctionCall::Substr { value, start } => {
+                FunctionCall::Substr {
+                    value,
+                    start,
+                    count,
+                } => {
                     let str_value =
                         RaValueExpression::parse_internal(scope, &value, placeholders, ra_expr)?;
                     let start =
                         RaValueExpression::parse_internal(scope, &start, placeholders, ra_expr)?;
+                    let count = match count.as_ref() {
+                        Some(c) => {
+                            let val =
+                                RaValueExpression::parse_internal(scope, c, placeholders, ra_expr)?;
+                            Some(Box::new(val))
+                        }
+                        None => None,
+                    };
 
                     Ok(Self::Function(RaFunction::Substr {
                         str_value: Box::new(str_value),
                         start: Box::new(start),
+                        count,
                     }))
                 }
             },
@@ -432,7 +446,7 @@ impl RaValueExpression {
                     is_called,
                 } => Ok(types::PossibleTypes::fixed(DataType::BigInteger)),
                 RaFunction::Lower(val) => Ok(types::PossibleTypes::fixed(DataType::Text)),
-                RaFunction::Substr { str_value, start } => {
+                RaFunction::Substr { str_value, .. } => {
                     Ok(types::PossibleTypes::fixed(DataType::Text))
                 }
             },
@@ -484,7 +498,7 @@ impl RaValueExpression {
                     is_called,
                 } => Some(DataType::BigInteger),
                 RaFunction::Lower(_) => Some(DataType::Text),
-                RaFunction::Substr { str_value, start } => Some(DataType::Text),
+                RaFunction::Substr { str_value, .. } => Some(DataType::Text),
             },
             Self::Renamed { name, value } => value.datatype(),
         }

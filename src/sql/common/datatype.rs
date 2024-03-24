@@ -18,7 +18,7 @@ pub enum DataType {
     Real,
 }
 
-pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType> {
+pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::bytes::complete::tag_no_case("SERIAL").map(|_| DataType::Serial),
         nom::sequence::tuple((

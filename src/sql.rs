@@ -62,7 +62,7 @@ impl<'s> Query<'s> {
         'r: 's,
     {
         let (remaining, query) = nom::combinator::complete(query)(raw).map_err(|e| {
-            dbg!(&e.map_input(|d| core::str::from_utf8(d)));
+            dbg!(&e);
             ()
         })?;
 
@@ -79,7 +79,7 @@ impl<'s> Query<'s> {
         'r: 's,
     {
         let (remaining, queries) = nom::multi::many1(query)(raw).map_err(|e| {
-            dbg!(e.map_input(|d| core::str::from_utf8(d)));
+            dbg!(e);
             ()
         })?;
 
@@ -131,7 +131,7 @@ impl<'s> Query<'s> {
     }
 }
 
-fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>> {
+fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]>> {
     let (raw, ctes) = nom::combinator::opt(with_ctes)(raw)?;
 
     let (rem, inner) = nom::combinator::map(

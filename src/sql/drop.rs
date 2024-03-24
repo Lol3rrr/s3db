@@ -44,7 +44,7 @@ impl<'s> DropTable<'s> {
     }
 }
 
-pub fn drop_index(i: &[u8]) -> IResult<&[u8], DropIndex<'_>> {
+pub fn drop_index(i: &[u8]) -> IResult<&[u8], DropIndex<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("DROP"),
@@ -84,7 +84,7 @@ pub fn drop_index(i: &[u8]) -> IResult<&[u8], DropIndex<'_>> {
     )(i)
 }
 
-pub fn drop_table(i: &[u8]) -> IResult<&[u8], DropTable<'_>> {
+pub fn drop_table(i: &[u8]) -> IResult<&[u8], DropTable<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("DROP"),

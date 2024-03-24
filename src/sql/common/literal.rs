@@ -41,7 +41,7 @@ impl<'s> Literal<'s> {
     }
 }
 
-pub fn literal(i: &[u8]) -> IResult<&[u8], Literal<'_>> {
+pub fn literal(i: &[u8]) -> IResult<&[u8], Literal<'_>, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::sequence::tuple((
             nom::bytes::complete::tag("'"),

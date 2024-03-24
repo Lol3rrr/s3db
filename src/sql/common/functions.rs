@@ -1,4 +1,4 @@
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use crate::sql::{select, Select};
 
@@ -28,10 +28,13 @@ pub enum FunctionCall<'s> {
     Substr {
         value: Box<ValueExpression<'s>>,
         start: Box<ValueExpression<'s>>,
+        count: Option<Box<ValueExpression<'s>>>,
     },
 }
 
-pub fn function_call(i: &[u8]) -> IResult<&[u8], FunctionCall<'_>> {
+pub fn function_call(
+    i: &[u8],
+) -> IResult<&[u8], FunctionCall<'_>, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::tuple((
@@ -134,11 +137,21 @@ pub fn function_call(i: &[u8]) -> IResult<&[u8], FunctionCall<'_>> {
                 nom::character::complete::multispace0,
                 value_expression,
                 nom::character::complete::multispace0,
+                nom::combinator::opt(
+                    nom::sequence::tuple((
+                        nom::bytes::complete::tag(","),
+                        nom::character::complete::multispace0,
+                        value_expression,
+                        nom::character::complete::multispace0,
+                    ))
+                    .map(|(_, _, v, _)| Box::new(v)),
+                ),
                 nom::bytes::complete::tag(")"),
             )),
-            |(_, _, _, _, content, _, _, _, start, _, _)| FunctionCall::Substr {
+            |(_, _, _, _, content, _, _, _, start, _, count, _)| FunctionCall::Substr {
                 value: Box::new(content),
                 start: Box::new(start),
+                count,
             },
         ),
     ))(i)
@@ -174,9 +187,14 @@ impl<'s> FunctionCall<'s> {
             Self::Lower { value } => FunctionCall::Lower {
                 value: Box::new(value.to_static()),
             },
-            Self::Substr { value, start } => FunctionCall::Substr {
+            Self::Substr {
+                value,
+                start,
+                count,
+            } => FunctionCall::Substr {
                 value: Box::new(value.to_static()),
                 start: Box::new(start.to_static()),
+                count: count.as_ref().map(|c| Box::new(c.to_static())),
             },
         }
     }
@@ -190,10 +208,18 @@ impl<'s> FunctionCall<'s> {
             Self::Exists { query } => query.max_parameter(),
             Self::SetValue { .. } => 0,
             Self::Lower { value } => value.max_parameter(),
-            Self::Substr { value, start } => [value.max_parameter(), start.max_parameter()]
-                .into_iter()
-                .max()
-                .unwrap_or(0),
+            Self::Substr {
+                value,
+                start,
+                count,
+            } => [
+                value.max_parameter(),
+                start.max_parameter(),
+                count.as_ref().map(|c| c.max_parameter()).unwrap_or(0),
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0),
         }
     }
 }
@@ -208,9 +234,8 @@ mod tests {
 
     #[test]
     fn coalesce() {
-        let (remaining, call) = function_call("COALESCE(dashboard.updated_by, -1)".as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, call) =
+            function_call("COALESCE(dashboard.updated_by, -1)".as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -235,9 +260,7 @@ mod tests {
 
     #[test]
     fn set_val_without_is_called() {
-        let (remaining, call) = function_call("setval('id', 123)".as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, call) = function_call("setval('id', 123)".as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -259,9 +282,7 @@ mod tests {
     #[test]
     fn set_val_with_subquery() {
         let (remaining, call) =
-            function_call("setval('org_id_seq', (SELECT max(id) FROM org))".as_bytes())
-                .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-                .unwrap();
+            function_call("setval('org_id_seq', (SELECT max(id) FROM org))".as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -298,9 +319,7 @@ mod tests {
 
     #[test]
     fn lower() {
-        let (remaining, call) = function_call("lower($1)".as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, call) = function_call("lower($1)".as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -318,13 +337,28 @@ mod tests {
     }
 
     #[test]
-    fn substr() {
+    fn substr_without_count() {
         let (remaining, call) = function_call("substr('content', 4)".as_bytes()).unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
             FunctionCall::Substr {
                 value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
                 start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
+                count: None
+            },
+            call
+        );
+    }
+
+    #[test]
+    fn substr_with_count() {
+        let (remaining, call) = function_call("substr('content', 4, 2)".as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            FunctionCall::Substr {
+                value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
+                start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
+                count: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(2))))
             },
             call
         );

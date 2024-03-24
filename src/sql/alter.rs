@@ -86,7 +86,7 @@ impl<'s> AlterTable<'s> {
     }
 }
 
-pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>> {
+pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, table, _)) = nom::sequence::tuple((
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("ALTER"),
@@ -362,9 +362,7 @@ mod tests {
     #[test]
     fn alter_column_type() {
         let query = "ALTER TABLE annotation ALTER COLUMN tags TYPE VARCHAR(4096)";
-        let (remaining, alter) = alter_table(query.as_bytes())
-            .map_err(|e| e.map_input(|r| core::str::from_utf8(r)))
-            .unwrap();
+        let (remaining, alter) = alter_table(query.as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -385,9 +383,7 @@ mod tests {
     #[test]
     fn alter_column_rename() {
         let query = "ALTER TABLE alert_instance RENAME COLUMN def_org_id TO rule_org_id";
-        let (remaining, alter) = alter_table(query.as_bytes())
-            .map_err(|e| e.map_input(|r| core::str::from_utf8(r)))
-            .unwrap();
+        let (remaining, alter) = alter_table(query.as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -409,9 +405,7 @@ mod tests {
     #[test]
     fn alter_set_default() {
         let query = "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false";
-        let (remaining, alter) = alter_table(query.as_bytes())
-            .map_err(|e| e.map_input(|r| core::str::from_utf8(r)))
-            .unwrap();
+        let (remaining, alter) = alter_table(query.as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],

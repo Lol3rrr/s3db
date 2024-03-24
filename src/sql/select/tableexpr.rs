@@ -28,8 +28,10 @@ pub enum JoinKind {
     FullOuter,
 }
 
-pub fn table_expression(i: &[u8]) -> IResult<&[u8], TableExpression> {
-    fn base(i: &[u8]) -> IResult<&[u8], TableExpression> {
+pub fn table_expression(
+    i: &[u8],
+) -> IResult<&[u8], TableExpression, nom::error::VerboseError<&[u8]>> {
+    fn base(i: &[u8]) -> IResult<&[u8], TableExpression, nom::error::VerboseError<&[u8]>> {
         let (remaining, table) = nom::branch::alt((
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),

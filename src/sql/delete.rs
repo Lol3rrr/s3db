@@ -26,7 +26,7 @@ impl<'s> Delete<'s> {
     }
 }
 
-pub fn delete(i: &[u8]) -> IResult<&[u8], Delete<'_>> {
+pub fn delete(i: &[u8]) -> IResult<&[u8], Delete<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, _, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("DELETE"),
         nom::character::complete::multispace1,

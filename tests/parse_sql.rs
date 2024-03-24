@@ -1,10 +1,16 @@
 use s3db::sql::Query;
 
 #[test]
-fn something_else() {
+fn grafana_query_1() {
     let query_str = "SELECT
         dashboard.id, dashboard.uid, dashboard.title, dashboard.slug, dashboard_tag.term, dashboard.is_folder, dashboard.folder_id, folder.uid AS folder_uid,\n\t\t\n\t\t\tfolder.slug AS folder_slug,\n\t\t\tfolder.title AS folder_title
-        FROM ( SELECT dashboard.id FROM dashboard WHERE (NOT dashboard.is_folder OR dashboard.is_folder) AND dashboard.org_id=$1 ORDER BY dashboard.title ASC NULLS FIRST LIMIT 30 OFFSET 0) AS ids\n\t\t
+        FROM (
+            SELECT dashboard.id
+            FROM dashboard
+            WHERE (NOT dashboard.is_folder OR dashboard.is_folder) AND dashboard.org_id=$1
+            ORDER BY dashboard.title ASC NULLS FIRST
+            LIMIT 30 OFFSET 0
+        ) AS ids\n\t\t
         INNER JOIN dashboard ON ids.id = dashboard.id\n\n\t\t
         LEFT OUTER JOIN dashboard AS folder ON folder.id = dashboard.folder_id\n\t
         LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id\n
@@ -15,13 +21,11 @@ fn something_else() {
         other => panic!("{:?}", other),
     };
 
-    dbg!(&select);
-
-    todo!()
+    let _ = select;
 }
 
 #[test]
-fn something_else_2() {
+fn grafana_query_2() {
     let query_str = "SELECT
     dashboard.id,dashboard.uid,dashboard.title,dashboard.slug,dashboard_tag.term,dashboard.is_folder,dashboard.folder_id,folder.uid AS folder_uid,folder.slug AS folder_slug,\n\t\t\tfolder.title AS folder_title
     FROM (

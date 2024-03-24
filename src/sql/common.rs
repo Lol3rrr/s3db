@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use nom::{error::dbg_dmp, IResult, Parser};
+use nom::{IResult, Parser};
 
 mod functions;
 pub use functions::FunctionCall;
@@ -177,7 +177,9 @@ impl<'s> ValueExpression<'s> {
     }
 }
 
-pub fn value_expressions(i: &[u8]) -> IResult<&[u8], Vec<ValueExpression<'_>>> {
+pub fn value_expressions(
+    i: &[u8],
+) -> IResult<&[u8], Vec<ValueExpression<'_>>, nom::error::VerboseError<&[u8]>> {
     nom::multi::separated_list1(
         nom::bytes::complete::tag(","),
         nom::sequence::delimited(
@@ -188,7 +190,9 @@ pub fn value_expressions(i: &[u8]) -> IResult<&[u8], Vec<ValueExpression<'_>>> {
     )(i)
 }
 
-pub fn value_expression(i: &[u8]) -> IResult<&[u8], ValueExpression<'_>> {
+pub fn value_expression(
+    i: &[u8],
+) -> IResult<&[u8], ValueExpression<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, parsed) = nom::branch::alt((
         nom::bytes::complete::tag("*").map(|_| ValueExpression::All),
         nom::bytes::complete::tag_no_case("NULL").map(|_| ValueExpression::Null),
@@ -255,7 +259,7 @@ pub fn value_expression(i: &[u8]) -> IResult<&[u8], ValueExpression<'_>> {
         _ => (remaining, parsed),
     };
 
-    let tmp: IResult<&[u8], _> = nom::sequence::tuple((
+    let tmp: IResult<&[u8], _, nom::error::VerboseError<&[u8]>> = nom::sequence::tuple((
         nom::character::complete::multispace0,
         nom::combinator::not(nom::combinator::peek(nom::branch::alt((
             nom::bytes::complete::tag_no_case("INNER"),
@@ -359,7 +363,7 @@ impl<'s> From<&'s str> for Identifier<'s> {
     }
 }
 
-pub fn identifier(i: &[u8]) -> IResult<&[u8], Identifier<'_>> {
+pub fn identifier(i: &[u8]) -> IResult<&[u8], Identifier<'_>, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::tuple((
@@ -404,7 +408,9 @@ impl<'s> ColumnReference<'s> {
     }
 }
 
-pub fn column_reference(i: &[u8]) -> IResult<&[u8], ColumnReference<'_>> {
+pub fn column_reference(
+    i: &[u8],
+) -> IResult<&[u8], ColumnReference<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
             nom::combinator::opt(nom::sequence::tuple((
@@ -428,7 +434,7 @@ pub enum AggregateExpression {
     Max(Box<ValueExpression<'static>>),
 }
 
-fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression> {
+fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::delimited(
@@ -502,7 +508,7 @@ pub enum TypeModifier {
     Collate { collation: String },
 }
 
-pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier> {
+pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("PRIMARY"),
@@ -723,9 +729,7 @@ mod tests {
 
     #[test]
     fn type_modifier_testing() {
-        let (remaining, collation) = type_modifier("COLLATE \"C\"".as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, collation) = type_modifier("COLLATE \"C\"".as_bytes()).unwrap();
         assert!(
             remaining.is_empty(),
             "{:?}",
@@ -823,9 +827,7 @@ mod tests {
 
     #[test]
     fn less_than_equal() {
-        let (remaining, tmp) = value_expression("column <= $1".as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, tmp) = value_expression("column <= $1".as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -849,9 +851,7 @@ mod tests {
 
     #[test]
     fn operator_inner() {
-        let (remaining, tmp) = value_expression("column = $1 INNER".as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, tmp) = value_expression("column = $1 INNER".as_bytes()).unwrap();
 
         assert_eq!(
             " INNER".as_bytes(),

@@ -14,7 +14,9 @@ pub enum IsolationMode {
 }
 
 /// [Reference](https://www.postgresql.org/docs/current/sql-begin.html)
-pub fn begin_transaction(i: &[u8]) -> IResult<&[u8], IsolationMode> {
+pub fn begin_transaction(
+    i: &[u8],
+) -> IResult<&[u8], IsolationMode, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, isomode)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("BEGIN"),
         nom::combinator::opt(nom::sequence::tuple((
@@ -67,13 +69,13 @@ pub fn begin_transaction(i: &[u8]) -> IResult<&[u8], IsolationMode> {
     Ok((remaining, isomode))
 }
 
-pub fn commit_transaction(i: &[u8]) -> IResult<&[u8], ()> {
+pub fn commit_transaction(i: &[u8]) -> IResult<&[u8], (), nom::error::VerboseError<&[u8]>> {
     let (remaining, _) = nom::bytes::complete::tag_no_case("COMMIT")(i)?;
 
     Ok((remaining, ()))
 }
 
-pub fn rollback_transaction(i: &[u8]) -> IResult<&[u8], ()> {
+pub fn rollback_transaction(i: &[u8]) -> IResult<&[u8], (), nom::error::VerboseError<&[u8]>> {
     let (remaining, _) = nom::bytes::complete::tag_no_case("ROLLBACK")(i)?;
     Ok((remaining, ()))
 }

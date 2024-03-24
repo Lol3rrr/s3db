@@ -93,7 +93,7 @@ impl<'s> Select<'s> {
     }
 }
 
-pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>> {
+pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("SELECT"),
         nom::character::complete::multispace1,
@@ -242,7 +242,6 @@ mod tests {
         let (remain, select) = select(
             "SELECT 1 FROM \"pg_indexes\" WHERE \"tablename\"=$1 AND \"indexname\"=$2".as_bytes(),
         )
-        .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
         .unwrap();
         dbg!(remain, select);
     }

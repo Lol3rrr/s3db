@@ -767,13 +767,20 @@ where
                             }
                         }                        
                     }
-                    ra::RaFunction::Substr { str_value, start } => {
+                    ra::RaFunction::Substr { str_value, start, count } => {
                         dbg!(&str_value, &start);
 
                         let str_value = self.evaluate_ra_value(&str_value, row, columns, placeholders, ctes).await?;
                         let start_value = self.evaluate_ra_value(&start, row, columns, placeholders, ctes).await?;
+                        let count_value = match count.as_ref() {
+                            Some(c) => {
+                                let val = self.evaluate_ra_value(&c, row, columns, placeholders, ctes).await?;
+                                Some(val)
+                            }
+                            None => None,
+                        };
 
-                        dbg!(&str_value, &start_value);
+                        dbg!(&str_value, &start_value, &count_value);
 
                         Err(EvaulateRaError::Other("Executing Substr function"))
                     }

@@ -27,7 +27,7 @@ impl<'s> Condition<'s> {
     }
 }
 
-pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>> {
+pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseError<&[u8]>> {
     #[derive(Debug, PartialEq)]
     enum Connector {
         And,
@@ -72,10 +72,12 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>> {
         let (rem, other) = match nom::branch::alt((
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),
+                nom::character::complete::multispace0,
                 condition,
+                nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             ))
-            .map(|(_, c, _)| c),
+            .map(|(_, _, c, _, _)| c),
             value_expression.map(|v| Condition::Value(Box::new(v))),
         ))(rem)
         {
@@ -114,9 +116,8 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{borrow::Cow, f32::consts::E};
 
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_str_eq};
 
     use crate::sql::{
         common::{BinaryOperator, Identifier},
@@ -624,5 +625,95 @@ mod tests {
 
         dbg!(&remaining, &condition);
         todo!()
+    }
+
+    #[test]
+    fn testing() {
+        let query_str = "(
+(dashboard.uid IN (
+    SELECT substr(scope, 16)
+    FROM permission
+    WHERE scope LIKE 'dashboards:uid:%' AND role_id IN (
+        SELECT id
+        FROM role
+        INNER JOIN (
+            SELECT ur.role_id
+            FROM user_role AS ur
+            WHERE ur.user_id = $1 AND (ur.org_id = $2 OR ur.org_id = $3)
+            UNION
+            SELECT br.role_id
+            FROM builtin_role AS br
+            WHERE br.role IN ($4, $5) AND (br.org_id = $6 OR br.org_id = $7)
+        ) as all_role ON role.id = all_role.role_id
+    ) AND action = $8
+    ) AND NOT dashboard.is_folder
+) OR (dashboard.folder_id IN (
+    SELECT d.id
+    FROM dashboard as d
+    WHERE d.org_id = $9 AND d.uid IN (
+        SELECT substr(scope, 13)
+        FROM permission
+        WHERE scope LIKE 'folders:uid:%' AND role_id IN (
+            SELECT id
+            FROM role
+            INNER JOIN (
+                SELECT ur.role_id
+                FROM user_role AS ur
+                WHERE ur.user_id = $10 AND (ur.org_id = $11 OR ur.org_id = $12)
+                UNION
+                SELECT br.role_id
+                FROM builtin_role AS br
+                WHERE br.role IN ($13, $14) AND (br.org_id = $15 OR br.org_id = $16)
+            ) as all_role ON role.id = all_role.role_id
+        ) AND action = $17
+    )
+    ) AND NOT dashboard.is_folder
+)
+)";
+
+        let (remaining, condition) = condition(query_str.as_bytes())
+            .map_err(|e| {
+                match e {
+                    nom::Err::Error(e) => {
+                        for entry in e.errors.iter() {
+                            println!(
+                                "- [{:?}] {:?}\n",
+                                entry.1,
+                                core::str::from_utf8(entry.0).unwrap()
+                            );
+                        }
+                    }
+                    nom::Err::Failure(f) => {
+                        for entry in f.errors.iter() {
+                            println!(
+                                "- [{:?}] {:?}\n",
+                                entry.1,
+                                core::str::from_utf8(entry.0).unwrap()
+                            );
+                        }
+                    }
+                    nom::Err::Incomplete(_) => todo!(),
+                };
+                ()
+            })
+            .unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+
+        let _ = condition;
+    }
+
+    #[test]
+    fn not_field() {
+        let (remaining, condition) = condition("NOT table.field".as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            Condition::And(vec![Condition::Value(Box::new(ValueExpression::Not(
+                Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    relation: Some("table".into()),
+                    column: "field".into()
+                }))
+            )))]),
+            condition
+        );
     }
 }

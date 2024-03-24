@@ -7,7 +7,7 @@ pub enum Combination {
     Except,
 }
 
-pub fn combine(i: &[u8]) -> IResult<&[u8], Combination> {
+pub fn combine(i: &[u8]) -> IResult<&[u8], Combination, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("UNION"),

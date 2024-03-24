@@ -15,7 +15,7 @@ pub struct WithCTEs<'s> {
     pub recursive: bool,
 }
 
-pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>> {
+pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, _, recursive)) = nom::sequence::tuple((
         nom::character::complete::multispace0,
         nom::bytes::complete::tag_no_case("WITH"),
@@ -149,9 +149,7 @@ WITH regional_sales AS (
 ), top_regions AS (
     SELECT 3
 )";
-        let (remaining, result) = with_ctes(query_str.as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, result) = with_ctes(query_str.as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
@@ -203,9 +201,7 @@ WITH regional_sales AS (
         let query_str =
             "WITH RECURSIVE cte (n) AS ( SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2 )";
 
-        let (remaining, result) = with_ctes(query_str.as_bytes())
-            .map_err(|e| e.map_input(|d| core::str::from_utf8(d)))
-            .unwrap();
+        let (remaining, result) = with_ctes(query_str.as_bytes()).unwrap();
 
         assert_eq!(
             &[] as &[u8],
