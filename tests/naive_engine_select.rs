@@ -16,7 +16,7 @@ async fn basic_select() {
     let res = engine.execute(&query, &mut Context::new()).await.unwrap();
 
     let content = match res {
-        ExecuteResult::Select { content } => content,
+        ExecuteResult::Select { content, .. } => content,
         other => panic!("{:?}", other),
     };
 
@@ -30,7 +30,7 @@ async fn basic_select() {
     let res = engine.execute(&query, &mut Context::new()).await.unwrap();
 
     let content = match res {
-        ExecuteResult::Select { content } => content,
+        ExecuteResult::Select { content, .. } => content,
         other => panic!("{:?}", other),
     };
 
@@ -45,7 +45,7 @@ async fn select_with_literal_return() {
     let res = engine.execute(&query, &mut Context::new()).await.unwrap();
 
     let content = match res {
-        ExecuteResult::Select { content } => content,
+        ExecuteResult::Select { content, .. } => content,
         other => panic!("{:?}", other),
     };
 
@@ -67,7 +67,7 @@ async fn select_with_literal_return() {
     dbg!(&res);
 
     let content = match res {
-        ExecuteResult::Select { content } => content,
+        ExecuteResult::Select { content, .. } => content,
         other => panic!("{:?}", other),
     };
 
@@ -154,7 +154,8 @@ async fn execute_inner_join() {
                         ]
                     )]
                 }]
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -237,7 +238,8 @@ async fn left_outer_join() {
                         Row::new(0, vec![Data::Text("second-user".to_string()), Data::Null])
                     ]
                 }]
-            }
+            },
+            formats: Vec::new(),
         },
         res
     );
@@ -308,7 +310,8 @@ async fn group_by_single_attribute() {
                         Row::new(0, vec![Data::Text("editor".to_string())])
                     ]
                 }]
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -348,7 +351,8 @@ async fn select_count_all() {
                 parts: vec![PartialRelation {
                     rows: vec![Row::new(0, vec![Data::BigInt(2)])]
                 }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -393,7 +397,8 @@ async fn select_count_attribute() {
                 parts: vec![PartialRelation {
                     rows: vec![Row::new(0, vec![Data::BigInt(2)])]
                 }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -437,7 +442,8 @@ async fn select_with_limit() {
                 parts: vec![PartialRelation {
                     rows: vec![Row::new(0, vec![Data::Text("first".to_string())])]
                 }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -491,7 +497,8 @@ async fn select_with_order() {
                         Row::new(0, vec![Data::Text("first".to_string())])
                     ]
                 }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -511,7 +518,8 @@ async fn select_with_order() {
                         Row::new(0, vec![Data::Text("second".to_string())])
                     ]
                 }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -531,7 +539,8 @@ async fn select_with_order() {
                         Row::new(0, vec![Data::Text("first".to_string())])
                     ]
                 }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -804,7 +813,8 @@ async fn select_with_standard_cte() {
             content: storage::EntireRelation {
                 columns: vec![("name".into(), DataType::Text, Vec::new())],
                 parts: vec![storage::PartialRelation { rows: vec![] }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -850,7 +860,8 @@ async fn select_with_recursive_cte() {
                         storage::Row::new(0, vec![Data::SmallInt(5)]),
                     ]
                 }],
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -912,7 +923,8 @@ async fn select_all() {
                         )
                     ]
                 }]
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -934,7 +946,8 @@ async fn select_1() {
                 parts: vec![storage::PartialRelation {
                     rows: vec![storage::Row::new(0, vec![Data::SmallInt(1)])]
                 }]
-            }
+            },
+            formats: Vec::new(),
         },
         res
     );
@@ -974,7 +987,8 @@ async fn setval() {
                 parts: vec![storage::PartialRelation {
                     rows: vec![storage::Row::new(0, vec![Data::Serial(2)])]
                 }]
-            }
+            },
+            formats: Vec::new()
         },
         res
     );
@@ -1024,7 +1038,119 @@ async fn like_operation() {
                 parts: vec![storage::PartialRelation {
                     rows: vec![storage::Row::new(0, vec![Data::Text("testing".into())])]
                 }]
-            }
+            },
+            formats: Vec::new()
+        },
+        res
+    );
+}
+
+#[tokio::test]
+async fn select_subquery_as_value() {
+    let query_str = "SELECT (SELECT count(*) FROM users)";
+    let query = Query::parse(query_str.as_bytes()).unwrap();
+
+    let storage = {
+        let storage = InMemoryStorage::new();
+
+        storage
+            .create_relation(
+                "users",
+                vec![
+                    ("id".into(), DataType::Serial, Vec::new()),
+                    ("name".into(), DataType::Text, Vec::new()),
+                ],
+            )
+            .await
+            .unwrap();
+
+        storage
+            .insert_rows(
+                "users",
+                &mut [
+                    vec![Data::Serial(1), Data::Text("testing".into())],
+                    vec![Data::Serial(2), Data::Text("other".into())],
+                    vec![Data::Serial(3), Data::Text("something".into())],
+                ]
+                .into_iter(),
+            )
+            .await
+            .unwrap();
+
+        storage
+    };
+
+    let engine = NaiveEngine::new(storage);
+    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    dbg!(&res);
+
+    assert_eq!(
+        ExecuteResult::Select {
+            content: storage::EntireRelation {
+                columns: vec![("".into(), DataType::BigInteger, Vec::new())],
+                parts: vec![storage::PartialRelation {
+                    rows: vec![storage::Row::new(0, vec![Data::BigInt(3)])]
+                }]
+            },
+            formats: Vec::new()
+        },
+        res
+    );
+}
+
+#[tokio::test]
+async fn select_with_in_filter() {
+    let query_str = "SELECT name from users WHERE name IN ('other', 'something')";
+    let query = Query::parse(query_str.as_bytes()).unwrap();
+
+    let storage = {
+        let storage = InMemoryStorage::new();
+
+        storage
+            .create_relation(
+                "users",
+                vec![
+                    ("id".into(), DataType::Serial, Vec::new()),
+                    ("name".into(), DataType::Text, Vec::new()),
+                ],
+            )
+            .await
+            .unwrap();
+
+        storage
+            .insert_rows(
+                "users",
+                &mut [
+                    vec![Data::Serial(1), Data::Text("testing".into())],
+                    vec![Data::Serial(2), Data::Text("other".into())],
+                    vec![Data::Serial(3), Data::Text("something".into())],
+                ]
+                .into_iter(),
+            )
+            .await
+            .unwrap();
+
+        storage
+    };
+
+    let engine = NaiveEngine::new(storage);
+    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    dbg!(&res);
+
+    assert_eq!(
+        ExecuteResult::Select {
+            content: storage::EntireRelation {
+                columns: vec![("name".into(), DataType::Text, Vec::new())],
+                parts: vec![storage::PartialRelation {
+                    rows: vec![
+                        storage::Row::new(0, vec![Data::Text("other".into())]),
+                        storage::Row::new(0, vec![Data::Text("something".into())])
+                    ]
+                }]
+            },
+            formats: Vec::new()
         },
         res
     );

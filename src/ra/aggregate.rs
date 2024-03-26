@@ -6,7 +6,7 @@ use crate::{
     storage::Schemas,
 };
 
-use super::{Attribute, AttributeId, ParseSelectError, RaExpression, Scope};
+use super::{Attribute, AttributeId, ParseSelectError, RaExpression, RaFunction, Scope};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AggregateExpression {
@@ -28,6 +28,7 @@ pub enum AggregateExpression {
         dtype: DataType,
     },
     Literal(Literal<'static>),
+    Expression(Box<RaValueExpression>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -42,7 +43,7 @@ impl AggregateExpression {
         scope: &mut Scope<'_>,
         previous_columns: &[(String, DataType, AttributeId)],
         placeholders: &mut HashMap<usize, DataType>,
-        ra_expr: &RaExpression,
+        ra_expr: &mut RaExpression,
     ) -> Result<Attribute<Self>, ParseSelectError> {
         match value {
             ValueExpression::AggregateExpression(exp) => match exp {
@@ -61,7 +62,7 @@ impl AggregateExpression {
                                 attr: cr.to_static(),
                                 available: previous_columns
                                     .iter()
-                                    .map(|(n, _, _)| n.clone())
+                                    .map(|(n, _, _)| (String::new(), n.clone()))
                                     .collect(),
                                 context: "Parse Aggregate Expression".into(),
                             })?;
@@ -126,7 +127,10 @@ impl AggregateExpression {
                     })
                     .ok_or_else(|| ParseSelectError::UnknownAttribute {
                         attr: cr.to_static(),
-                        available: previous_columns.iter().map(|(n, _, _)| n.clone()).collect(),
+                        available: previous_columns
+                            .iter()
+                            .map(|(n, _, _)| (String::new(), n.clone()))
+                            .collect(),
                         context: "Parse Aggregate Expression".into(),
                     })?;
 
@@ -154,8 +158,14 @@ impl AggregateExpression {
                 })
             }
             other => {
-                dbg!(&other);
-                Err(ParseSelectError::Other)
+                let parsed =
+                    RaValueExpression::parse_internal(scope, other, placeholders, ra_expr)?;
+
+                Ok(Attribute {
+                    id: scope.attribute_id(),
+                    name: "".into(),
+                    value: AggregateExpression::Expression(Box::new(parsed)),
+                })
             }
         }
     }
@@ -168,6 +178,7 @@ impl AggregateExpression {
             Self::Column { dtype, .. } => dtype.clone(),
             Self::Literal(lit) => lit.datatype().unwrap(),
             Self::Max { dtype, .. } => dtype.clone(),
+            Self::Expression(v) => v.datatype().unwrap(),
         }
     }
 
@@ -206,6 +217,66 @@ impl AggregateExpression {
                     todo!("Max {:?}", (inner, dtype))
                 }
                 AggregateExpression::Literal(_) => Ok(()),
+                AggregateExpression::Expression(expr) => {
+                    let mut pending: Vec<&RaValueExpression> = vec![&expr];
+
+                    while let Some(expr) = pending.pop() {
+                        match expr {
+                            RaValueExpression::Renamed { value, .. } => {
+                                pending.push(&value);
+                            }
+                            RaValueExpression::Literal(_) => {}
+                            RaValueExpression::Attribute { name, ty, a_id } => {
+                                if fields.iter().find(|(_, id)| a_id == id).is_none() {
+                                    return Err(ParseSelectError::NotImplemented(
+                                        "Not Aggregated Attribute used",
+                                    ));
+                                }
+                            }
+                            RaValueExpression::Function(func) => match func {
+                                RaFunction::Coalesce(parts) => {
+                                    pending.extend(parts.iter());
+                                }
+                                RaFunction::LeftPad {
+                                    base,
+                                    length,
+                                    padding,
+                                } => {
+                                    pending.push(&base);
+                                }
+                                RaFunction::SetValue {
+                                    name,
+                                    value,
+                                    is_called,
+                                } => {
+                                    pending.push(&value);
+                                }
+                                RaFunction::Lower(parts) => {
+                                    pending.push(&parts);
+                                }
+                                RaFunction::Substr {
+                                    str_value,
+                                    start,
+                                    count,
+                                } => {
+                                    pending.push(&str_value);
+                                    pending.push(&start);
+                                    if let Some(c) = count {
+                                        pending.push(c);
+                                    }
+                                }
+                            },
+                            other => {
+                                dbg!(other);
+                                return Err(ParseSelectError::NotImplemented(
+                                    "Checking different Value Expression",
+                                ));
+                            }
+                        };
+                    }
+
+                    Ok(())
+                }
             },
         }
     }

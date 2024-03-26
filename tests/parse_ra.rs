@@ -1,8 +1,70 @@
+use std::collections::HashMap;
+
 use s3db::{
     ra::RaExpression,
     sql::{DataType, Query},
     storage::Schemas,
 };
+
+/// Returns an iterator to generate the Grafana Schema for testing
+fn grafana_schema() -> impl Iterator<Item = (String, Vec<(String, DataType)>)> {
+    [
+        (
+            "dashboard".into(),
+            vec![
+                ("id".into(), DataType::Integer),
+                ("uid".into(), DataType::Integer),
+                ("title".into(), DataType::Text),
+                ("slug".into(), DataType::Text),
+                ("is_folder".into(), DataType::Bool),
+                ("folder_id".into(), DataType::Integer),
+                ("org_id".into(), DataType::Integer),
+            ],
+        ),
+        (
+            "dashboard_tag".into(),
+            vec![
+                ("term".into(), DataType::Text),
+                ("dashboard_id".into(), DataType::Integer),
+            ],
+        ),
+        (
+            "folder".into(),
+            vec![
+                ("uid".into(), DataType::Integer),
+                ("slug".into(), DataType::Text),
+                ("title".into(), DataType::Text),
+            ],
+        ),
+        (
+            "permission".into(),
+            vec![
+                ("role_id".into(), DataType::Integer),
+                ("scope".into(), DataType::Text),
+                ("action".into(), DataType::Text),
+            ],
+        ),
+        ("role".into(), vec![("id".into(), DataType::Integer)]),
+        (
+            "user_role".into(),
+            vec![
+                ("id".into(), DataType::Integer),
+                ("user_id".into(), DataType::Integer),
+                ("org_id".into(), DataType::Integer),
+                ("role_id".into(), DataType::Integer),
+            ],
+        ),
+        (
+            "builtin_role".into(),
+            vec![
+                ("role_id".into(), DataType::Integer),
+                ("org_id".into(), DataType::Integer),
+                ("role".into(), DataType::Text),
+            ],
+        ),
+    ]
+    .into_iter()
+}
 
 #[test]
 fn grafana_query_1() {
@@ -25,29 +87,7 @@ fn grafana_query_1() {
         other => panic!("{:?}", other),
     };
 
-    let schemas: Schemas = [
-        (
-            "dashboard".into(),
-            vec![
-                ("id".into(), DataType::Integer),
-                ("uid".into(), DataType::Integer),
-                ("title".into(), DataType::Text),
-                ("slug".into(), DataType::Text),
-                ("is_folder".into(), DataType::Bool),
-                ("folder_id".into(), DataType::Integer),
-                ("org_id".into(), DataType::Integer),
-            ],
-        ),
-        (
-            "dashboard_tag".into(),
-            vec![
-                ("term".into(), DataType::Text),
-                ("dashboard_id".into(), DataType::Integer),
-            ],
-        ),
-    ]
-    .into_iter()
-    .collect();
+    let schemas: Schemas = grafana_schema().collect();
 
     let result = RaExpression::parse_select(&select, &schemas).unwrap();
 
@@ -197,4 +237,84 @@ fn grafana_query_4() {
     let result = RaExpression::parse_select(&select, &schemas).unwrap();
 
     let _ = result;
+}
+
+#[test]
+fn grafana_query_5() {
+    let query_str = "SELECT
+    dashboard.id,
+    dashboard.uid,
+    dashboard.title,
+    dashboard.slug,
+    dashboard_tag.term,
+    dashboard.is_folder,
+    dashboard.folder_id,
+    folder.uid AS folder_uid,
+    folder.slug AS folder_slug,
+    folder.title AS folder_title
+FROM (
+    SELECT
+        dashboard.id
+    FROM dashboard
+    WHERE (
+        (dashboard.uid IN (
+            SELECT substr(scope, 13)
+            FROM permission
+            WHERE scope LIKE 'folders:uid:%' AND role_id IN(
+                SELECT id
+                FROM role
+                INNER JOIN (
+                    SELECT ur.role_id
+                    FROM user_role AS ur
+                    WHERE ur.user_id = $1 AND (ur.org_id = $2 OR ur.org_id = $3)
+                    UNION
+                    SELECT br.role_id
+                    FROM builtin_role AS br
+                    WHERE br.role IN ($4, $5) AND (br.org_id = $6 OR br.org_id = $7)
+                ) as all_role ON role.id = all_role.role_id) AND action IN ($8, $9)
+            GROUP BY role_id, scope HAVING COUNT(action) = $10
+        ) AND dashboard.is_folder)
+    ) AND dashboard.org_id=$11 AND dashboard.is_folder = true
+    ORDER BY dashboard.title ASC NULLS FIRST LIMIT 1000 OFFSET 0
+) AS ids
+INNER JOIN dashboard ON ids.id = dashboard.id
+LEFT OUTER JOIN dashboard AS folder ON folder.id = dashboard.folder_id
+LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id
+ORDER BY dashboard.title ASC NULLS FIRST";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    let schemas: Schemas = grafana_schema().collect();
+
+    let (result, placeholders) = RaExpression::parse_select(&select, &schemas).unwrap();
+
+    assert_eq!(11, placeholders.len(), "{:?}", placeholders);
+
+    let _ = result;
+}
+
+#[test]
+fn specific() {
+    let query_str = "SELECT substr(name, 2) FROM users GROUP BY name";
+
+    let query = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    let schemas: Schemas = [(
+        "users".to_string(),
+        vec![("name".to_string(), DataType::Text)],
+    )]
+    .into_iter()
+    .collect();
+
+    let (select, parameter_types) = RaExpression::parse_select(&query, &schemas).unwrap();
+
+    assert_eq!(HashMap::new(), parameter_types);
+
+    dbg!(&select);
 }

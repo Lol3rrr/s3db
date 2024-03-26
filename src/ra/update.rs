@@ -41,7 +41,7 @@ impl RaUpdate {
             .get_table(query.table.0.as_ref())
             .ok_or(ParseSelectError::Other)?;
 
-        let table_expr = RaExpression::BaseRelation {
+        let mut table_expr = RaExpression::BaseRelation {
             name: query.table.to_static(),
             columns: table_schema
                 .rows
@@ -113,7 +113,7 @@ impl RaUpdate {
                     }
                 };
 
-                let joined = RaExpression::Join {
+                let mut joined = RaExpression::Join {
                     left: Box::new(table_expr),
                     right: Box::new(other_table),
                     kind: JoinKind::Inner,
@@ -122,8 +122,12 @@ impl RaUpdate {
 
                 let condition = match query.condition.as_ref() {
                     Some(c) => {
-                        let cond =
-                            RaCondition::parse_internal(&mut scope, c, &mut placeholders, &joined)?;
+                        let cond = RaCondition::parse_internal(
+                            &mut scope,
+                            c,
+                            &mut placeholders,
+                            &mut joined,
+                        )?;
                         Some(cond)
                     }
                     None => None,
@@ -135,7 +139,7 @@ impl RaUpdate {
                         &mut scope,
                         value,
                         &mut placeholders,
-                        &joined,
+                        &mut joined,
                     )?;
 
                     let target_ty = table_schema
@@ -173,7 +177,7 @@ impl RaUpdate {
                             &mut scope,
                             c,
                             &mut placeholders,
-                            &table_expr,
+                            &mut table_expr,
                         )?;
                         Some(cond)
                     }
@@ -186,7 +190,7 @@ impl RaUpdate {
                         &mut scope,
                         value,
                         &mut placeholders,
-                        &table_expr,
+                        &mut table_expr,
                     )?;
 
                     let target_ty = table_schema

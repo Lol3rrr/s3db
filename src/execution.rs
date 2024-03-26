@@ -1,6 +1,7 @@
 use std::{fmt::Debug, future::Future};
 
 use crate::{
+    postgres::FormatCode,
     sql::{self, DataType},
     storage::{self, EntireRelation},
 };
@@ -15,10 +16,12 @@ pub struct Context {
 pub enum ExecuteResult {
     Select {
         content: EntireRelation,
+        formats: Vec<FormatCode>,
     },
     Insert {
         inserted_rows: usize,
         returning: Vec<Vec<storage::Data>>,
+        formats: Vec<FormatCode>,
     },
     Update {
         updated_rows: usize,
@@ -76,8 +79,11 @@ pub trait Execute {
                 .prepare(query, ctx)
                 .await
                 .map_err(|e| ExecuteError::Prepare(e))?;
+
+            // TODO
+            // Can we just leave the result_formats empty or should we populate them
             let bound = prepared
-                .bind(Vec::new())
+                .bind(Vec::new(), Vec::new())
                 .map_err(|e| ExecuteError::Bind(e))?;
 
             self.execute_bound(&bound, ctx)
@@ -91,7 +97,11 @@ pub trait PreparedStatement {
     type Bound;
     type BindError: Debug;
 
-    fn bind(&self, values: Vec<Vec<u8>>) -> Result<Self::Bound, Self::BindError>;
+    fn bind(
+        &self,
+        values: Vec<Vec<u8>>,
+        result_formats: Vec<FormatCode>,
+    ) -> Result<Self::Bound, Self::BindError>;
 
     fn parameters(&self) -> Vec<DataType>;
 

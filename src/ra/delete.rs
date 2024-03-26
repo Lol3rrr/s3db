@@ -27,7 +27,7 @@ impl RaDelete {
             .get_table(query.table.0.as_ref())
             .ok_or_else(|| ParseSelectError::UnknownRelation(query.table.0.to_string()))?;
 
-        let base_relation = RaExpression::BaseRelation {
+        let mut base_relation = RaExpression::BaseRelation {
             name: query.table.to_static(),
             columns: table_schema
                 .rows
@@ -46,8 +46,12 @@ impl RaDelete {
 
         let condition = match query.condition.as_ref() {
             Some(c) => {
-                let rac =
-                    RaCondition::parse_internal(&mut scope, c, &mut placeholders, &base_relation)?;
+                let rac = RaCondition::parse_internal(
+                    &mut scope,
+                    c,
+                    &mut placeholders,
+                    &mut base_relation,
+                )?;
 
                 Some(rac)
             }

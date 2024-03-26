@@ -60,7 +60,7 @@ impl RaCondition {
             &mut scope,
             condition,
             &mut placeholders,
-            &RaExpression::EmptyRelation,
+            &mut RaExpression::EmptyRelation,
         )?;
 
         Ok((cond, placeholders))
@@ -70,7 +70,7 @@ impl RaCondition {
         scope: &mut Scope<'_>,
         condition: &Condition<'_>,
         placeholders: &mut HashMap<usize, DataType>,
-        ra_expr: &RaExpression,
+        ra_expr: &mut RaExpression,
     ) -> Result<Self, ParseSelectError> {
         match condition {
             Condition::And(p) => {
@@ -100,33 +100,29 @@ impl RaConditionValue {
         scope: &mut Scope<'_>,
         condition: &ValueExpression<'_>,
         placeholders: &mut HashMap<usize, DataType>,
-        ra_expr: &RaExpression,
+        ra_expr: &mut RaExpression,
     ) -> Result<Self, ParseSelectError> {
         match condition {
             ValueExpression::ColumnReference(cr) => {
                 let name = cr.column.0.to_string();
-                let dtype = ra_expr.get_column(&name).ok_or_else(|| {
-                    ParseSelectError::UnknownAttribute {
-                        attr: cr.to_static(),
-                        available: ra_expr
-                            .get_columns()
-                            .into_iter()
-                            .map(|(n, _, _)| n)
-                            .collect(),
-                        context: error_context!("ValueExpression Parsing"),
-                    }
-                })?;
-                let attr_id = ra_expr
+                let (dtype, attr_id) = ra_expr
                     .get_columns()
                     .into_iter()
-                    .find(|(n, _, _)| n == &name)
-                    .map(|(_, _, aid)| aid)
+                    .find(|(t, n, _, _)| {
+                        n == &name
+                            && cr
+                                .relation
+                                .as_ref()
+                                .map(|r| r.0.as_ref() == t.as_str())
+                                .unwrap_or(true)
+                    })
+                    .map(|(_, _, ty, aid)| (ty, aid))
                     .ok_or_else(|| ParseSelectError::UnknownAttribute {
                         attr: cr.to_static(),
                         available: ra_expr
                             .get_columns()
                             .into_iter()
-                            .map(|(n, _, _)| n)
+                            .map(|(r, n, _, _)| (r, n))
                             .collect(),
                         context: error_context!("ValueExpression Parsing"),
                     })?;

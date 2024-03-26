@@ -121,7 +121,7 @@ mod tests {
 
     use crate::sql::{
         common::{BinaryOperator, Identifier},
-        select::{NullOrdering, Ordering},
+        select::{NullOrdering, Ordering, SelectLimit},
         ColumnReference, FunctionCall, Literal, OrderBy, Select, TableExpression,
     };
 
@@ -451,7 +451,10 @@ mod tests {
                             }]),
                             group_by: None,
                             having: None,
-                            limit: Some(1),
+                            limit: Some(SelectLimit {
+                                limit: 1,
+                                offset: None
+                            }),
                             for_update: None,
                             combine: None
                         })),

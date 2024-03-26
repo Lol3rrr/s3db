@@ -1,16 +1,23 @@
 #![feature(variant_count)]
 
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, fs::File, rc::Rc};
 
 use s3db::execution::{self, PreparedStatement};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::Level;
+use tracing_subscriber::layer::SubscriberExt;
 
 fn main() {
+    let log_file = File::create("s3db.log").unwrap();
     tracing::subscriber::set_global_default(
         tracing_subscriber::fmt::Subscriber::builder()
             .with_max_level(Level::INFO)
-            .finish(),
+            .finish()
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(log_file)
+                    .with_ansi(false),
+            ),
     )
     .unwrap();
 
@@ -186,7 +193,7 @@ async fn handle_postgres_connection<E>(
                         }
                     };
 
-                    tracing::info!("Result: {:?}", result);
+                    tracing::debug!("Result: {:?}", result);
 
                     match s3db::postgres::responde_execute_result(
                         &mut connection,
@@ -275,7 +282,7 @@ async fn handle_postgres_connection<E>(
                         };
 
                         let parameters = prepared.parameters();
-                        tracing::info!("Expecting Parameters: {:?}", parameters);
+                        tracing::trace!("Expecting Parameters: {:?}", parameters);
 
                         s3db::postgres::MessageResponse::ParameterDescription {
                             parameters: parameters.iter().map(|_| 0).collect(),
@@ -283,7 +290,7 @@ async fn handle_postgres_connection<E>(
                         .send(&mut connection)
                         .await
                         .unwrap();
-                        tracing::info!("Send ParameterDescription");
+                        tracing::trace!("Send ParameterDescription");
 
                         let row_columns = prepared.row_columns();
 
@@ -304,7 +311,7 @@ async fn handle_postgres_connection<E>(
                         .send(&mut connection)
                         .await
                         .unwrap();
-                        tracing::info!("Send RowDescription");
+                        tracing::trace!("Send RowDescription");
                     }
                     s3db::postgres::DescribeKind::Portal => {
                         todo!();
@@ -359,7 +366,7 @@ async fn handle_postgres_connection<E>(
                     }
                 };
 
-                match prepared.bind(parameter_values) {
+                match prepared.bind(parameter_values, result_column_format_codes) {
                     Ok(b) => {
                         bound_statements.insert(destination, b);
                     }
@@ -429,8 +436,8 @@ async fn handle_postgres_connection<E>(
                     Ok(_) => {
                         tracing::info!("Sending Response");
                     }
-                    Err(_) => {
-                        tracing::error!("Sending Response");
+                    Err(e) => {
+                        tracing::error!("Sending Response: {:?}", e);
                     }
                 };
             }

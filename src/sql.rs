@@ -15,7 +15,9 @@ mod alter;
 pub use alter::AlterTable;
 
 mod select;
-pub use select::{Combination, JoinKind, NullOrdering, OrderBy, Ordering, Select, TableExpression};
+pub use select::{
+    Combination, JoinKind, NullOrdering, OrderBy, Ordering, Select, SelectLimit, TableExpression,
+};
 
 mod insert;
 pub use insert::{ConflictHandling, Insert, InsertValues};

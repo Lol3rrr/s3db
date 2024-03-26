@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ra::RaExpression,
+    ra::{self, RaExpression},
     sql::{self, BinaryOperator, DataType, FunctionCall, Literal, ValueExpression},
 };
 
@@ -62,7 +62,7 @@ impl RaValueExpression {
         scope: &mut Scope<'_>,
         expr: &ValueExpression<'_>,
         placeholders: &mut HashMap<usize, DataType>,
-        ra_expr: &RaExpression,
+        ra_expr: &mut RaExpression,
     ) -> Result<Self, ParseSelectError> {
         match expr {
             ValueExpression::All => Err(ParseSelectError::NotImplemented(
@@ -75,28 +75,19 @@ impl RaValueExpression {
             ValueExpression::Placeholder(p) => Ok(Self::Placeholder(*p)),
             ValueExpression::ColumnReference(cr) => {
                 let name = cr.column.0.to_string();
-                let dtype = ra_expr.get_column(&name).ok_or_else(|| {
-                    ParseSelectError::UnknownAttribute {
-                        attr: cr.to_static(),
-                        available: ra_expr
-                            .get_columns()
-                            .into_iter()
-                            .map(|(n, _, _)| n)
-                            .collect(),
-                        context: error_context!("ValueExpression Parsing"),
-                    }
-                })?;
-                let attr_id = ra_expr
+                let (dtype, attr_id) = ra_expr
                     .get_columns()
                     .into_iter()
-                    .find(|(n, _, _)| n == &name)
-                    .map(|(_, _, aid)| aid)
+                    .find(|(t, n, _, _)| {
+                        n == &name && cr.relation.as_ref().map(|r| t == &r.0).unwrap_or(true)
+                    })
+                    .map(|(_, _, ty, aid)| (ty, aid))
                     .ok_or_else(|| ParseSelectError::UnknownAttribute {
                         attr: cr.to_static(),
                         available: ra_expr
                             .get_columns()
                             .into_iter()
-                            .map(|(n, _, _)| n)
+                            .map(|(t, n, _, _)| (t, n))
                             .collect(),
                         context: error_context!("ValueExpression Parsing"),
                     })?;
@@ -379,6 +370,46 @@ impl RaValueExpression {
                     value: Box::new(inner_ra),
                 })
             }
+            ValueExpression::AggregateExpression(agg_exp) => {
+                // IDEA
+                // We could push the aggregation into the group by expression in the previous
+                // layer, then reference that result for this usage and afterwards add a projection
+                // to remove the artifically added aggregations
+
+                let (parent_aggregations, inner) = match ra_expr {
+                    RaExpression::Aggregation {
+                        attributes, inner, ..
+                    } => (attributes, inner),
+                    other => {
+                        dbg!(&other);
+                        return Err(ParseSelectError::Other);
+                    }
+                };
+
+                let previous_columns = inner
+                    .get_columns()
+                    .into_iter()
+                    .map(|(_, n, t, i)| (n, t, i))
+                    .collect::<Vec<_>>();
+
+                let ra_agg = ra::AggregateExpression::parse(
+                    &ValueExpression::AggregateExpression(agg_exp.clone()),
+                    scope,
+                    &previous_columns,
+                    placeholders,
+                    inner,
+                )?;
+
+                let expr = RaValueExpression::Attribute {
+                    name: ra_agg.name.clone(),
+                    ty: ra_agg.value.return_ty(),
+                    a_id: ra_agg.id,
+                };
+
+                parent_aggregations.push(ra_agg);
+
+                Ok(expr)
+            }
             other => {
                 dbg!(other);
 
@@ -418,7 +449,7 @@ impl RaValueExpression {
                     return Err(());
                 }
 
-                let (_, ty, _) = columns.remove(0);
+                let (_, _, ty, _) = columns.remove(0);
 
                 Ok(types::PossibleTypes::fixed_with_conversions(ty))
             }
@@ -471,7 +502,7 @@ impl RaValueExpression {
                     return None;
                 }
 
-                let (_, ty, _) = columns.remove(0);
+                let (_, _, ty, _) = columns.remove(0);
 
                 Some(ty)
             }

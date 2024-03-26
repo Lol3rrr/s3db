@@ -3,7 +3,7 @@ use pretty_assertions::assert_eq;
 use s3db::sql::{
     AggregateExpression, BinaryOperator, ColumnReference, Condition, ConflictHandling, Delete,
     FunctionCall, Identifier, Insert, InsertValues, Literal, NullOrdering, OrderBy, Ordering,
-    Query, Select, TableExpression, ValueExpression,
+    Query, Select, SelectLimit, TableExpression, ValueExpression,
 };
 
 #[test]
@@ -322,7 +322,10 @@ fn select_limit_offset() {
             ]),
             group_by: None,
             having: None,
-            limit: Some(1),
+            limit: Some(SelectLimit {
+                limit: 1,
+                offset: Some(99)
+            }),
             for_update: None,
             combine: None,
         },

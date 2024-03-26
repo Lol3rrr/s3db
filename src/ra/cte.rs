@@ -72,14 +72,14 @@ impl CTE {
                         &base_select,
                         scope,
                         placeholders,
-                        &RaExpression::EmptyRelation,
+                        &mut RaExpression::EmptyRelation,
                     )?;
 
                     let mappings: Vec<_> = base_ra
                         .get_columns()
                         .into_iter()
                         .zip(raw.columns.as_ref().unwrap())
-                        .map(|((val_name, val_type, val_attribute), column_name)| {
+                        .map(|((_, val_name, val_type, val_attribute), column_name)| {
                             ProjectionAttribute {
                                 id: scope.attribute_id(),
                                 name: column_name.0.to_string(),
@@ -119,7 +119,7 @@ impl CTE {
                         s,
                         scope,
                         placeholders,
-                        &RaExpression::EmptyRelation,
+                        &mut RaExpression::EmptyRelation,
                     )?;
 
                     CTEQuery::Select(recursive_ra)
@@ -150,7 +150,7 @@ impl CTE {
                         s,
                         scope,
                         placeholders,
-                        &RaExpression::EmptyRelation,
+                        &mut RaExpression::EmptyRelation,
                     )?;
 
                     CTEQuery::Select(s)

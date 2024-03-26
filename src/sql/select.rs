@@ -35,9 +35,15 @@ pub struct Select<'s> {
     pub order_by: Option<Vec<Ordering<'s>>>,
     pub group_by: Option<Vec<ColumnReference<'s>>>,
     pub having: Option<Condition<'s>>,
-    pub limit: Option<usize>,
+    pub limit: Option<SelectLimit>,
     pub for_update: Option<()>,
     pub combine: Option<(Combination, Box<Select<'s>>)>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SelectLimit {
+    pub limit: usize,
+    pub offset: Option<usize>,
 }
 
 impl<'s> Select<'s> {
@@ -61,7 +67,7 @@ impl<'s> Select<'s> {
                 .as_ref()
                 .map(|idents| idents.iter().map(|i| i.to_static()).collect()),
             having: self.having.as_ref().map(|h| h.to_static()),
-            limit: self.limit,
+            limit: self.limit.clone(),
             for_update: self.for_update.clone(),
             combine: self
                 .combine
@@ -77,6 +83,7 @@ impl<'s> Select<'s> {
             .map(|v| v.max_parameter())
             .max()
             .unwrap_or(0);
+        let table_max = self.table.as_ref().map(|t| t.max_parameter()).unwrap_or(0);
         let where_max = self
             .where_condition
             .as_ref()
@@ -88,7 +95,7 @@ impl<'s> Select<'s> {
             .map(|(_, s)| s.max_parameter())
             .unwrap_or(0);
 
-        [value_max, where_max, comb_max]
+        [value_max, table_max, where_max, comb_max]
             .into_iter()
             .max()
             .unwrap_or(0)
@@ -197,16 +204,22 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                     nom::character::complete::multispace1,
                     nom::character::complete::digit1
                         .map(|raw| core::str::from_utf8(raw).unwrap().parse::<usize>().unwrap()),
-                    nom::combinator::opt(nom::sequence::tuple((
-                        nom::character::complete::multispace1,
-                        nom::bytes::complete::tag_no_case("OFFSET"),
-                        nom::character::complete::multispace1,
-                        nom::character::complete::digit1.map(|raw| {
-                            core::str::from_utf8(raw).unwrap().parse::<usize>().unwrap()
-                        }),
-                    ))),
+                    nom::combinator::opt(
+                        nom::sequence::tuple((
+                            nom::character::complete::multispace1,
+                            nom::bytes::complete::tag_no_case("OFFSET"),
+                            nom::character::complete::multispace1,
+                            nom::character::complete::digit1.map(|raw| {
+                                core::str::from_utf8(raw).unwrap().parse::<usize>().unwrap()
+                            }),
+                        ))
+                        .map(|(_, _, _, v)| v),
+                    ),
                 ))
-                .map(|(_, _, _, count, tmp)| count),
+                .map(|(_, _, _, count, offset)| SelectLimit {
+                    limit: count,
+                    offset,
+                }),
             ),
             nom::combinator::opt(
                 nom::sequence::tuple((
@@ -281,7 +294,10 @@ mod tests {
                 order_by: None,
                 group_by: None,
                 having: None,
-                limit: Some(1),
+                limit: Some(SelectLimit {
+                    limit: 1,
+                    offset: None
+                }),
                 for_update: None,
                 combine: None,
             },

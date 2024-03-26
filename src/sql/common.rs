@@ -51,6 +51,11 @@ pub enum ValueExpression<'s> {
     List(Vec<ValueExpression<'s>>),
     SubQuery(select::Select<'s>),
     Not(Box<ValueExpression<'s>>),
+    Case {
+        matched_value: Box<ValueExpression<'s>>,
+        cases: Vec<(Vec<ValueExpression<'s>>, ValueExpression<'s>)>,
+        else_case: Option<Box<ValueExpression<'s>>>,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -102,6 +107,11 @@ impl<'s> ValueExpression<'s> {
             Self::List(_) => false,
             Self::SubQuery(_) => false,
             Self::Not(v) => v.is_aggregate(),
+            Self::Case {
+                matched_value,
+                cases,
+                else_case,
+            } => false,
         }
     }
 
@@ -146,6 +156,23 @@ impl<'s> ValueExpression<'s> {
             Self::List(vals) => ValueExpression::List(vals.iter().map(|v| v.to_static()).collect()),
             Self::SubQuery(s) => ValueExpression::SubQuery(s.to_static()),
             Self::Not(v) => ValueExpression::Not(Box::new(v.to_static())),
+            Self::Case {
+                matched_value,
+                cases,
+                else_case,
+            } => ValueExpression::Case {
+                matched_value: Box::new(matched_value.to_static()),
+                cases: cases
+                    .iter()
+                    .map(|(matching, value)| {
+                        (
+                            matching.iter().map(|v| v.to_static()).collect(),
+                            value.to_static(),
+                        )
+                    })
+                    .collect(),
+                else_case: else_case.as_ref().map(|c| Box::new(c.to_static())),
+            },
         }
     }
 
@@ -181,6 +208,20 @@ impl<'s> ValueExpression<'s> {
             Self::List(parts) => parts.iter().map(|p| p.max_parameter()).max().unwrap_or(0),
             Self::SubQuery(s) => s.max_parameter(),
             Self::Not(v) => v.max_parameter(),
+            Self::Case {
+                matched_value,
+                cases,
+                else_case,
+            } => core::iter::once(matched_value.max_parameter())
+                .chain(cases.iter().flat_map(|(targets, value)| {
+                    targets
+                        .iter()
+                        .map(|t| t.max_parameter())
+                        .chain(core::iter::once(value.max_parameter()))
+                }))
+                .chain(else_case.iter().map(|c| c.max_parameter()))
+                .max()
+                .unwrap_or(0),
         }
     }
 }
@@ -212,6 +253,49 @@ pub fn value_expression(
             value_expression,
         ))
         .map(|(_, _, value)| ValueExpression::Not(Box::new(value))),
+        nom::sequence::tuple((
+            nom::bytes::complete::tag_no_case("CASE"),
+            nom::character::complete::multispace1,
+            value_expression,
+            nom::multi::many1(
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    nom::bytes::complete::tag_no_case("WHEN"),
+                    nom::character::complete::multispace1,
+                    nom::multi::separated_list1(
+                        nom::sequence::tuple((
+                            nom::character::complete::multispace0,
+                            nom::bytes::complete::tag(","),
+                            nom::character::complete::multispace0,
+                        )),
+                        value_expression,
+                    ),
+                    nom::character::complete::multispace1,
+                    nom::bytes::complete::tag_no_case("THEN"),
+                    nom::character::complete::multispace1,
+                    value_expression,
+                ))
+                .map(|(_, _, _, target_expr, _, _, _, value)| (target_expr, value)),
+            ),
+            nom::combinator::opt(
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    nom::bytes::complete::tag_no_case("ELSE"),
+                    nom::character::complete::multispace1,
+                    value_expression,
+                ))
+                .map(|(_, _, _, v)| v),
+            ),
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag("END"),
+        ))
+        .map(
+            |(_, _, matched_value, cases, else_case, _, _)| ValueExpression::Case {
+                matched_value: Box::new(matched_value),
+                cases: cases,
+                else_case: else_case.map(|v| Box::new(v)),
+            },
+        ),
         nom::combinator::map(
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),
@@ -916,6 +1000,35 @@ mod tests {
                     combine: None
                 })),
                 operator: BinaryOperator::In,
+            },
+            tmp
+        );
+    }
+
+    #[test]
+    fn case_when_then() {
+        let (remaining, tmp) = value_expression(
+            "CASE field WHEN 'first' THEN 123 WHEN 'second' THEN 234 ELSE 0 END".as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            ValueExpression::Case {
+                matched_value: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "field".into()
+                })),
+                cases: vec![
+                    (
+                        vec![ValueExpression::Literal(Literal::Str("first".into()))],
+                        ValueExpression::Literal(Literal::SmallInteger(123))
+                    ),
+                    (
+                        vec![ValueExpression::Literal(Literal::Str("second".into()))],
+                        ValueExpression::Literal(Literal::SmallInteger(234))
+                    )
+                ],
+                else_case: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(0)))),
             },
             tmp
         );

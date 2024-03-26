@@ -2,8 +2,9 @@ use tokio::io::AsyncWrite;
 
 use crate::{
     execution,
-    postgres::{MessageResponse, RowDescriptionField},
-    sql,
+    postgres::{FormatCode, MessageResponse, RowDescriptionField},
+    sql::DataType,
+    storage,
 };
 
 #[derive(Debug, PartialEq)]
@@ -12,39 +13,58 @@ pub enum MessageFlowContext {
     ExtendedQuery,
 }
 
+#[derive(Debug)]
+pub enum RespondError {
+    SerializeField {
+        value: storage::Data,
+        format: FormatCode,
+    },
+}
+
 pub async fn responde_execute_result<W>(
     writer: &mut W,
     result: execution::ExecuteResult,
     ctx: &mut execution::Context,
     flow: MessageFlowContext,
     is_last_response: bool,
-) -> Result<(), ()>
+) -> Result<(), RespondError>
 where
     W: AsyncWrite + Unpin,
 {
     match result {
-        execution::ExecuteResult::Select { content } => {
-            tracing::info!("Content: {:?}", content);
+        execution::ExecuteResult::Select {
+            content,
+            mut formats,
+        } => {
+            tracing::debug!("Content: {:?}", content);
 
             let row_count = content.parts.iter().flat_map(|p| p.rows.iter()).count();
+
+            if formats.is_empty() {
+                formats.extend(core::iter::repeat(FormatCode::Text).take(content.columns.len()));
+            } else if formats.len() == 1 {
+                let entry = formats.get(0).cloned().unwrap();
+                formats.extend(
+                    core::iter::repeat(entry).take(content.columns.len().saturating_sub(1)),
+                );
+            } else {
+                assert_eq!(content.columns.len(), formats.len());
+            }
 
             if MessageFlowContext::SimpleQuery == flow {
                 MessageResponse::RowDescription {
                     fields: content
                         .columns
                         .iter()
-                        .map(|(name, ty, _)| RowDescriptionField {
+                        .zip(formats.iter())
+                        .map(|((name, ty, _), format)| RowDescriptionField {
                             name: name.clone(),
                             table_id: 0,
                             column_attribute: 0,
                             type_size: ty.size(),
-                            format_code: match ty {
-                                sql::DataType::Serial
-                                | sql::DataType::BigSerial
-                                | sql::DataType::SmallInteger
-                                | sql::DataType::Integer
-                                | sql::DataType::BigInteger => 1,
-                                _ => 0,
+                            format_code: match format {
+                                FormatCode::Text => 0,
+                                FormatCode::Binary => 1,
                             },
                             type_id: ty.type_oid(),
                             type_modifier: 0,
@@ -62,7 +82,16 @@ where
                 let values: Vec<_> = row
                     .data
                     .iter()
-                    .map(|r| r.serialize().ok_or(()))
+                    .zip(formats.iter())
+                    .zip(content.columns.iter())
+                    .map(|((data, format), column)| {
+                        data.serialize(format, column.1.clone()).ok_or_else(|| {
+                            RespondError::SerializeField {
+                                value: data.clone(),
+                                format: format.clone(),
+                            }
+                        })
+                    })
                     .collect::<Result<_, _>>()?;
                 MessageResponse::DataRow { values }
                     .send(writer)
@@ -150,15 +179,39 @@ where
         execution::ExecuteResult::Insert {
             inserted_rows,
             returning,
+            mut formats,
         } => {
             tracing::trace!("Insert completed");
             tracing::trace!("Returning: {:?}", returning);
 
             if returning.len() > 0 {
+                if formats.is_empty() {
+                    formats.extend(core::iter::repeat(FormatCode::Text).take(returning[0].len()));
+                } else if formats.len() == 1 {
+                    let entry = formats.get(0).cloned().unwrap();
+                    formats.extend(
+                        core::iter::repeat(entry).take(returning[0].len().saturating_sub(1)),
+                    );
+                } else {
+                    assert_eq!(returning[0].len(), formats.len());
+                }
+
                 for row in returning {
+                    assert_eq!(row.len(), formats.len());
+
                     let values: Vec<_> = row
                         .iter()
-                        .map(|r| r.serialize().ok_or(()))
+                        .zip(formats.iter())
+                        .map(|(r, format)| {
+                            // TODO
+                            // Where to get the type for this?
+                            r.serialize(format, DataType::BigInteger).ok_or_else(|| {
+                                RespondError::SerializeField {
+                                    value: r.clone(),
+                                    format: format.clone(),
+                                }
+                            })
+                        })
                         .collect::<Result<_, _>>()?;
 
                     MessageResponse::DataRow { values }

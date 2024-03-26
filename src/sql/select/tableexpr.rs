@@ -185,6 +185,24 @@ impl<'s> TableExpression<'s> {
             Self::SubQuery(inner) => TableExpression::SubQuery(Box::new(inner.to_static())),
         }
     }
+
+    pub fn max_parameter(&self) -> usize {
+        match self {
+            Self::Relation(_) => 0,
+            Self::Renamed { inner, .. } => inner.max_parameter(),
+            Self::Join {
+                left,
+                right,
+                condition,
+                ..
+            } => core::iter::once(left.max_parameter())
+                .chain(core::iter::once(right.max_parameter()))
+                .chain(core::iter::once(condition.max_parameter()))
+                .max()
+                .unwrap_or(0),
+            Self::SubQuery(sq) => sq.max_parameter(),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -12,7 +12,6 @@ use crate::{
 };
 
 mod types;
-use nom::combinator::cond;
 pub use types::PossibleTypes;
 
 mod condition;
@@ -56,6 +55,10 @@ pub type ProjectionAttribute = Attribute<RaValueExpression>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RaExpression {
+    Renamed {
+        name: String,
+        inner: Box<Self>,
+    },
     Projection {
         inner: Box<Self>,
         attributes: Vec<ProjectionAttribute>,
@@ -85,6 +88,7 @@ pub enum RaExpression {
     Limit {
         inner: Box<Self>,
         limit: usize,
+        offset: usize,
     },
     OrderBy {
         inner: Box<Self>,
@@ -143,7 +147,7 @@ pub enum ParseSelectError {
     UnknownRelation(String),
     UnknownAttribute {
         attr: ColumnReference<'static>,
-        available: Vec<String>,
+        available: Vec<(String, String)>,
         context: Cow<'static, str>,
     },
     NotImplemented(&'static str),
@@ -214,20 +218,20 @@ impl ProjectionAttribute {
         scope: &mut Scope<'_>,
         expr: &ValueExpression<'_>,
         placeholders: &mut HashMap<usize, DataType>,
-        table_expression: &RaExpression,
+        table_expression: &mut RaExpression,
     ) -> Result<Vec<ProjectionAttribute>, ParseSelectError> {
         if matches!(expr, ValueExpression::All) {
             let columns = table_expression.get_columns();
 
             return Ok(columns
                 .into_iter()
-                .map(|column| ProjectionAttribute {
+                .map(|(_, name, ty, id)| ProjectionAttribute {
                     id: scope.attribute_id(),
-                    name: column.0.clone(),
+                    name: name.clone(),
                     value: RaValueExpression::Attribute {
-                        name: column.0.clone(),
-                        ty: column.1.clone(),
-                        a_id: column.2,
+                        name: name.clone(),
+                        ty: ty.clone(),
+                        a_id: id,
                     },
                 })
                 .collect());
@@ -242,7 +246,7 @@ impl ProjectionAttribute {
                 None => relation.0.as_ref(),
             };
 
-            columns.retain(|(_, _, id)| match table_expression.get_source(*id) {
+            columns.retain(|(_, _, _, id)| match table_expression.get_source(*id) {
                 Some(expr) => match expr {
                     RaExpression::BaseRelation { name, .. } => name.0.as_ref() == src_name,
                     _ => false,
@@ -254,13 +258,13 @@ impl ProjectionAttribute {
 
             return Ok(columns
                 .into_iter()
-                .map(|column| ProjectionAttribute {
+                .map(|(_, name, ty, id)| ProjectionAttribute {
                     id: scope.attribute_id(),
-                    name: column.0.clone(),
+                    name: name.clone(),
                     value: RaValueExpression::Attribute {
-                        name: column.0.clone(),
-                        ty: column.1.clone(),
-                        a_id: column.2,
+                        name: name.clone(),
+                        ty: ty.clone(),
+                        a_id: id,
                     },
                 })
                 .collect());
@@ -289,6 +293,7 @@ impl ProjectionAttribute {
 impl RaExpression {
     pub fn get_source(&self, attribute: AttributeId) -> Option<&RaExpression> {
         match self {
+            Self::Renamed { name, inner } => inner.get_source(attribute),
             Self::Projection { inner, .. } => {
                 if let Some(src) = inner.get_source(attribute) {
                     return Some(src);
@@ -314,7 +319,7 @@ impl RaExpression {
                 inner,
                 attributes,
                 aggregation_condition,
-            } => None,
+            } => None, // TODO
             Self::Limit { inner, .. } => inner.get_source(attribute),
             Self::OrderBy { inner, .. } => inner.get_source(attribute),
             Self::CTE { name, columns } => None, // TODO
@@ -324,6 +329,7 @@ impl RaExpression {
 
     pub fn get_column(&self, name: &str) -> Option<DataType> {
         match self {
+            Self::Renamed { name, inner } => inner.get_column(name),
             Self::Projection { attributes, .. } => attributes
                 .iter()
                 .find(|attr| attr.name == name)
@@ -361,19 +367,24 @@ impl RaExpression {
         }
     }
 
-    pub fn get_columns(&self) -> Vec<(String, DataType, AttributeId)> {
+    pub fn get_columns(&self) -> Vec<(String, String, DataType, AttributeId)> {
         match self {
+            Self::Renamed { name, inner } => inner
+                .get_columns()
+                .into_iter()
+                .map(|(_, c, t, i)| (name.clone(), c, t, i))
+                .collect::<Vec<_>>(),
             Self::Projection { attributes, .. } => attributes
                 .iter()
                 .map(|attr| {
                     let dt = attr.value.datatype().unwrap();
-                    (attr.name.clone(), dt, attr.id)
+                    ("".into(), attr.name.clone(), dt, attr.id)
                 })
                 .collect(),
             Self::Selection { inner, .. } => inner.get_columns(),
-            Self::BaseRelation { columns, .. } => columns
+            Self::BaseRelation { columns, name } => columns
                 .iter()
-                .map(|(n, t, id)| (n.clone(), t.clone(), *id))
+                .map(|(n, t, id)| (name.0.to_string(), n.clone(), t.clone(), *id))
                 .collect(),
             Self::Join { left, right, .. } => {
                 let mut result = Vec::new();
@@ -386,13 +397,20 @@ impl RaExpression {
             Self::EmptyRelation => Vec::new(),
             Self::Aggregation { attributes, .. } => attributes
                 .iter()
-                .map(|attr| (attr.name.clone(), attr.value.return_ty(), attr.id))
+                .map(|attr| {
+                    (
+                        "".into(),
+                        attr.name.clone(),
+                        attr.value.return_ty(),
+                        attr.id,
+                    )
+                })
                 .collect(),
             Self::Limit { inner, .. } => inner.get_columns(),
             Self::OrderBy { inner, .. } => inner.get_columns(),
             Self::CTE { name, columns } => columns
                 .iter()
-                .map(|(n, t, id)| (n.clone(), t.clone(), *id))
+                .map(|(n, t, id)| ("".into(), n.clone(), t.clone(), *id))
                 .collect(),
             Self::Chain { parts } => parts[0].get_columns(),
         }
@@ -420,7 +438,7 @@ impl RaExpression {
             query,
             &mut scope,
             &mut placeholders,
-            &RaExpression::EmptyRelation,
+            &mut RaExpression::EmptyRelation,
         )?;
 
         Ok((s, placeholders))
@@ -460,11 +478,20 @@ impl RaExpression {
 
                     match &cte.value {
                         CTEValue::Standard { query } => match query {
-                            CTEQuery::Select(s) => Some(s.get_columns()),
+                            CTEQuery::Select(s) => Some(
+                                s.get_columns()
+                                    .into_iter()
+                                    .map(|(_, n, t, i)| (n, t, i))
+                                    .collect::<Vec<_>>(),
+                            ),
                         },
                         CTEValue::Recursive { query, columns } => match query {
                             CTEQuery::Select(s) => {
-                                let mut s_columns = s.get_columns();
+                                let mut s_columns = s
+                                    .get_columns()
+                                    .into_iter()
+                                    .map(|(_, n, t, i)| (n, t, i))
+                                    .collect::<Vec<_>>();
                                 for (c, name) in s_columns.iter_mut().zip(columns.iter()) {
                                     c.0 = name.clone();
                                 }
@@ -501,11 +528,14 @@ impl RaExpression {
                     inner_result
                         .get_columns()
                         .into_iter()
-                        .map(|(n, t, _)| (n, t))
+                        .map(|(_, n, t, _)| (n, t))
                         .collect(),
                 );
 
-                Ok(inner_result)
+                Ok(RaExpression::Renamed {
+                    name: name.0.to_string(),
+                    inner: Box::new(inner_result),
+                })
             }
             TableExpression::Join {
                 left,
@@ -524,7 +554,7 @@ impl RaExpression {
                 };
 
                 let ra_condition =
-                    RaCondition::parse_internal(scope, condition, placeholders, &joined)?;
+                    RaCondition::parse_internal(scope, condition, placeholders, &mut joined)?;
 
                 if let Self::Join { condition, .. } = &mut joined {
                     *condition = ra_condition;
@@ -534,7 +564,7 @@ impl RaExpression {
             }
             TableExpression::SubQuery(query) => {
                 let query =
-                    Self::parse_s(query, scope, placeholders, &RaExpression::EmptyRelation)?;
+                    Self::parse_s(query, scope, placeholders, &mut RaExpression::EmptyRelation)?;
 
                 Ok(query)
             }
@@ -545,9 +575,9 @@ impl RaExpression {
         query: &Select<'_>,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
-        ra_expr: &RaExpression,
+        ra_expr: &mut RaExpression,
     ) -> Result<Self, ParseSelectError> {
-        let table_expression = match query.table.as_ref() {
+        let mut table_expression = match query.table.as_ref() {
             Some(table_expr) => Self::parse_table_expression(table_expr, scope, placeholders)?,
             None => Self::EmptyRelation,
         };
@@ -556,13 +586,17 @@ impl RaExpression {
             table_expression
                 .get_columns()
                 .into_iter()
-                .map(|(n, d, _)| (n, d)),
+                .map(|(_, n, d, _)| (n, d)),
         );
 
         let table_expression = match &query.where_condition {
             Some(condition) => {
-                let or_condition =
-                    RaCondition::parse_internal(scope, condition, placeholders, &table_expression)?;
+                let or_condition = RaCondition::parse_internal(
+                    scope,
+                    condition,
+                    placeholders,
+                    &mut table_expression,
+                )?;
 
                 Self::Selection {
                     inner: Box::new(table_expression),
@@ -572,7 +606,7 @@ impl RaExpression {
             None => table_expression,
         };
 
-        let table_expression = match &query.order_by {
+        let mut table_expression = match &query.order_by {
             Some(orders) => {
                 // (order_attr, order)
 
@@ -582,8 +616,8 @@ impl RaExpression {
                         let attr = table_expression
                             .get_columns()
                             .into_iter()
-                            .find(|(name, _, _)| name == ordering.column.column.0.as_ref())
-                            .map(|(_, _, id)| id)
+                            .find(|(_, name, _, _)| name == ordering.column.column.0.as_ref())
+                            .map(|(_, _, _, id)| id)
                             .ok_or_else(|| ParseSelectError::Other)?;
 
                         Ok((attr, ordering.order.clone()))
@@ -599,7 +633,11 @@ impl RaExpression {
         };
 
         let res = if query.values.iter().any(|v| v.is_aggregate()) || query.group_by.is_some() {
-            let previous_columns = table_expression.get_columns();
+            let previous_columns = table_expression
+                .get_columns()
+                .into_iter()
+                .map(|(_, n, t, i)| (n, t, i))
+                .collect::<Vec<_>>();
 
             let agg_condition = match query.group_by.as_ref() {
                 Some(tmp) => {
@@ -619,7 +657,7 @@ impl RaExpression {
                                     attr: field.to_static(),
                                     available: previous_columns
                                         .iter()
-                                        .map(|(n, _, _)| n.clone())
+                                        .map(|(n, _, _)| (String::new(), n.clone()))
                                         .collect(),
                                     context: "Aggregate Condition Parsing".into(),
                                 })
@@ -663,13 +701,13 @@ impl RaExpression {
                             Some(src_expr.get_columns())
                         })
                         .flat_map(|tmp| {
-                            tmp.into_iter().map(|(n, _, id)| (n, id)).filter(|(_, id)| {
-                                previous_columns.iter().any(|(_, _, pid)| id == pid)
-                            })
+                            tmp.into_iter()
+                                .map(|(_, n, _, id)| (n, id))
+                                .filter(|(_, id)| {
+                                    previous_columns.iter().any(|(_, _, pid)| id == pid)
+                                })
                         })
                         .collect();
-
-                    dbg!(&extra_fields_from_primary_keys);
 
                     fields.extend(extra_fields_from_primary_keys);
 
@@ -690,7 +728,7 @@ impl RaExpression {
                         scope,
                         &previous_columns,
                         placeholders,
-                        &table_expression,
+                        &mut table_expression,
                     )
                 })
                 .collect::<Result<_, _>>()?;
@@ -701,27 +739,64 @@ impl RaExpression {
                 value.value.check(&agg_condition, scope.schemas)?;
             }
 
-            Ok(Self::Aggregation {
+            let select_columns: Vec<_> = attribute_values
+                .iter()
+                .map(|attr| ProjectionAttribute {
+                    id: scope.attribute_id(),
+                    name: attr.name.clone(),
+                    value: RaValueExpression::Attribute {
+                        name: attr.name.clone(),
+                        ty: attr.value.return_ty(),
+                        a_id: attr.id,
+                    },
+                })
+                .collect();
+
+            let mut aggregated = Self::Aggregation {
                 inner: Box::new(table_expression),
                 attributes: attribute_values,
                 aggregation_condition: agg_condition,
+            };
+
+            let filtered = match query.having.as_ref() {
+                Some(having) => {
+                    let condition =
+                        RaCondition::parse_internal(scope, having, placeholders, &mut aggregated)?;
+
+                    Self::Selection {
+                        inner: Box::new(aggregated),
+                        filter: condition,
+                    }
+                }
+                None => aggregated,
+            };
+
+            Ok(Self::Projection {
+                inner: Box::new(filtered),
+                attributes: select_columns,
             })
         } else {
             let select_attributes: Vec<Vec<ProjectionAttribute>> = query
                 .values
                 .iter()
                 .map(|ve| {
-                    ProjectionAttribute::parse_internal(scope, ve, placeholders, &table_expression)
+                    ProjectionAttribute::parse_internal(
+                        scope,
+                        ve,
+                        placeholders,
+                        &mut table_expression,
+                    )
                 })
                 .collect::<Result<_, _>>()?;
 
-            match query.limit {
+            match &query.limit {
                 Some(limit) => Ok(Self::Limit {
                     inner: Box::new(Self::Projection {
                         inner: Box::new(table_expression),
                         attributes: select_attributes.into_iter().flat_map(|v| v).collect(),
                     }),
-                    limit,
+                    limit: limit.limit,
+                    offset: limit.offset.unwrap_or(0),
                 }),
                 None => Ok(Self::Projection {
                     inner: Box::new(table_expression),
@@ -1337,9 +1412,12 @@ mod tests {
 
         assert_eq!(
             RaExpression::Projection {
-                inner: Box::new(RaExpression::BaseRelation {
-                    name: Identifier("users".into()),
-                    columns: vec![("name".to_string(), DataType::Text, AttributeId::new(0))]
+                inner: Box::new(RaExpression::Renamed {
+                    name: "u".into(),
+                    inner: Box::new(RaExpression::BaseRelation {
+                        name: Identifier("users".into()),
+                        columns: vec![("name".to_string(), DataType::Text, AttributeId::new(0))]
+                    })
                 }),
                 attributes: vec![Attribute {
                     id: AttributeId::new(1),
@@ -1413,6 +1491,8 @@ mod tests {
         .into_iter()
         .collect();
 
+        dbg!(&select_query);
+
         let (ra_expr, param_types) = RaExpression::parse_select(&select_query, &schemas).unwrap();
 
         assert_eq!(HashMap::new(), param_types);
@@ -1420,9 +1500,12 @@ mod tests {
         assert_eq!(
             RaExpression::Projection {
                 inner: Box::new(RaExpression::Selection {
-                    inner: Box::new(RaExpression::BaseRelation {
-                        name: Identifier("users".into()),
-                        columns: vec![("name".to_string(), DataType::Text, AttributeId(0))]
+                    inner: Box::new(RaExpression::Renamed {
+                        name: "u".into(),
+                        inner: Box::new(RaExpression::BaseRelation {
+                            name: Identifier("users".into()),
+                            columns: vec![("name".to_string(), DataType::Text, AttributeId(0))]
+                        })
                     }),
                     filter: RaCondition::And(vec![RaCondition::Value(Box::new(
                         RaConditionValue::Comparison {
@@ -1475,27 +1558,38 @@ mod tests {
         assert_eq!(HashMap::new(), param_types);
 
         assert_eq!(
-            RaExpression::Aggregation {
-                inner: Box::new(RaExpression::BaseRelation {
-                    name: Identifier("users".into()),
-                    columns: vec![
-                        ("name".to_string(), DataType::Text, AttributeId::new(0)),
-                        ("id".to_string(), DataType::Integer, AttributeId::new(1))
-                    ]
+            RaExpression::Projection {
+                inner: Box::new(RaExpression::Aggregation {
+                    inner: Box::new(RaExpression::BaseRelation {
+                        name: Identifier("users".into()),
+                        columns: vec![
+                            ("name".to_string(), DataType::Text, AttributeId::new(0)),
+                            ("id".to_string(), DataType::Integer, AttributeId::new(1))
+                        ]
+                    }),
+                    attributes: vec![Attribute {
+                        id: AttributeId::new(2),
+                        name: "".to_string(),
+                        value: AggregateExpression::Max {
+                            inner: Box::new(RaValueExpression::Attribute {
+                                ty: DataType::Integer,
+                                name: "id".into(),
+                                a_id: AttributeId::new(1),
+                            }),
+                            dtype: DataType::Integer
+                        }
+                    }],
+                    aggregation_condition: AggregationCondition::Everything
                 }),
-                attributes: vec![Attribute {
-                    id: AttributeId::new(2),
-                    name: "".to_string(),
-                    value: AggregateExpression::Max {
-                        inner: Box::new(RaValueExpression::Attribute {
-                            ty: DataType::Integer,
-                            name: "id".into(),
-                            a_id: AttributeId::new(1),
-                        }),
-                        dtype: DataType::Integer
-                    }
-                }],
-                aggregation_condition: AggregationCondition::Everything
+                attributes: vec![ProjectionAttribute {
+                    id: AttributeId::new(3),
+                    name: "".into(),
+                    value: RaValueExpression::Attribute {
+                        name: "".into(),
+                        ty: DataType::Integer,
+                        a_id: AttributeId::new(2)
+                    },
+                }]
             },
             ra_expr
         );
