@@ -270,8 +270,13 @@ impl ProjectionAttribute {
                 .collect());
         }
 
-        let raw_value =
-            RaValueExpression::parse_internal(scope, expr, placeholders, table_expression)?;
+        let raw_value = RaValueExpression::parse_internal(
+            scope,
+            expr,
+            placeholders,
+            table_expression,
+            &mut Vec::new(),
+        )?;
 
         let (name, value): (String, RaValueExpression) = match raw_value {
             RaValueExpression::Attribute { name, ty, a_id } => (
@@ -439,6 +444,7 @@ impl RaExpression {
             &mut scope,
             &mut placeholders,
             &mut RaExpression::EmptyRelation,
+            &mut Vec::new(),
         )?;
 
         Ok((s, placeholders))
@@ -553,8 +559,13 @@ impl RaExpression {
                     condition: RaCondition::And(vec![]),
                 };
 
-                let ra_condition =
-                    RaCondition::parse_internal(scope, condition, placeholders, &mut joined)?;
+                let ra_condition = RaCondition::parse_internal(
+                    scope,
+                    condition,
+                    placeholders,
+                    &mut joined,
+                    &mut Vec::new(),
+                )?;
 
                 if let Self::Join { condition, .. } = &mut joined {
                     *condition = ra_condition;
@@ -563,8 +574,13 @@ impl RaExpression {
                 Ok(joined)
             }
             TableExpression::SubQuery(query) => {
-                let query =
-                    Self::parse_s(query, scope, placeholders, &mut RaExpression::EmptyRelation)?;
+                let query = Self::parse_s(
+                    query,
+                    scope,
+                    placeholders,
+                    &mut RaExpression::EmptyRelation,
+                    &mut Vec::new(),
+                )?;
 
                 Ok(query)
             }
@@ -576,6 +592,7 @@ impl RaExpression {
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         ra_expr: &mut RaExpression,
+        outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
         let mut table_expression = match query.table.as_ref() {
             Some(table_expr) => Self::parse_table_expression(table_expr, scope, placeholders)?,
@@ -596,6 +613,7 @@ impl RaExpression {
                     condition,
                     placeholders,
                     &mut table_expression,
+                    outer,
                 )?;
 
                 Self::Selection {
@@ -760,8 +778,13 @@ impl RaExpression {
 
             let filtered = match query.having.as_ref() {
                 Some(having) => {
-                    let condition =
-                        RaCondition::parse_internal(scope, having, placeholders, &mut aggregated)?;
+                    let condition = RaCondition::parse_internal(
+                        scope,
+                        having,
+                        placeholders,
+                        &mut aggregated,
+                        &mut Vec::new(),
+                    )?;
 
                     Self::Selection {
                         inner: Box::new(aggregated),
@@ -807,7 +830,7 @@ impl RaExpression {
 
         match query.combine.as_ref() {
             Some((c, s)) => {
-                let other = Self::parse_s(&s, scope, placeholders, ra_expr)?;
+                let other = Self::parse_s(&s, scope, placeholders, ra_expr, outer)?;
 
                 match c {
                     Combination::Union => Ok(Self::Chain {

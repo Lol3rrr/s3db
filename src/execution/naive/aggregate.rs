@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ra::{self, RaValueExpression},
+    ra::{self, Attribute, AttributeId, RaValueExpression},
     sql::DataType,
     storage::{self, Storage},
 };
@@ -70,6 +70,7 @@ impl AggregateState {
         &mut self,
         engine: &NaiveEngine<S>,
         row: &storage::Row,
+        outer: &HashMap<AttributeId, storage::Data>,
     ) -> Result<(), EvaulateRaError<S::LoadingError>>
     where
         S: Storage,
@@ -113,7 +114,7 @@ impl AggregateState {
                 ..
             } => {
                 let tmp = engine
-                    .evaluate_ra_value(&expr, row, columns, &HashMap::new(), &HashMap::new())
+                    .evaluate_ra_value(&expr, row, columns, &HashMap::new(), &HashMap::new(), outer)
                     .await?;
 
                 match value.as_mut() {

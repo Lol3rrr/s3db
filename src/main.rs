@@ -2,7 +2,10 @@
 
 use std::{collections::HashMap, fs::File, rc::Rc};
 
-use s3db::execution::{self, PreparedStatement};
+use s3db::{
+    execution::{self, PreparedStatement},
+    sql::{self, Query},
+};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::Level;
 use tracing_subscriber::layer::SubscriberExt;
@@ -167,6 +170,13 @@ async fn handle_postgres_connection<E>(
                     .enumerate()
                     .map(|(i, q)| (i + 1 == query_count, q))
                 {
+                    if let Query::Prepare(prep) = query {
+                        // TODO
+                        dbg!(prep);
+
+                        continue;
+                    }
+
                     let result = match engine.execute(&query, &mut ctx).await {
                         Ok(r) => r,
                         Err(e) => {

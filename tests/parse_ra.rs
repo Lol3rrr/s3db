@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use s3db::{
-    ra::RaExpression,
+    ra::{RaDelete, RaExpression, RaUpdate},
     sql::{DataType, Query},
     storage::Schemas,
 };
@@ -18,6 +18,7 @@ fn grafana_schema() -> impl Iterator<Item = (String, Vec<(String, DataType)>)> {
                 ("slug".into(), DataType::Text),
                 ("is_folder".into(), DataType::Bool),
                 ("folder_id".into(), DataType::Integer),
+                ("folder_uid".into(), DataType::Integer),
                 ("org_id".into(), DataType::Integer),
             ],
         ),
@@ -297,6 +298,24 @@ ORDER BY dashboard.title ASC NULLS FIRST";
 }
 
 #[test]
+fn grafana_update_from_1() {
+    let query_str = "UPDATE dashboard\n\tSET folder_uid = folder.uid\n\tFROM dashboard folder\n\tWHERE dashboard.folder_id = folder.id\n\t  AND dashboard.is_folder = $1";
+
+    let update = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Update(u)) => u,
+        other => panic!("{:?}", other),
+    };
+
+    let schemas: Schemas = grafana_schema().collect();
+
+    let (result, placeholders) = RaUpdate::parse(&update, &schemas).unwrap();
+
+    assert_eq!(1, placeholders.len(), "{:?}", placeholders);
+
+    let _ = result;
+}
+
+#[test]
 fn specific() {
     let query_str = "SELECT substr(name, 2) FROM users GROUP BY name";
 
@@ -317,4 +336,37 @@ fn specific() {
     assert_eq!(HashMap::new(), parameter_types);
 
     dbg!(&select);
+}
+
+#[test]
+#[ignore = "Fixing some other time"]
+fn delete_with_correlated_subquery() {
+    let query_str =
+        "DELETE FROM users WHERE NOT EXISTS (SELECT 1 FROM roles WHERE roles.id = users.role)";
+
+    let query = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Delete(d)) => d,
+        other => panic!("{:?}", other),
+    };
+
+    let schemas: Schemas = [
+        (
+            "users".to_string(),
+            vec![
+                ("name".to_string(), DataType::Text),
+                ("role".into(), DataType::Integer),
+            ],
+        ),
+        ("roles".into(), vec![("id".into(), DataType::Integer)]),
+    ]
+    .into_iter()
+    .collect();
+
+    let (delete, parameter_types) = RaDelete::parse(&query, &schemas).unwrap();
+
+    assert_eq!(HashMap::new(), parameter_types);
+
+    dbg!(&delete);
+
+    todo!()
 }

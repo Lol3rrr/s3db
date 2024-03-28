@@ -102,14 +102,17 @@ impl RaUpdate {
                         .get_table(&other_src.0)
                         .ok_or(ParseSelectError::UnknownRelation(other_src.0.to_string()))?;
 
-                    RaExpression::BaseRelation {
-                        name: other_src.to_static(),
-                        columns: schema
-                            .rows
-                            .iter()
-                            .enumerate()
-                            .map(|(i, r)| (r.name.clone(), r.ty.clone(), AttributeId::new(i)))
-                            .collect(),
+                    RaExpression::Renamed {
+                        name: other_name.0.to_string(),
+                        inner: Box::new(RaExpression::BaseRelation {
+                            name: other_src.to_static(),
+                            columns: schema
+                                .rows
+                                .iter()
+                                .enumerate()
+                                .map(|(i, r)| (r.name.clone(), r.ty.clone(), AttributeId::new(i)))
+                                .collect(),
+                        }),
                     }
                 };
 
@@ -127,6 +130,7 @@ impl RaUpdate {
                             c,
                             &mut placeholders,
                             &mut joined,
+                            &mut Vec::new(),
                         )?;
                         Some(cond)
                     }
@@ -140,14 +144,20 @@ impl RaUpdate {
                         value,
                         &mut placeholders,
                         &mut joined,
+                        &mut Vec::new(),
                     )?;
 
-                    let target_ty = table_schema
+                    let target_ty_res = table_schema
                         .rows
                         .iter()
                         .find(|c| c.name.eq_ignore_ascii_case(name.0.as_ref()))
-                        .map(|c| &c.ty)
-                        .unwrap();
+                        .map(|c| &c.ty);
+                    let target_ty = match target_ty_res {
+                        Some(t) => t,
+                        None => {
+                            panic!("Determining Type for {:?}", name);
+                        }
+                    };
                     let expr = expr
                         .enforce_type(target_ty.clone(), &mut placeholders)
                         .unwrap();
@@ -178,6 +188,7 @@ impl RaUpdate {
                             c,
                             &mut placeholders,
                             &mut table_expr,
+                            &mut Vec::new(),
                         )?;
                         Some(cond)
                     }
@@ -191,6 +202,7 @@ impl RaUpdate {
                         value,
                         &mut placeholders,
                         &mut table_expr,
+                        &mut Vec::new(),
                     )?;
 
                     let target_ty = table_schema

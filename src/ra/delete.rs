@@ -51,6 +51,7 @@ impl RaDelete {
                     c,
                     &mut placeholders,
                     &mut base_relation,
+                    &mut Vec::new(),
                 )?;
 
                 Some(rac)

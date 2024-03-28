@@ -58,16 +58,18 @@ impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
 {
-    fn evaluate_ra<'s, 'p, 'f, 'c>(
+    fn evaluate_ra<'s, 'p, 'f, 'o, 'c>(
         &'s self,
         expr: ra::RaExpression,
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
+        outer: &'o HashMap<AttributeId, storage::Data>,
     ) -> LocalBoxFuture<'f, Result<storage::EntireRelation, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
         'p: 'f,
         'c: 'f,
+        'o: 'f,
     {
         async move {
             let mut pending = vec![&expr];
@@ -164,7 +166,7 @@ where
                     for row in input.into_rows() {
                         let mut data = Vec::new();
                         for attribute in attributes.iter() {
-                            let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes).await?;
+                            let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, outer).await?;
 
                             // TODO
                             // This is not a good fix
@@ -222,7 +224,8 @@ where
                                     &row,
                                     &inner_columns,
                                     placeholders,
-                                    ctes
+                                    ctes,
+                                    outer
                                 )
                                 .await?;
 
@@ -262,7 +265,7 @@ where
                                 .flat_map(|p| p.rows.into_iter())
                             {
                                 for state in states.iter_mut() {
-                                    state.update(&self, &row).await?;
+                                    state.update(&self, &row, outer).await?;
                                 }
                             }
 
@@ -318,7 +321,7 @@ where
 
                                 for row in group {
                                     for state in states.iter_mut() {
-                                        state.update(&self, &row).await?;
+                                        state.update(&self, &row, outer).await?;
                                     }
                                 }
 
@@ -437,7 +440,7 @@ where
                                         result_rows.len() as u64,
                                         joined_row_data,
                                     );
-                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes).await? {
+                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes, outer).await? {
                                         result_rows.push(row);
                                     }
                                 }
@@ -471,7 +474,7 @@ where
                                         joined_row_data,
                                     );
 
-                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes).await? {
+                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes, outer).await? {
                                         result_rows.push(row);
                                         included = true;
                                     }
@@ -530,13 +533,14 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'f>(
+    fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 'f>(
         &'s self,
         condition: &'cond ra::RaCondition,
         row: &'r storage::Row,
         columns: &'col [(String, DataType, AttributeId)],
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
+        outer: &'o HashMap<AttributeId, storage::Data>,
     ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -545,13 +549,14 @@ where
         'col: 'f,
         'p: 'f,
         'c: 'f,
+        'o: 'f,
     {
         async move {
             match condition {
                 ra::RaCondition::And(conditions) => {
                     for andcond in conditions.iter() {
                         if !self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes)
+                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer)
                             .await?
                         {
                             return Ok(false);
@@ -563,7 +568,7 @@ where
                 ra::RaCondition::Or(conditions) => {
                     for andcond in conditions.iter() {
                         if self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes)
+                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer)
                             .await?
                         {
                             return Ok(true);
@@ -574,7 +579,7 @@ where
                 }
                 ra::RaCondition::Value(value) => {
                     let res = self
-                        .evaluate_ra_cond_val(&value, row, columns, placeholders, ctes)
+                        .evaluate_ra_cond_val(&value, row, columns, placeholders, ctes, outer)
                         .await?;
                     Ok(res)
                 }
@@ -583,13 +588,14 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'f>(
+    fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 'f>(
         &'s self,
         condition: &'cond ra::RaConditionValue,
         row: &'r storage::Row,
         columns: &'col [(String, DataType, AttributeId)],
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
+        outer: &'o HashMap<AttributeId, storage::Data>,
     ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -598,15 +604,22 @@ where
         'col: 'f,
         'p: 'f,
         'c: 'f,
+        'o: 'f,
     {
         async move {
             match condition {
                 ra::RaConditionValue::Attribute { name, ty, a_id } => {
-                    dbg!(&name, &ty, &a_id);
+                    let data_result = row.data.iter().zip(columns.iter()).find(|(data, column)| &column.2 == a_id).map(|(d, _)| d);
+                    
+                    match data_result {
+                        Some(storage::Data::Boolean(v)) => Ok(*v),
+                        Some(d) => {
+                            dbg!(&d);
+                            Err(EvaulateRaError::Other("Invalid Data Type"))
+                        },
+                        None => Err(EvaulateRaError::UnknownAttribute { attribute: todo!("{:?} - {:?}", name, a_id) }),
+                    }
 
-                    Err(EvaulateRaError::Other(
-                        "Evaluating RA Condition Value not implemented yet",
-                    ))
                 }
                 ra::RaConditionValue::Comparison {
                     first,
@@ -614,10 +627,10 @@ where
                     comparison,
                 } => {
                     let first_value = self
-                        .evaluate_ra_value(first, row, columns, placeholders, ctes)
+                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer)
                         .await?;
                     let second_value = self
-                        .evaluate_ra_value(second, row, columns, placeholders, ctes)
+                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer)
                         .await?;
 
                     match comparison {
@@ -689,19 +702,25 @@ where
                 }
                 ra::RaConditionValue::Negation { inner } => {
                     let inner_result = self
-                        .evaluate_ra_cond_val(&inner, row, columns, placeholders, ctes)
+                        .evaluate_ra_cond_val(&inner, row, columns, placeholders, ctes, outer)
                         .await?;
 
                     Ok(!inner_result)
                 }
                 ra::RaConditionValue::Exists { query } => {
-                    match self.evaluate_ra(*query.clone(), placeholders, ctes).await {
+                    let n_tmp = {
+                        let mut tmp = outer.clone();
+                        tmp.extend(columns.iter().zip(row.data.iter()).map(|(column, data)| (column.2.clone(), data.clone())));
+                        tmp
+                    };
+
+                    match self.evaluate_ra(*query.clone(), placeholders, ctes, &n_tmp).await {
                         Ok(res) => Ok(res
                             .parts
                             .into_iter()
                             .flat_map(|p| p.rows.into_iter())
                             .any(|_| true)),
-                        Err(_) => Ok(false),
+                        Err(e) => panic!("{:?}", e),
                     }
                 }
             }
@@ -709,13 +728,14 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_value<'s, 'rve, 'row, 'columns, 'placeholders, 'c, 'f>(
+    fn evaluate_ra_value<'s, 'rve, 'row, 'columns, 'placeholders, 'c, 'o, 'f>(
         &'s self,
         expr: &'rve ra::RaValueExpression,
         row: &'row storage::Row,
         columns: &'columns [(String, DataType, AttributeId)],
         placeholders: &'placeholders HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
+        outer: &'o HashMap<AttributeId, storage::Data>
     ) -> LocalBoxFuture<'f, Result<storage::Data, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -724,6 +744,7 @@ where
         'columns: 'f,
         'placeholders: 'f,
         'c: 'f,
+        'o: 'f,
     {
         async move {
             match expr {
@@ -739,6 +760,11 @@ where
 
                     Ok(row.data[column_index].clone())
                 }
+                ra::RaValueExpression::OuterAttribute { a_id, .. } => {
+                    let value = outer.get(a_id).ok_or_else(|| EvaulateRaError::UnknownAttribute { attribute: todo!() })?;
+
+                    Ok(value.clone())
+                }
                 ra::RaValueExpression::Placeholder(placeholder) => {
                     placeholders.get(placeholder).cloned().ok_or_else(|| {
                         dbg!(&placeholders, &placeholder);
@@ -751,7 +777,7 @@ where
 
                     for part in elems.iter() {
                         let tmp = self
-                            .evaluate_ra_value(part, row, columns, placeholders, ctes)
+                            .evaluate_ra_value(part, row, columns, placeholders, ctes, outer)
                             .await?;
                         result.push(tmp);
                     }
@@ -759,7 +785,13 @@ where
                     Ok(Data::List(result))
                 }
                 ra::RaValueExpression::SubQuery { query } => {
-                    let result = self.evaluate_ra(query.clone(), placeholders, ctes).await?;
+                    let n_outer = {
+                        let mut tmp = outer.clone();
+                        // TODO
+                        dbg!(columns, row);
+                        tmp
+                    };
+                    let result = self.evaluate_ra(query.clone(), placeholders, ctes, &n_outer).await?;
 
                     let mut parts: Vec<_> = result
                         .parts
@@ -772,7 +804,7 @@ where
                 }
                 ra::RaValueExpression::Cast { inner, target } => {
                     let result = self
-                        .evaluate_ra_value(&inner, row, columns, placeholders, ctes)
+                        .evaluate_ra_value(&inner, row, columns, placeholders, ctes,outer)
                         .await?;
 
                     result
@@ -788,10 +820,10 @@ where
                     operator,
                 } => {
                     let first_value = self
-                        .evaluate_ra_value(&first, row, columns, placeholders, ctes)
+                        .evaluate_ra_value(&first, row, columns, placeholders, ctes, outer)
                         .await?;
                     let second_value = self
-                        .evaluate_ra_value(&second, row, columns, placeholders, ctes)
+                        .evaluate_ra_value(&second, row, columns, placeholders, ctes, outer)
                         .await?;
 
                     match operator {
@@ -832,7 +864,7 @@ where
                         dbg!(&name, &value, &is_called);
 
                         let value_res = self
-                            .evaluate_ra_value(&value, row, columns, placeholders, ctes)
+                            .evaluate_ra_value(&value, row, columns, placeholders, ctes, outer)
                             .await?;
                         dbg!(&value_res);
 
@@ -858,7 +890,7 @@ where
                         dbg!(&val);
 
                         let data = self
-                            .evaluate_ra_value(&val, row, columns, placeholders, ctes)
+                            .evaluate_ra_value(&val, row, columns, placeholders, ctes, outer)
                             .await?;
 
                         match data {
@@ -877,15 +909,15 @@ where
                         dbg!(&str_value, &start);
 
                         let str_value = self
-                            .evaluate_ra_value(&str_value, row, columns, placeholders, ctes)
+                            .evaluate_ra_value(&str_value, row, columns, placeholders, ctes, outer)
                             .await?;
                         let start_value = self
-                            .evaluate_ra_value(&start, row, columns, placeholders, ctes)
+                            .evaluate_ra_value(&start, row, columns, placeholders, ctes, outer)
                             .await?;
                         let count_value = match count.as_ref() {
                             Some(c) => {
                                 let val = self
-                                    .evaluate_ra_value(&c, row, columns, placeholders, ctes)
+                                    .evaluate_ra_value(&c, row, columns, placeholders, ctes, outer)
                                     .await?;
                                 Some(val)
                             }
@@ -919,7 +951,7 @@ where
         match &cte.value {
             ra::CTEValue::Standard { query } => match query {
                 ra::CTEQuery::Select(s) => {
-                    let evaluated = self.evaluate_ra(s.clone(), placeholders, ctes).await?;
+                    let evaluated = self.evaluate_ra(s.clone(), placeholders, ctes, &HashMap::new()).await?;
                     Ok(evaluated)
                 }
             },
@@ -961,7 +993,7 @@ where
 
                     loop {
                         let mut tmp = self
-                            .evaluate_ra(s.clone(), placeholders, &inner_cte)
+                            .evaluate_ra(s.clone(), placeholders, &inner_cte, &HashMap::new())
                             .await?;
 
                         for (column, name) in tmp.columns.iter_mut().zip(columns.iter()) {
@@ -1107,6 +1139,16 @@ where
 
         while let Some(inner_query) = to_process.take() {
             let result = match inner_query {
+                Query::Configuration(conf) => {
+                    tracing::debug!("Updating Configuration: {:?}", conf);
+                    Ok(ExecuteResult::Set)
+                }
+                Query::Prepare(prepare) => {
+                    tracing::debug!("Creating Prepared statement");
+                    dbg!(&prepare);
+
+                    Err(ExecuteBoundError::NotImplemented("Creating Prepared Statement"))
+                }
                 Query::Select(select) => {
                     tracing::debug!("Selecting: {:?}", select);
 
@@ -1157,7 +1199,7 @@ where
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
                     let r = match self
-                        .evaluate_ra(ra_expression, &placeholder_values, &cte_queries)
+                        .evaluate_ra(ra_expression, &placeholder_values, &cte_queries, &HashMap::new())
                         .await
                     {
                         Ok(r) => r,
@@ -1436,6 +1478,7 @@ where
                                             &table_columns,
                                             &placeholder_values,
                                             &cte_queries,
+                                            &HashMap::new(),
                                         )
                                         .await
                                         .map_err(|e| ExecuteBoundError::Executing(e))?,
@@ -1457,6 +1500,7 @@ where
                                             &table_columns,
                                             &placeholder_values,
                                             &cte_queries,
+                                            &HashMap::new(),
                                         )
                                         .await
                                         .map_err(|e| ExecuteBoundError::Executing(e))?;
@@ -1569,6 +1613,7 @@ where
                                         &table_columns,
                                         &placeholders,
                                         &cte_queries,
+                                        &HashMap::new(),
                                     )
                                     .await
                                     .map_err(|e| ExecuteBoundError::Executing(e))?;
@@ -1578,6 +1623,7 @@ where
                                 }
                             }
 
+                            tracing::debug!("Deleting Row: {:?}", row);
                             tmp.push(row.id());
                         }
 

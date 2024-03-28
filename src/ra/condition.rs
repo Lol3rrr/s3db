@@ -61,6 +61,7 @@ impl RaCondition {
             condition,
             &mut placeholders,
             &mut RaExpression::EmptyRelation,
+            &mut Vec::new(),
         )?;
 
         Ok((cond, placeholders))
@@ -71,24 +72,26 @@ impl RaCondition {
         condition: &Condition<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         ra_expr: &mut RaExpression,
+        outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
         match condition {
             Condition::And(p) => {
                 let parts: Vec<_> = p
                     .iter()
-                    .map(|c| Self::parse_internal(scope, c, placeholders, ra_expr))
+                    .map(|c| Self::parse_internal(scope, c, placeholders, ra_expr, outer))
                     .collect::<Result<_, _>>()?;
                 Ok(RaCondition::And(parts))
             }
             Condition::Or(p) => {
                 let parts: Vec<_> = p
                     .iter()
-                    .map(|c| Self::parse_internal(scope, c, placeholders, ra_expr))
+                    .map(|c| Self::parse_internal(scope, c, placeholders, ra_expr, outer))
                     .collect::<Result<_, _>>()?;
                 Ok(RaCondition::Or(parts))
             }
             Condition::Value(v) => {
-                let value = RaConditionValue::parse_internal(scope, v, placeholders, ra_expr)?;
+                let value =
+                    RaConditionValue::parse_internal(scope, v, placeholders, ra_expr, outer)?;
                 Ok(RaCondition::Value(Box::new(value)))
             }
         }
@@ -101,6 +104,7 @@ impl RaConditionValue {
         condition: &ValueExpression<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         ra_expr: &mut RaExpression,
+        outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
         match condition {
             ValueExpression::ColumnReference(cr) => {
@@ -143,6 +147,7 @@ impl RaConditionValue {
                     first.as_ref(),
                     placeholders,
                     ra_expr,
+                    outer,
                 )?;
 
                 let ra_second = RaValueExpression::parse_internal(
@@ -150,6 +155,7 @@ impl RaConditionValue {
                     second.as_ref(),
                     placeholders,
                     ra_expr,
+                    outer,
                 )?;
 
                 let first_types = ra_first.possible_type(&scope).map_err(|e| {
@@ -229,7 +235,8 @@ impl RaConditionValue {
                 })
             }
             ValueExpression::Not(inner) => {
-                let inner = RaConditionValue::parse_internal(scope, &inner, placeholders, ra_expr)?;
+                let inner =
+                    RaConditionValue::parse_internal(scope, &inner, placeholders, ra_expr, outer)?;
 
                 Ok(RaConditionValue::Negation {
                     inner: Box::new(inner),
@@ -237,7 +244,10 @@ impl RaConditionValue {
             }
             ValueExpression::FunctionCall(fc) => match fc {
                 FunctionCall::Exists { query } => {
-                    let ra_expression = RaExpression::parse_s(query, scope, placeholders, ra_expr)?;
+                    outer.push(ra_expr.clone());
+                    let ra_expression =
+                        RaExpression::parse_s(query, scope, placeholders, ra_expr, outer)?;
+                    outer.pop();
 
                     Ok(RaConditionValue::Exists {
                         query: Box::new(ra_expression),

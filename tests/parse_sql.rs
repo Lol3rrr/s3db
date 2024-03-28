@@ -232,3 +232,15 @@ fn grafana_query_7() {
 
     let _ = select;
 }
+
+#[test]
+fn prepare() {
+    let query_str = "prepare neword (INTEGER, INTEGER, INTEGER, INTEGER, INTEGER) as select neword($1,$2,$3,$4,$5,0)";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Prepare(p)) => p,
+        other => panic!("{:?}", other),
+    };
+
+    let _ = select;
+}

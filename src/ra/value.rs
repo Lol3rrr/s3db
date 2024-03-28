@@ -14,6 +14,11 @@ pub enum RaValueExpression {
         ty: DataType,
         a_id: AttributeId,
     },
+    OuterAttribute {
+        name: String,
+        ty: DataType,
+        a_id: AttributeId,
+    },
     Placeholder(usize),
     Literal(Literal<'static>),
     List(Vec<RaValueExpression>),
@@ -63,6 +68,7 @@ impl RaValueExpression {
         expr: &ValueExpression<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         ra_expr: &mut RaExpression,
+        outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
         match expr {
             ValueExpression::All => Err(ParseSelectError::NotImplemented(
@@ -75,31 +81,54 @@ impl RaValueExpression {
             ValueExpression::Placeholder(p) => Ok(Self::Placeholder(*p)),
             ValueExpression::ColumnReference(cr) => {
                 let name = cr.column.0.to_string();
-                let (dtype, attr_id) = ra_expr
+                let tmp = ra_expr
                     .get_columns()
                     .into_iter()
                     .find(|(t, n, _, _)| {
                         n == &name && cr.relation.as_ref().map(|r| t == &r.0).unwrap_or(true)
                     })
-                    .map(|(_, _, ty, aid)| (ty, aid))
-                    .ok_or_else(|| ParseSelectError::UnknownAttribute {
-                        attr: cr.to_static(),
-                        available: ra_expr
-                            .get_columns()
-                            .into_iter()
-                            .map(|(t, n, _, _)| (t, n))
-                            .collect(),
-                        context: error_context!("ValueExpression Parsing"),
-                    })?;
+                    .map(|(_, _, ty, aid)| (ty, aid));
 
-                Ok(Self::Attribute {
-                    ty: dtype,
-                    name,
-                    a_id: attr_id,
+                if let Some((dtype, attr_id)) = tmp {
+                    return Ok(Self::Attribute {
+                        ty: dtype,
+                        name,
+                        a_id: attr_id,
+                    });
+                }
+
+                for outer_expr in outer.iter_mut() {
+                    let tmp = outer_expr
+                        .get_columns()
+                        .into_iter()
+                        .find(|(t, n, _, _)| {
+                            n == &name && cr.relation.as_ref().map(|r| t == &r.0).unwrap_or(true)
+                        })
+                        .map(|(_, _, ty, aid)| (ty, aid));
+
+                    if let Some((dtype, attr_id)) = tmp {
+                        return Ok(Self::OuterAttribute {
+                            name,
+                            ty: dtype,
+                            a_id: attr_id,
+                        });
+                    }
+                }
+
+                Err(ParseSelectError::UnknownAttribute {
+                    attr: cr.to_static(),
+                    available: ra_expr
+                        .get_columns()
+                        .into_iter()
+                        .map(|(t, n, _, _)| (t, n))
+                        .collect(),
+                    context: error_context!("ValueExpression Parsing"),
                 })
             }
             ValueExpression::SubQuery(select) => {
-                let s = RaExpression::parse_s(select, scope, placeholders, ra_expr)?;
+                outer.push(ra_expr.clone());
+                let s = RaExpression::parse_s(select, scope, placeholders, ra_expr, outer)?;
+                outer.pop();
                 Ok(Self::SubQuery { query: s })
             }
             ValueExpression::All => {
@@ -112,7 +141,9 @@ impl RaValueExpression {
             ValueExpression::List(elems) => {
                 let ra_elems: Vec<_> = elems
                     .iter()
-                    .map(|e| RaValueExpression::parse_internal(scope, e, placeholders, ra_expr))
+                    .map(|e| {
+                        RaValueExpression::parse_internal(scope, e, placeholders, ra_expr, outer)
+                    })
                     .collect::<Result<_, _>>()?;
 
                 Ok(RaValueExpression::List(ra_elems))
@@ -123,7 +154,7 @@ impl RaValueExpression {
                     length,
                     padding,
                 } => {
-                    let ra_base = Self::parse_internal(scope, &base, placeholders, ra_expr)?;
+                    let ra_base = Self::parse_internal(scope, &base, placeholders, ra_expr, outer)?;
 
                     let length = match length {
                         Literal::SmallInteger(v) => *v as i64,
@@ -152,7 +183,15 @@ impl RaValueExpression {
                 FunctionCall::Coalesce { values } => {
                     let ra_values: Vec<_> = values
                         .iter()
-                        .map(|v| RaValueExpression::parse_internal(scope, v, placeholders, ra_expr))
+                        .map(|v| {
+                            RaValueExpression::parse_internal(
+                                scope,
+                                v,
+                                placeholders,
+                                ra_expr,
+                                outer,
+                            )
+                        })
                         .collect::<Result<_, _>>()?;
 
                     let possible_types: Vec<_> = ra_values
@@ -206,8 +245,13 @@ impl RaValueExpression {
                     value,
                     is_called,
                 } => {
-                    let ra_value =
-                        RaValueExpression::parse_internal(scope, &value, placeholders, ra_expr)?;
+                    let ra_value = RaValueExpression::parse_internal(
+                        scope,
+                        &value,
+                        placeholders,
+                        ra_expr,
+                        outer,
+                    )?;
 
                     let ra_value = ra_value
                         .enforce_type(DataType::BigInteger, placeholders)
@@ -220,8 +264,13 @@ impl RaValueExpression {
                     }))
                 }
                 FunctionCall::Lower { value } => {
-                    let raw_ra_value =
-                        RaValueExpression::parse_internal(scope, &value, placeholders, ra_expr)?;
+                    let raw_ra_value = RaValueExpression::parse_internal(
+                        scope,
+                        &value,
+                        placeholders,
+                        ra_expr,
+                        outer,
+                    )?;
 
                     let ra_value = raw_ra_value
                         .enforce_type(DataType::Text, placeholders)
@@ -234,14 +283,29 @@ impl RaValueExpression {
                     start,
                     count,
                 } => {
-                    let str_value =
-                        RaValueExpression::parse_internal(scope, &value, placeholders, ra_expr)?;
-                    let start =
-                        RaValueExpression::parse_internal(scope, &start, placeholders, ra_expr)?;
+                    let str_value = RaValueExpression::parse_internal(
+                        scope,
+                        &value,
+                        placeholders,
+                        ra_expr,
+                        outer,
+                    )?;
+                    let start = RaValueExpression::parse_internal(
+                        scope,
+                        &start,
+                        placeholders,
+                        ra_expr,
+                        outer,
+                    )?;
                     let count = match count.as_ref() {
                         Some(c) => {
-                            let val =
-                                RaValueExpression::parse_internal(scope, c, placeholders, ra_expr)?;
+                            let val = RaValueExpression::parse_internal(
+                                scope,
+                                c,
+                                placeholders,
+                                ra_expr,
+                                outer,
+                            )?;
                             Some(Box::new(val))
                         }
                         None => None,
@@ -259,8 +323,8 @@ impl RaValueExpression {
                 second,
                 operator,
             } => {
-                let ra_first = Self::parse_internal(scope, &first, placeholders, ra_expr)?;
-                let ra_second = Self::parse_internal(scope, &second, placeholders, ra_expr)?;
+                let ra_first = Self::parse_internal(scope, &first, placeholders, ra_expr, outer)?;
+                let ra_second = Self::parse_internal(scope, &second, placeholders, ra_expr, outer)?;
 
                 match operator {
                     BinaryOperator::Concat => {
@@ -336,7 +400,7 @@ impl RaValueExpression {
             }
             ValueExpression::TypeCast { base, target_ty } => {
                 dbg!(&base, &target_ty);
-                let ra_base = Self::parse_internal(scope, &base, placeholders, ra_expr)?;
+                let ra_base = Self::parse_internal(scope, &base, placeholders, ra_expr, outer)?;
 
                 let base_types = ra_base
                     .possible_type(scope)
@@ -363,7 +427,7 @@ impl RaValueExpression {
             }
             ValueExpression::Null => Ok(Self::Literal(Literal::Null)),
             ValueExpression::Renamed { inner, name } => {
-                let inner_ra = Self::parse_internal(scope, &inner, placeholders, ra_expr)?;
+                let inner_ra = Self::parse_internal(scope, &inner, placeholders, ra_expr, outer)?;
 
                 Ok(Self::Renamed {
                     name: name.0.to_string(),
@@ -423,6 +487,9 @@ impl RaValueExpression {
     pub(super) fn possible_type(&self, scope: &Scope<'_>) -> Result<types::PossibleTypes, ()> {
         match self {
             Self::Attribute { ty, .. } => {
+                Ok(types::PossibleTypes::fixed_with_conversions(ty.clone()))
+            }
+            Self::OuterAttribute { ty, .. } => {
                 Ok(types::PossibleTypes::fixed_with_conversions(ty.clone()))
             }
             Self::Placeholder(_) => Ok(types::PossibleTypes::all()),
@@ -491,6 +558,7 @@ impl RaValueExpression {
     pub(crate) fn datatype(&self) -> Option<DataType> {
         match self {
             Self::Attribute { ty, .. } => Some(ty.clone()),
+            Self::OuterAttribute { ty, .. } => Some(ty.clone()),
             Self::Placeholder(_) => None,
             Self::Literal(lit) => lit.datatype(),
             Self::List(elems) => todo!(),

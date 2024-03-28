@@ -90,8 +90,13 @@ impl AggregateExpression {
                     "Parsing AnyValue Aggregate",
                 )),
                 sql::AggregateExpression::Max(val) => {
-                    let inner =
-                        RaValueExpression::parse_internal(scope, &val, placeholders, ra_expr)?;
+                    let inner = RaValueExpression::parse_internal(
+                        scope,
+                        &val,
+                        placeholders,
+                        ra_expr,
+                        &mut Vec::new(),
+                    )?;
 
                     let inner_ty = inner.possible_type(&scope).map_err(|e| {
                         ParseSelectError::DeterminePossibleTypes {
@@ -158,8 +163,13 @@ impl AggregateExpression {
                 })
             }
             other => {
-                let parsed =
-                    RaValueExpression::parse_internal(scope, other, placeholders, ra_expr)?;
+                let parsed = RaValueExpression::parse_internal(
+                    scope,
+                    other,
+                    placeholders,
+                    ra_expr,
+                    &mut Vec::new(),
+                )?;
 
                 Ok(Attribute {
                     id: scope.attribute_id(),

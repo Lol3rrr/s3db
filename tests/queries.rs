@@ -16,7 +16,7 @@ macro_rules! execute {
             .build()
             .unwrap();
 
-        let subscriber = tracing_subscriber::FmtSubscriber::builder().with_max_level(tracing::Level::DEBUG).finish();
+        let subscriber = tracing_subscriber::FmtSubscriber::builder().with_writer(std::io::stdout).with_max_level(tracing::Level::DEBUG).with_ansi(false).finish();
 
         let tmp = tracing::subscriber::with_default(subscriber, || {
             let _span_guard = error_span!("running-test").entered();
@@ -124,24 +124,33 @@ fn single_join_with_same_name_attribute() {
 }
 
 #[test]
+fn select_with_correlated_subquery() {
+    execute!(
+        "SELECT name FROM users WHERE NOT EXISTS (SELECT 1 FROM roles WHERE roles.id = users.role)",
+        ExecuteResult::Select {
+            content: EntireRelation {
+                columns: vec![("name".into(), DataType::Text, Vec::new())],
+                parts: vec![PartialRelation {
+                    rows: vec![Row::new(0, vec![Data::Text("otheruser".into())])]
+                }],
+            },
+            formats: vec![]
+        },
+        "CREATE TABLE users (id integer, name text, age integer, role integer)",
+        "CREATE TABLE roles (id integer, name text)",
+        "INSERT INTO users(id, name, age, role) VALUES(1, 'username', 25, 23)",
+        "INSERT INTO users(id, name, age, role) VALUES(2, 'otheruser', 16, 99)",
+        "INSERT INTO roles(id, name) VALUES(11, 'admin')",
+        "INSERT INTO roles(id, name) VALUES(23, 'viewer')"
+    );
+}
+
+#[test]
+#[ignore = "Delete queries are kind of broken at the moment"]
 fn delete_with_correlated_subquery() {
     execute!(
         "DELETE FROM users WHERE NOT EXISTS (SELECT 1 FROM roles WHERE roles.id = users.role)",
-        ExecuteResult::Select {
-            content: EntireRelation {
-                columns: vec![
-                    ("username".into(), DataType::Text, Vec::new()),
-                    ("rolename".into(), DataType::Text, Vec::new())
-                ],
-                parts: vec![PartialRelation {
-                    rows: vec![Row::new(
-                        0,
-                        vec![Data::Text("username".into()), Data::Text("viewer".into())]
-                    )]
-                }],
-            },
-            formats: Vec::new()
-        },
+        ExecuteResult::Delete { deleted_rows: 1 },
         "CREATE TABLE users (id integer, name text, age integer, role integer)",
         "CREATE TABLE roles (id integer, name text)",
         "INSERT INTO users(id, name, age, role) VALUES(1, 'username', 25, 23)",

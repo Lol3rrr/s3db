@@ -32,6 +32,25 @@ where
     W: AsyncWrite + Unpin,
 {
     match result {
+        execution::ExecuteResult::Set => {
+            MessageResponse::CommandComplete {
+                tag: "SET".to_string(),
+            }
+            .send(writer)
+            .await
+            .unwrap();
+
+            if is_last_response {
+                MessageResponse::ReadyForQuery {
+                    transaction_state: ctx.transaction_state(),
+                }
+                .send(writer)
+                .await
+                .unwrap();
+            }
+
+            Ok(())
+        }
         execution::ExecuteResult::Select {
             content,
             mut formats,

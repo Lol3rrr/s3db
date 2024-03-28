@@ -14,6 +14,7 @@ pub struct Context {
 
 #[derive(Debug, PartialEq)]
 pub enum ExecuteResult {
+    Set,
     Select {
         content: EntireRelation,
         formats: Vec<FormatCode>,

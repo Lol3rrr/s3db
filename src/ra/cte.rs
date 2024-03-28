@@ -73,6 +73,7 @@ impl CTE {
                         scope,
                         placeholders,
                         &mut RaExpression::EmptyRelation,
+                        &mut Vec::new(),
                     )?;
 
                     let mappings: Vec<_> = base_ra
@@ -120,6 +121,7 @@ impl CTE {
                         scope,
                         placeholders,
                         &mut RaExpression::EmptyRelation,
+                        &mut Vec::new(),
                     )?;
 
                     CTEQuery::Select(recursive_ra)
@@ -151,6 +153,7 @@ impl CTE {
                         scope,
                         placeholders,
                         &mut RaExpression::EmptyRelation,
+                        &mut Vec::new(),
                     )?;
 
                     CTEQuery::Select(s)

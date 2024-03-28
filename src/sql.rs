@@ -41,9 +41,16 @@ mod with_cte;
 use with_cte::with_ctes;
 pub use with_cte::{WithCTE, WithCTEs};
 
+mod set_config;
+pub use set_config::Configuration;
+
+mod prepare;
+pub use prepare::Prepare;
+
 #[derive(Debug, PartialEq)]
 pub enum Query<'s> {
     WithCTE { cte: WithCTEs<'s>, query: Box<Self> },
+    Prepare(prepare::Prepare<'s>),
     Select(select::Select<'s>),
     Insert(insert::Insert<'s>),
     Update(update::Update<'s>),
@@ -53,6 +60,7 @@ pub enum Query<'s> {
     AlterTable(alter::AlterTable<'s>),
     DropIndex(drop::DropIndex<'s>),
     DropTable(drop::DropTable<'s>),
+    Configuration(set_config::Configuration),
     BeginTransaction(transactions::IsolationMode),
     CommitTransaction,
     RollbackTransaction,
@@ -99,6 +107,7 @@ impl<'s> Query<'s> {
                 cte: cte.to_static(),
                 query: Box::new(query.to_static()),
             },
+            Self::Prepare(prepare) => Query::Prepare(prepare.to_static()),
             Self::Select(s) => Query::Select(s.to_static()),
             Self::Insert(ins) => Query::Insert(ins.to_static()),
             Self::Update(ups) => Query::Update(ups.to_static()),
@@ -108,6 +117,7 @@ impl<'s> Query<'s> {
             Self::AlterTable(at) => Query::AlterTable(at.to_static()),
             Self::DropIndex(di) => Query::DropIndex(di.to_static()),
             Self::DropTable(dt) => Query::DropTable(dt.to_static()),
+            Self::Configuration(c) => Query::Configuration(c.clone()),
             Self::BeginTransaction(iso) => Query::BeginTransaction(iso.clone()),
             Self::CommitTransaction => Query::CommitTransaction,
             Self::RollbackTransaction => Query::RollbackTransaction,
@@ -117,6 +127,7 @@ impl<'s> Query<'s> {
     pub fn parameter_count(&self) -> usize {
         match self {
             Self::WithCTE { cte, query } => core::cmp::max(0, query.parameter_count()),
+            Self::Prepare(p) => p.params.len(),
             Self::Select(s) => s.max_parameter(),
             Self::Insert(i) => i.max_parameter(),
             Self::Update(u) => u.max_parameter(),
@@ -126,6 +137,7 @@ impl<'s> Query<'s> {
             Self::AlterTable(_) => 0,
             Self::DropIndex(_) => 0,
             Self::DropTable(_) => 0,
+            Self::Configuration(_) => 0,
             Self::BeginTransaction(_) => 0,
             Self::CommitTransaction => 0,
             Self::RollbackTransaction => 0,
@@ -158,6 +170,8 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
                 nom::combinator::map(alter::alter_table, |at| Query::AlterTable(at)),
                 nom::combinator::map(drop::drop_index, |di| Query::DropIndex(di)),
                 nom::combinator::map(drop::drop_table, |dt| Query::DropTable(dt)),
+                nom::combinator::map(set_config::parse, |c| Query::Configuration(c)),
+                nom::combinator::map(prepare::parse, |p| Query::Prepare(p)),
             )),
             nom::character::complete::multispace0,
             nom::combinator::opt(nom::bytes::complete::tag(";")),
