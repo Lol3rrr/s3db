@@ -58,33 +58,54 @@ pub enum RelationModification {
 
 pub trait Storage {
     type LoadingError: Debug;
+    type TransactionGuard: Debug;
+
+    fn start_transaction(
+        &self,
+    ) -> impl Future<Output = Result<Self::TransactionGuard, Self::LoadingError>>;
+
+    fn commit_transaction(
+        &self,
+        guard: Self::TransactionGuard,
+    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
     fn get_entire_relation(
         &self,
         name: &str,
+        transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<EntireRelation, Self::LoadingError>>;
 
-    fn relation_exists(&self, name: &str)
-        -> impl Future<Output = Result<bool, Self::LoadingError>>;
+    fn relation_exists(
+        &self,
+        name: &str,
+        transaction: &Self::TransactionGuard,
+    ) -> impl Future<Output = Result<bool, Self::LoadingError>>;
 
     fn create_relation(
         &self,
         name: &str,
         fields: Vec<(String, DataType, Vec<TypeModifier>)>,
+        transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
     fn rename_relation(
         &self,
         name: &str,
         target: &str,
+        transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
-    fn remove_relation(&self, name: &str) -> impl Future<Output = Result<(), Self::LoadingError>>;
+    fn remove_relation(
+        &self,
+        name: &str,
+        transaction: &Self::TransactionGuard,
+    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
     fn modify_relation(
         &self,
         name: &str,
         modification: ModifyRelation,
+        transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
     fn schemas(&self) -> impl Future<Output = Result<Schemas, Self::LoadingError>>;
@@ -93,18 +114,21 @@ pub trait Storage {
         &self,
         name: &str,
         rows: &mut dyn Iterator<Item = Vec<Data>>,
+        transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
     fn update_rows(
         &self,
         name: &str,
         rows: &mut dyn Iterator<Item = (u64, Vec<Data>)>,
+        transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
     fn delete_rows(
         &self,
         name: &str,
         rids: &mut dyn Iterator<Item = u64>,
+        transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 }
 

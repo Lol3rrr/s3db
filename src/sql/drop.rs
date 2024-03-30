@@ -12,7 +12,7 @@ pub struct DropIndex<'s> {
 
 #[derive(Debug, PartialEq)]
 pub struct DropTable<'s> {
-    pub name: Identifier<'s>,
+    pub names: Vec<Identifier<'s>>,
     pub if_exists: bool,
     pub dependent_handling: DependentHandling,
 }
@@ -37,7 +37,7 @@ impl<'s> DropIndex<'s> {
 impl<'s> DropTable<'s> {
     pub fn to_static(&self) -> DropTable<'static> {
         DropTable {
-            name: self.name.to_static(),
+            names: self.names.iter().map(|n| n.to_static()).collect(),
             if_exists: self.if_exists,
             dependent_handling: self.dependent_handling.clone(),
         }
@@ -97,14 +97,21 @@ pub fn drop_table(i: &[u8]) -> IResult<&[u8], DropTable<'_>, nom::error::Verbose
                 nom::bytes::complete::tag_no_case("EXISTS"),
             ))),
             nom::character::complete::multispace1,
-            identifier,
+            nom::multi::separated_list1(
+                nom::sequence::tuple((
+                    nom::character::complete::multispace0,
+                    nom::bytes::complete::tag(","),
+                    nom::character::complete::multispace0,
+                )),
+                identifier,
+            ),
             nom::combinator::opt(nom::branch::alt((
                 nom::bytes::complete::tag_no_case("RESTRICT").map(|_| DependentHandling::Restrict),
                 nom::bytes::complete::tag_no_case("CASCADE").map(|_| DependentHandling::Cascade),
             ))),
         )),
-        |(_, _, _, raw_if_exists, _, name, dependent_handling)| DropTable {
-            name,
+        |(_, _, _, raw_if_exists, _, names, dependent_handling)| DropTable {
+            names,
             if_exists: raw_if_exists.is_some(),
             dependent_handling: dependent_handling.unwrap_or(DependentHandling::Restrict),
         },
@@ -151,7 +158,7 @@ mod tests {
 
         assert_eq!(
             DropTable {
-                name: Identifier("testing".into()),
+                names: vec![Identifier("testing".into())],
                 if_exists: false,
                 dependent_handling: DependentHandling::Restrict,
             },

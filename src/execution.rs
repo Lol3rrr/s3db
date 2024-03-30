@@ -8,8 +8,8 @@ use crate::{
 
 pub mod naive;
 
-pub struct Context {
-    pub transaction: Option<()>,
+pub struct Context<T> {
+    pub transaction: Option<T>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -35,6 +35,7 @@ pub enum ExecuteResult {
     Begin,
     Commit,
     Drop_,
+    Truncate,
 }
 
 #[derive(Debug)]
@@ -44,7 +45,7 @@ pub enum ExecuteError<PE, BE, EE> {
     Execute(EE),
 }
 
-pub trait Execute {
+pub trait Execute<T> {
     type Prepared: PreparedStatement;
     type PrepareError: Debug;
     type ExecuteBoundError: Debug;
@@ -52,19 +53,19 @@ pub trait Execute {
     fn prepare<'q>(
         &self,
         query: &sql::Query<'q>,
-        ctx: &mut Context,
+        ctx: &mut Context<T>,
     ) -> impl Future<Output = Result<Self::Prepared, Self::PrepareError>>;
 
     fn execute_bound(
         &self,
         query: &<Self::Prepared as PreparedStatement>::Bound,
-        ctx: &mut Context,
+        ctx: &mut Context<T>,
     ) -> impl Future<Output = Result<ExecuteResult, Self::ExecuteBoundError>>;
 
     fn execute<'q>(
         &self,
         query: &sql::Query<'q>,
-        ctx: &mut Context,
+        ctx: &mut Context<T>,
     ) -> impl Future<
         Output = Result<
             ExecuteResult,
@@ -109,7 +110,7 @@ pub trait PreparedStatement {
     fn row_columns(&self) -> Vec<(String, DataType)>;
 }
 
-impl Context {
+impl<T> Context<T> {
     pub fn new() -> Self {
         Self { transaction: None }
     }

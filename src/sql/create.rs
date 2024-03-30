@@ -1,8 +1,8 @@
 use nom::{IResult, Parser};
 
-use crate::sql::common::identifier;
+use crate::sql::{common::identifier, Literal};
 
-use super::common::{data_type, type_modifier, DataType, Identifier, TypeModifier};
+use super::common::{data_type, literal, type_modifier, DataType, Identifier, TypeModifier};
 
 #[derive(Debug, PartialEq)]
 pub struct CreateTable<'s> {
@@ -10,6 +10,7 @@ pub struct CreateTable<'s> {
     pub fields: Vec<TableField<'s>>,
     pub if_not_exists: bool,
     pub primary_key: Option<Vec<Identifier<'s>>>,
+    pub withs: Vec<WithOptions>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -18,6 +19,11 @@ pub struct CreateIndex<'s> {
     pub table: Identifier<'s>,
     pub columns: Vec<Identifier<'s>>,
     pub unique: bool,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum WithOptions {
+    FillFactor(usize),
 }
 
 impl<'s> CreateTable<'s> {
@@ -30,6 +36,7 @@ impl<'s> CreateTable<'s> {
                 .primary_key
                 .as_ref()
                 .map(|parts| parts.iter().map(|p| p.to_static()).collect()),
+            withs: self.withs.clone(),
         }
     }
 }
@@ -51,16 +58,18 @@ enum ParsedTableField<'s> {
 }
 
 pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::VerboseError<&[u8]>> {
-    let (remaining, (_, if_not_exists, _, table_ident, _, _, _, raw_parts, _, _)) =
+    let (remaining, (_, _, _, if_not_exists, _, table_ident, _, _, _, raw_parts, _, _, with)) =
         nom::sequence::tuple((
-            nom::bytes::complete::tag_no_case("CREATE TABLE"),
+            nom::bytes::complete::tag_no_case("CREATE"),
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("TABLE"),
             nom::combinator::opt(nom::sequence::tuple((
                 nom::character::complete::multispace1,
                 nom::bytes::complete::tag_no_case("IF NOT EXISTS"),
             ))),
             nom::character::complete::multispace1,
             identifier,
-            nom::character::complete::multispace1,
+            nom::character::complete::multispace0,
             nom::bytes::complete::tag("("),
             nom::character::complete::multispace0,
             nom::multi::separated_list1(
@@ -94,6 +103,40 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
             ),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag(")"),
+            nom::combinator::opt(
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    nom::bytes::complete::tag_no_case("WITH"),
+                    nom::character::complete::multispace1,
+                    nom::sequence::delimited(
+                        nom::bytes::complete::tag("("),
+                        nom::multi::separated_list0(
+                            nom::sequence::tuple((
+                                nom::character::complete::multispace0,
+                                nom::bytes::complete::tag(","),
+                                nom::character::complete::multispace0,
+                            )),
+                            nom::branch::alt((nom::sequence::tuple((
+                                nom::bytes::complete::tag("fillfactor"),
+                                nom::bytes::complete::tag("="),
+                                literal,
+                            ))
+                            .map(|(_, _, val)| {
+                                let value = match val {
+                                    Literal::SmallInteger(v) => v as usize,
+                                    Literal::Integer(v) => v as usize,
+                                    Literal::BigInteger(v) => v as usize,
+                                    _ => todo!(),
+                                };
+
+                                WithOptions::FillFactor(value)
+                            }),)),
+                        ),
+                        nom::bytes::complete::tag(")"),
+                    ),
+                ))
+                .map(|(_, _, _, parts)| parts),
+            ),
         ))(i)?;
 
     let mut fields = Vec::new();
@@ -121,6 +164,7 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
             fields,
             if_not_exists: if_not_exists.is_some(),
             primary_key,
+            withs: with.unwrap_or(Vec::new()),
         },
     ))
 }
@@ -208,7 +252,7 @@ fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseE
 
 #[cfg(test)]
 mod tests {
-
+    use super::super::tests::single_parse_test;
     use super::*;
 
     #[test]
@@ -254,6 +298,7 @@ mod tests {
                     }
                 ],
                 primary_key: None,
+                withs: Vec::new(),
             },
             query
         );
@@ -409,5 +454,24 @@ mod tests {
         dbg!(&query);
 
         assert!(query.primary_key.is_some());
+    }
+
+    #[test]
+    fn create_with_fillfactor() {
+        single_parse_test!(
+            create_table,
+            "CREATE TABLE testing (name int) with (fillfactor=100)",
+            CreateTable {
+                identifier: "testing".into(),
+                fields: vec![TableField {
+                    ident: "name".into(),
+                    datatype: DataType::Integer,
+                    modifiers: Vec::new()
+                }],
+                if_not_exists: false,
+                primary_key: None,
+                withs: vec![WithOptions::FillFactor(100)]
+            }
+        );
     }
 }

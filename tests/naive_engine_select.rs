@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use pretty_assertions::assert_eq;
 
 use s3db::{
@@ -8,12 +10,49 @@ use s3db::{
     },
 };
 
+macro_rules! storage_setup {
+    ($(($table_name:literal, $fields:expr, $rows:expr)),*) => {{
+        let storage = InMemoryStorage::new();
+
+        let trans = storage.start_transaction().await.unwrap();
+
+        $(
+            storage
+            .create_relation(
+                $table_name,
+                $fields,
+                &trans,
+            )
+            .await
+            .unwrap();
+
+            storage
+            .insert_rows(
+                $table_name,
+                &mut $rows.into_iter(),
+                &trans,
+            )
+            .await
+            .unwrap();
+        )*
+
+        storage.commit_transaction(trans).await.unwrap();
+
+        storage
+    }};
+}
+
 #[tokio::test]
 async fn basic_select() {
-    let engine = NaiveEngine::new(InMemoryStorage::new());
+    let storage = InMemoryStorage::new();
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
 
     let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -23,11 +62,11 @@ async fn basic_select() {
     assert_eq!(0, content.parts.iter().flat_map(|p| p.rows.iter()).count());
 
     let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
     assert!(matches!(res, ExecuteResult::Create), "{:?}", res);
 
     let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -39,10 +78,15 @@ async fn basic_select() {
 
 #[tokio::test]
 async fn select_with_literal_return() {
-    let engine = NaiveEngine::new(InMemoryStorage::new());
+    let storage = InMemoryStorage::new();
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
 
     let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -59,11 +103,11 @@ async fn select_with_literal_return() {
     assert_eq!(0, content.parts.iter().flat_map(|p| p.rows.iter()).count());
 
     let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
     assert!(matches!(res, ExecuteResult::Create), "{:?}", res);
 
     let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
     dbg!(&res);
 
     let content = match res {
@@ -86,57 +130,35 @@ async fn select_with_literal_return() {
 async fn execute_inner_join() {
     let query = "SELECT user.name, password.hash FROM user JOIN password ON user.id = password.uid";
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!(
+        (
+            "user",
+            vec![
+                ("id".into(), DataType::Integer, Vec::new()),
+                ("name".into(), DataType::Text, Vec::new()),
+            ],
+            vec![
+                vec![Data::Integer(0), Data::Text("first-user".to_string())],
+                vec![Data::Integer(1), Data::Text("second-user".to_string())],
+            ]
+        ),
+        (
+            "password",
+            vec![
+                ("uid".into(), DataType::Integer, Vec::new()),
+                ("hash".into(), DataType::Text, Vec::new()),
+            ],
+            vec![vec![Data::Integer(0), Data::Text("12345".to_string())]]
+        )
+    );
 
-        storage
-            .create_relation(
-                "user",
-                vec![
-                    ("id".into(), DataType::Integer, Vec::new()),
-                    ("name".into(), DataType::Text, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .create_relation(
-                "password",
-                vec![
-                    ("uid".into(), DataType::Integer, Vec::new()),
-                    ("hash".into(), DataType::Text, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "user",
-                &mut vec![
-                    vec![Data::Integer(0), Data::Text("first-user".to_string())],
-                    vec![Data::Integer(1), Data::Text("second-user".to_string())],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "password",
-                &mut vec![vec![Data::Integer(0), Data::Text("12345".to_string())]].into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
 
     let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -170,6 +192,8 @@ async fn left_outer_join() {
     let storage = {
         let storage = InMemoryStorage::new();
 
+        let trans = storage.start_transaction().await.unwrap();
+
         storage
             .create_relation(
                 "user",
@@ -177,6 +201,7 @@ async fn left_outer_join() {
                     ("id".into(), DataType::Integer, Vec::new()),
                     ("name".into(), DataType::Text, Vec::new()),
                 ],
+                &trans,
             )
             .await
             .unwrap();
@@ -188,6 +213,7 @@ async fn left_outer_join() {
                     ("uid".into(), DataType::Integer, Vec::new()),
                     ("hash".into(), DataType::Text, Vec::new()),
                 ],
+                &trans,
             )
             .await
             .unwrap();
@@ -200,6 +226,7 @@ async fn left_outer_join() {
                     vec![Data::Integer(1), Data::Text("second-user".to_string())],
                 ]
                 .into_iter(),
+                &trans,
             )
             .await
             .unwrap();
@@ -208,9 +235,12 @@ async fn left_outer_join() {
             .insert_rows(
                 "password",
                 &mut vec![vec![Data::Integer(0), Data::Text("12345".to_string())]].into_iter(),
+                &trans,
             )
             .await
             .unwrap();
+
+        storage.commit_transaction(trans).await;
 
         storage
     };
@@ -251,51 +281,38 @@ async fn group_by_single_attribute() {
 
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "user",
+        vec![
+            ("name".into(), DataType::Text, Vec::new()),
+            ("role".into(), DataType::Text, Vec::new()),
+        ],
+        vec![
+            vec![
+                Data::Text("first-user".to_string()),
+                Data::Text("admin".to_string()),
+            ],
+            vec![
+                Data::Text("second-user".to_string()),
+                Data::Text("viewer".to_string()),
+            ],
+            vec![
+                Data::Text("third-user".to_string()),
+                Data::Text("editor".to_string()),
+            ],
+            vec![
+                Data::Text("forth-user".to_string()),
+                Data::Text("viewer".to_string()),
+            ],
+        ]
+    ));
 
-        storage
-            .create_relation(
-                "user",
-                vec![
-                    ("name".into(), DataType::Text, Vec::new()),
-                    ("role".into(), DataType::Text, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "user",
-                &mut vec![
-                    vec![
-                        Data::Text("first-user".to_string()),
-                        Data::Text("admin".to_string()),
-                    ],
-                    vec![
-                        Data::Text("second-user".to_string()),
-                        Data::Text("viewer".to_string()),
-                    ],
-                    vec![
-                        Data::Text("third-user".to_string()),
-                        Data::Text("editor".to_string()),
-                    ],
-                    vec![
-                        Data::Text("forth-user".to_string()),
-                        Data::Text("viewer".to_string()),
-                    ],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
 
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     dbg!(&res);
 
@@ -320,29 +337,20 @@ async fn group_by_single_attribute() {
 #[tokio::test]
 async fn select_count_all() {
     let query = "SELECT COUNT(*) FROM table";
+    let query = Query::parse(query.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "table",
+        vec![("id".into(), DataType::Integer, Vec::new())],
+        vec![vec![Data::Integer(132)], vec![Data::Integer(1)]]
+    ));
 
-        storage
-            .create_relation("table", vec![("id".into(), DataType::Integer, Vec::new())])
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "table",
-                &mut vec![vec![Data::Integer(132)], vec![Data::Integer(1)]].into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
 
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -361,34 +369,24 @@ async fn select_count_all() {
 #[tokio::test]
 async fn select_count_attribute() {
     let query = "SELECT COUNT(id) FROM table";
+    let query = Query::parse(query.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "table",
+        vec![("id".into(), DataType::Integer, Vec::new())],
+        vec![
+            vec![Data::Integer(132)],
+            vec![Data::Integer(1)],
+            vec![Data::Null],
+        ]
+    ));
 
-        storage
-            .create_relation("table", vec![("id".into(), DataType::Integer, Vec::new())])
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "table",
-                &mut vec![
-                    vec![Data::Integer(132)],
-                    vec![Data::Integer(1)],
-                    vec![Data::Null],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
 
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -407,33 +405,23 @@ async fn select_count_attribute() {
 #[tokio::test]
 async fn select_with_limit() {
     let query = "SELECT name FROM users LIMIT 1";
+    let query = Query::parse(query.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "users",
+        vec![("name".into(), DataType::Text, Vec::new())],
+        vec![
+            vec![Data::Text("first".to_string())],
+            vec![Data::Text("second".to_string())],
+        ]
+    ));
 
-        storage
-            .create_relation("users", vec![("name".into(), DataType::Text, Vec::new())])
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "users",
-                &mut vec![
-                    vec![Data::Text("first".to_string())],
-                    vec![Data::Text("second".to_string())],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
 
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -451,40 +439,28 @@ async fn select_with_limit() {
 
 #[tokio::test]
 async fn select_with_order() {
-    let storage = {
-        let storage = InMemoryStorage::new();
-
-        storage
-            .create_relation(
-                "users",
-                vec![
-                    ("name".into(), DataType::Text, Vec::new()),
-                    ("id".into(), DataType::Integer, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "users",
-                &mut vec![
-                    vec![Data::Text("first".to_string()), Data::Integer(132)],
-                    vec![Data::Text("second".to_string()), Data::Integer(12)],
-                    vec![Data::Text("third".to_string()), Data::Integer(57)],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-    let engine = NaiveEngine::new(storage);
-
     let query = "SELECT name FROM users ORDER BY id ASC";
     let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    let storage = storage_setup!((
+        "users",
+        vec![
+            ("name".into(), DataType::Text, Vec::new()),
+            ("id".into(), DataType::Integer, Vec::new()),
+        ],
+        vec![
+            vec![Data::Text("first".to_string()), Data::Integer(132)],
+            vec![Data::Text("second".to_string()), Data::Integer(12)],
+            vec![Data::Text("third".to_string()), Data::Integer(57)],
+        ]
+    ));
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -505,7 +481,7 @@ async fn select_with_order() {
 
     let query = "SELECT name FROM users ORDER BY id DESC";
     let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -526,7 +502,7 @@ async fn select_with_order() {
 
     let query = "SELECT name FROM users ORDER BY id";
     let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -548,81 +524,62 @@ async fn select_with_order() {
 
 #[tokio::test]
 async fn update_basic() {
-    let storage = {
-        let storage = InMemoryStorage::new();
-
-        storage
-            .create_relation(
-                "orders",
-                vec![
-                    ("name".into(), DataType::Text, Vec::new()),
-                    ("id".into(), DataType::Integer, Vec::new()),
-                    ("completed".into(), DataType::Bool, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .create_relation(
-                "deliveries",
-                vec![
-                    ("order_id".into(), DataType::Integer, Vec::new()),
-                    ("delivered".into(), DataType::Bool, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "orders",
-                &mut vec![
-                    vec![
-                        Data::Text("first".to_string()),
-                        Data::Integer(132),
-                        Data::Boolean(false),
-                    ],
-                    vec![
-                        Data::Text("second".to_string()),
-                        Data::Integer(12),
-                        Data::Boolean(false),
-                    ],
-                    vec![
-                        Data::Text("third".to_string()),
-                        Data::Integer(57),
-                        Data::Boolean(false),
-                    ],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "deliveries",
-                &mut vec![
-                    vec![Data::Integer(132), Data::Boolean(false)],
-                    vec![Data::Integer(12), Data::Boolean(true)],
-                    vec![Data::Integer(57), Data::Boolean(false)],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-    let engine = NaiveEngine::new(&storage);
-
     let query = "UPDATE orders SET completed = true WHERE orders.id = 12";
     let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    let storage = storage_setup!(
+        (
+            "orders",
+            vec![
+                ("name".into(), DataType::Text, Vec::new()),
+                ("id".into(), DataType::Integer, Vec::new()),
+                ("completed".into(), DataType::Bool, Vec::new()),
+            ],
+            vec![
+                vec![
+                    Data::Text("first".to_string()),
+                    Data::Integer(132),
+                    Data::Boolean(false),
+                ],
+                vec![
+                    Data::Text("second".to_string()),
+                    Data::Integer(12),
+                    Data::Boolean(false),
+                ],
+                vec![
+                    Data::Text("third".to_string()),
+                    Data::Integer(57),
+                    Data::Boolean(false),
+                ],
+            ]
+        ),
+        (
+            "deliveries",
+            vec![
+                ("order_id".into(), DataType::Integer, Vec::new()),
+                ("delivered".into(), DataType::Bool, Vec::new()),
+            ],
+            vec![
+                vec![Data::Integer(132), Data::Boolean(false)],
+                vec![Data::Integer(12), Data::Boolean(true)],
+                vec![Data::Integer(57), Data::Boolean(false)],
+            ]
+        )
+    );
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(&storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(ExecuteResult::Update { updated_rows: 1 }, res);
 
-    let relation_after = storage.get_entire_relation("orders").await.unwrap();
+    let relation_after = storage
+        .get_entire_relation("orders", ctx.transaction.as_ref().unwrap())
+        .await
+        .unwrap();
     dbg!(&relation_after);
 
     let after_rows: Vec<_> = relation_after
@@ -642,19 +599,19 @@ async fn update_basic() {
                 ]
             ),
             Row::new(
-                1,
-                vec![
-                    Data::Text("second".to_string()),
-                    Data::Integer(12),
-                    Data::Boolean(true),
-                ]
-            ),
-            Row::new(
                 2,
                 vec![
                     Data::Text("third".to_string()),
                     Data::Integer(57),
                     Data::Boolean(false),
+                ]
+            ),
+            Row::new(
+                1,
+                vec![
+                    Data::Text("second".to_string()),
+                    Data::Integer(12),
+                    Data::Boolean(true),
                 ]
             ),
         ],
@@ -665,72 +622,45 @@ async fn update_basic() {
 #[tokio::test]
 #[ignore = "TODO"]
 async fn update_with_from() {
-    let storage = {
-        let storage = InMemoryStorage::new();
-
-        storage
-            .create_relation(
-                "orders",
+    let storage = storage_setup!(
+        (
+            "orders",
+            vec![
+                ("name".into(), DataType::Text, Vec::new()),
+                ("id".into(), DataType::Integer, Vec::new()),
+                ("completed".into(), DataType::Bool, Vec::new()),
+            ],
+            vec![
                 vec![
-                    ("name".into(), DataType::Text, Vec::new()),
-                    ("id".into(), DataType::Integer, Vec::new()),
-                    ("completed".into(), DataType::Bool, Vec::new()),
+                    Data::Text("first".to_string()),
+                    Data::Integer(132),
+                    Data::Boolean(false),
                 ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .create_relation(
-                "deliveries",
                 vec![
-                    ("order_id".into(), DataType::Integer, Vec::new()),
-                    ("delivered".into(), DataType::Bool, Vec::new()),
+                    Data::Text("second".to_string()),
+                    Data::Integer(12),
+                    Data::Boolean(false),
                 ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "orders",
-                &mut vec![
-                    vec![
-                        Data::Text("first".to_string()),
-                        Data::Integer(132),
-                        Data::Boolean(false),
-                    ],
-                    vec![
-                        Data::Text("second".to_string()),
-                        Data::Integer(12),
-                        Data::Boolean(false),
-                    ],
-                    vec![
-                        Data::Text("third".to_string()),
-                        Data::Integer(57),
-                        Data::Boolean(false),
-                    ],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "deliveries",
-                &mut vec![
-                    vec![Data::Integer(132), Data::Boolean(false)],
-                    vec![Data::Integer(12), Data::Boolean(true)],
-                    vec![Data::Integer(57), Data::Boolean(false)],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
+                vec![
+                    Data::Text("third".to_string()),
+                    Data::Integer(57),
+                    Data::Boolean(false),
+                ],
+            ]
+        ),
+        (
+            "deliveries",
+            vec![
+                ("order_id".into(), DataType::Integer, Vec::new()),
+                ("delivered".into(), DataType::Bool, Vec::new()),
+            ],
+            vec![
+                vec![Data::Integer(132), Data::Boolean(false)],
+                vec![Data::Integer(12), Data::Boolean(true)],
+                vec![Data::Integer(57), Data::Boolean(false)],
+            ]
+        )
+    );
     let engine = NaiveEngine::new(storage);
 
     let query = "UPDATE orders SET completed = deliveries.delivered FROM deliveries WHERE orders.id = deliveries.order_id";
@@ -742,71 +672,53 @@ async fn update_with_from() {
 
 #[tokio::test]
 async fn delete_with_placeholders() {
-    let storage = {
-        let storage = InMemoryStorage::new();
-
-        storage
-            .create_relation(
-                "users",
-                vec![
-                    ("name".into(), DataType::Text, Vec::new()),
-                    ("id".into(), DataType::Integer, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "users",
-                &mut vec![
-                    vec![Data::Text("first".to_string()), Data::Integer(132)],
-                    vec![Data::Text("second".to_string()), Data::Integer(12)],
-                    vec![Data::Text("third".to_string()), Data::Integer(57)],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-    let engine = NaiveEngine::new(storage);
-
     let query_str = "DELETE FROM server_lock WHERE operation_uid=$1";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let prepared = engine.prepare(&query, &mut Context::new()).await.unwrap();
+    let storage = storage_setup!((
+        "users",
+        vec![
+            ("name".into(), DataType::Text, Vec::new()),
+            ("id".into(), DataType::Integer, Vec::new()),
+        ],
+        vec![
+            vec![Data::Text("first".to_string()), Data::Integer(132)],
+            vec![Data::Text("second".to_string()), Data::Integer(12)],
+            vec![Data::Text("third".to_string()), Data::Integer(57)],
+        ]
+    ));
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let prepared = engine.prepare(&query, &mut ctx).await.unwrap();
 
     // TODO
 }
 
 #[tokio::test]
 async fn select_with_standard_cte() {
-    let storage = {
-        let storage = InMemoryStorage::new();
-
-        storage
-            .create_relation(
-                "users",
-                vec![
-                    ("name".into(), DataType::Text, Vec::new()),
-                    ("id".into(), DataType::Integer, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-
-    let engine = NaiveEngine::new(storage);
-
     let query_str =
         "WITH users_cte AS (SELECT name FROM users WHERE id < 100) SELECT name FROM users_cte";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let storage = storage_setup!((
+        "users",
+        vec![
+            ("name".into(), DataType::Text, Vec::new()),
+            ("id".into(), DataType::Integer, Vec::new()),
+        ],
+        vec![]
+    ));
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -822,30 +734,18 @@ async fn select_with_standard_cte() {
 
 #[tokio::test]
 async fn select_with_recursive_cte() {
-    let storage = {
-        let storage = InMemoryStorage::new();
-
-        storage
-            .create_relation(
-                "users",
-                vec![
-                    ("name".into(), DataType::Text, Vec::new()),
-                    ("id".into(), DataType::Integer, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-
-    let engine = NaiveEngine::new(storage);
-
     let query_str =
         "WITH RECURSIVE count (n) AS (SELECT 1 UNION SELECT n + 1 FROM count WHERE n < 5) SELECT n FROM count";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let storage = storage_setup!();
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -870,39 +770,26 @@ async fn select_with_recursive_cte() {
 #[tokio::test]
 async fn select_all() {
     let query = "SELECT * FROM user";
+    let query = Query::parse(query.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "user",
+        vec![
+            ("id".into(), DataType::Integer, Vec::new()),
+            ("name".into(), DataType::Text, Vec::new()),
+        ],
+        vec![
+            vec![Data::Integer(0), Data::Text("first-user".to_string())],
+            vec![Data::Integer(1), Data::Text("second-user".to_string())],
+        ]
+    ));
 
-        storage
-            .create_relation(
-                "user",
-                vec![
-                    ("id".into(), DataType::Integer, Vec::new()),
-                    ("name".into(), DataType::Text, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "user",
-                &mut vec![
-                    vec![Data::Integer(0), Data::Text("first-user".to_string())],
-                    vec![Data::Integer(1), Data::Text("second-user".to_string())],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
 
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -932,12 +819,16 @@ async fn select_all() {
 
 #[tokio::test]
 async fn select_1() {
-    let engine = NaiveEngine::new(InMemoryStorage::new());
-
     let query_str = "SELECT 1";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let storage = InMemoryStorage::new();
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -958,27 +849,18 @@ async fn setval() {
     let query_str = "SELECT setval('org_id_seq', (SELECT max(id) FROM org))";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "org",
+        vec![("id".into(), DataType::Serial, Vec::new())],
+        vec![vec![Data::Serial(1)], vec![Data::Serial(2)]]
+    ));
 
-        storage
-            .create_relation("org", vec![("id".into(), DataType::Serial, Vec::new())])
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "org",
-                &mut [vec![Data::Serial(1)], vec![Data::Serial(2)]].into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -999,37 +881,24 @@ async fn like_operation() {
     let query_str = "SELECT name FROM org WHERE name LIKE 'test%'";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "org",
+        vec![
+            ("id".into(), DataType::Serial, Vec::new()),
+            ("name".into(), DataType::Text, Vec::new())
+        ],
+        vec![
+            vec![Data::Serial(1), Data::Text("testing".into())],
+            vec![Data::Serial(2), Data::Text("other".into())],
+        ]
+    ));
 
-        storage
-            .create_relation(
-                "org",
-                vec![
-                    ("id".into(), DataType::Serial, Vec::new()),
-                    ("name".into(), DataType::Text, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "org",
-                &mut [
-                    vec![Data::Serial(1), Data::Text("testing".into())],
-                    vec![Data::Serial(2), Data::Text("other".into())],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -1050,38 +919,25 @@ async fn select_subquery_as_value() {
     let query_str = "SELECT (SELECT count(*) FROM users)";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "users",
+        vec![
+            ("id".into(), DataType::Serial, Vec::new()),
+            ("name".into(), DataType::Text, Vec::new()),
+        ],
+        vec![
+            vec![Data::Serial(1), Data::Text("testing".into())],
+            vec![Data::Serial(2), Data::Text("other".into())],
+            vec![Data::Serial(3), Data::Text("something".into())],
+        ]
+    ));
 
-        storage
-            .create_relation(
-                "users",
-                vec![
-                    ("id".into(), DataType::Serial, Vec::new()),
-                    ("name".into(), DataType::Text, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "users",
-                &mut [
-                    vec![Data::Serial(1), Data::Text("testing".into())],
-                    vec![Data::Serial(2), Data::Text("other".into())],
-                    vec![Data::Serial(3), Data::Text("something".into())],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     dbg!(&res);
 
@@ -1104,38 +960,25 @@ async fn select_with_in_filter() {
     let query_str = "SELECT name from users WHERE name IN ('other', 'something')";
     let query = Query::parse(query_str.as_bytes()).unwrap();
 
-    let storage = {
-        let storage = InMemoryStorage::new();
+    let storage = storage_setup!((
+        "users",
+        vec![
+            ("id".into(), DataType::Serial, Vec::new()),
+            ("name".into(), DataType::Text, Vec::new()),
+        ],
+        vec![
+            vec![Data::Serial(1), Data::Text("testing".into())],
+            vec![Data::Serial(2), Data::Text("other".into())],
+            vec![Data::Serial(3), Data::Text("something".into())],
+        ]
+    ));
 
-        storage
-            .create_relation(
-                "users",
-                vec![
-                    ("id".into(), DataType::Serial, Vec::new()),
-                    ("name".into(), DataType::Text, Vec::new()),
-                ],
-            )
-            .await
-            .unwrap();
-
-        storage
-            .insert_rows(
-                "users",
-                &mut [
-                    vec![Data::Serial(1), Data::Text("testing".into())],
-                    vec![Data::Serial(2), Data::Text("other".into())],
-                    vec![Data::Serial(3), Data::Text("something".into())],
-                ]
-                .into_iter(),
-            )
-            .await
-            .unwrap();
-
-        storage
-    };
-
+    let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     dbg!(&res);
 

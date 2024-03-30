@@ -58,18 +58,20 @@ impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
 {
-    fn evaluate_ra<'s, 'p, 'f, 'o, 'c>(
+    fn evaluate_ra<'s, 'p, 'f, 'o, 'c, 't>(
         &'s self,
         expr: ra::RaExpression,
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
+        transaction: &'t S::TransactionGuard,
     ) -> LocalBoxFuture<'f, Result<storage::EntireRelation, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
         'p: 'f,
         'c: 'f,
         'o: 'f,
+        't: 'f,
     {
         async move {
             let mut pending = vec![&expr];
@@ -125,7 +127,7 @@ where
                     }
                     ra::RaExpression::BaseRelation { name, columns } => {
                         self.storage
-                        .get_entire_relation(&name.0)
+                        .get_entire_relation(&name.0, transaction)
                         .await
                         .map_err(|e| EvaulateRaError::StorageError(e))?
                     }
@@ -166,7 +168,7 @@ where
                     for row in input.into_rows() {
                         let mut data = Vec::new();
                         for attribute in attributes.iter() {
-                            let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, outer).await?;
+                            let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, outer, transaction).await?;
 
                             // TODO
                             // This is not a good fix
@@ -225,7 +227,8 @@ where
                                     &inner_columns,
                                     placeholders,
                                     ctes,
-                                    outer
+                                    outer,
+                                    transaction
                                 )
                                 .await?;
 
@@ -265,7 +268,7 @@ where
                                 .flat_map(|p| p.rows.into_iter())
                             {
                                 for state in states.iter_mut() {
-                                    state.update(&self, &row, outer).await?;
+                                    state.update(&self, &row, outer, transaction).await?;
                                 }
                             }
 
@@ -321,7 +324,7 @@ where
 
                                 for row in group {
                                     for state in states.iter_mut() {
-                                        state.update(&self, &row, outer).await?;
+                                        state.update(&self, &row, outer, transaction).await?;
                                     }
                                 }
 
@@ -440,7 +443,7 @@ where
                                         result_rows.len() as u64,
                                         joined_row_data,
                                     );
-                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes, outer).await? {
+                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes, outer, transaction).await? {
                                         result_rows.push(row);
                                     }
                                 }
@@ -474,7 +477,7 @@ where
                                         joined_row_data,
                                     );
 
-                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes, outer).await? {
+                                    if self.evaluate_ra_cond(&condition, &row, &inner_columns, placeholders, ctes, outer,transaction ).await? {
                                         result_rows.push(row);
                                         included = true;
                                     }
@@ -533,7 +536,7 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 'f>(
+    fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f>(
         &'s self,
         condition: &'cond ra::RaCondition,
         row: &'r storage::Row,
@@ -541,6 +544,7 @@ where
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
+        transaction: &'t S::TransactionGuard
     ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -550,13 +554,14 @@ where
         'p: 'f,
         'c: 'f,
         'o: 'f,
+        't: 'f,
     {
         async move {
             match condition {
                 ra::RaCondition::And(conditions) => {
                     for andcond in conditions.iter() {
                         if !self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer)
+                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction)
                             .await?
                         {
                             return Ok(false);
@@ -568,7 +573,7 @@ where
                 ra::RaCondition::Or(conditions) => {
                     for andcond in conditions.iter() {
                         if self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer)
+                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction)
                             .await?
                         {
                             return Ok(true);
@@ -579,7 +584,7 @@ where
                 }
                 ra::RaCondition::Value(value) => {
                     let res = self
-                        .evaluate_ra_cond_val(&value, row, columns, placeholders, ctes, outer)
+                        .evaluate_ra_cond_val(&value, row, columns, placeholders, ctes, outer,transaction)
                         .await?;
                     Ok(res)
                 }
@@ -588,7 +593,7 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 'f>(
+    fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f>(
         &'s self,
         condition: &'cond ra::RaConditionValue,
         row: &'r storage::Row,
@@ -596,6 +601,7 @@ where
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
+        transaction: &'t S::TransactionGuard
     ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -605,6 +611,7 @@ where
         'p: 'f,
         'c: 'f,
         'o: 'f,
+        't: 'f,
     {
         async move {
             match condition {
@@ -627,10 +634,10 @@ where
                     comparison,
                 } => {
                     let first_value = self
-                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer)
+                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer, transaction )
                         .await?;
                     let second_value = self
-                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer)
+                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer, transaction)
                         .await?;
 
                     match comparison {
@@ -702,7 +709,7 @@ where
                 }
                 ra::RaConditionValue::Negation { inner } => {
                     let inner_result = self
-                        .evaluate_ra_cond_val(&inner, row, columns, placeholders, ctes, outer)
+                        .evaluate_ra_cond_val(&inner, row, columns, placeholders, ctes, outer, transaction)
                         .await?;
 
                     Ok(!inner_result)
@@ -714,7 +721,7 @@ where
                         tmp
                     };
 
-                    match self.evaluate_ra(*query.clone(), placeholders, ctes, &n_tmp).await {
+                    match self.evaluate_ra(*query.clone(), placeholders, ctes, &n_tmp, transaction).await {
                         Ok(res) => Ok(res
                             .parts
                             .into_iter()
@@ -728,14 +735,15 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_value<'s, 'rve, 'row, 'columns, 'placeholders, 'c, 'o, 'f>(
+    fn evaluate_ra_value<'s, 'rve, 'row, 'columns, 'placeholders, 'c, 'o, 't, 'f>(
         &'s self,
         expr: &'rve ra::RaValueExpression,
         row: &'row storage::Row,
         columns: &'columns [(String, DataType, AttributeId)],
         placeholders: &'placeholders HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
-        outer: &'o HashMap<AttributeId, storage::Data>
+        outer: &'o HashMap<AttributeId, storage::Data>,
+        transaction: &'t S::TransactionGuard
     ) -> LocalBoxFuture<'f, Result<storage::Data, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -745,6 +753,7 @@ where
         'placeholders: 'f,
         'c: 'f,
         'o: 'f,
+        't: 'f,
     {
         async move {
             match expr {
@@ -777,7 +786,7 @@ where
 
                     for part in elems.iter() {
                         let tmp = self
-                            .evaluate_ra_value(part, row, columns, placeholders, ctes, outer)
+                            .evaluate_ra_value(part, row, columns, placeholders, ctes, outer, transaction )
                             .await?;
                         result.push(tmp);
                     }
@@ -791,7 +800,7 @@ where
                         dbg!(columns, row);
                         tmp
                     };
-                    let result = self.evaluate_ra(query.clone(), placeholders, ctes, &n_outer).await?;
+                    let result = self.evaluate_ra(query.clone(), placeholders, ctes, &n_outer, transaction).await?;
 
                     let mut parts: Vec<_> = result
                         .parts
@@ -804,7 +813,7 @@ where
                 }
                 ra::RaValueExpression::Cast { inner, target } => {
                     let result = self
-                        .evaluate_ra_value(&inner, row, columns, placeholders, ctes,outer)
+                        .evaluate_ra_value(&inner, row, columns, placeholders, ctes,outer, transaction)
                         .await?;
 
                     result
@@ -820,10 +829,10 @@ where
                     operator,
                 } => {
                     let first_value = self
-                        .evaluate_ra_value(&first, row, columns, placeholders, ctes, outer)
+                        .evaluate_ra_value(&first, row, columns, placeholders, ctes, outer, transaction)
                         .await?;
                     let second_value = self
-                        .evaluate_ra_value(&second, row, columns, placeholders, ctes, outer)
+                        .evaluate_ra_value(&second, row, columns, placeholders, ctes, outer, transaction)
                         .await?;
 
                     match operator {
@@ -864,7 +873,7 @@ where
                         dbg!(&name, &value, &is_called);
 
                         let value_res = self
-                            .evaluate_ra_value(&value, row, columns, placeholders, ctes, outer)
+                            .evaluate_ra_value(&value, row, columns, placeholders, ctes, outer, transaction)
                             .await?;
                         dbg!(&value_res);
 
@@ -890,7 +899,7 @@ where
                         dbg!(&val);
 
                         let data = self
-                            .evaluate_ra_value(&val, row, columns, placeholders, ctes, outer)
+                            .evaluate_ra_value(&val, row, columns, placeholders, ctes, outer, transaction )
                             .await?;
 
                         match data {
@@ -909,15 +918,15 @@ where
                         dbg!(&str_value, &start);
 
                         let str_value = self
-                            .evaluate_ra_value(&str_value, row, columns, placeholders, ctes, outer)
+                            .evaluate_ra_value(&str_value, row, columns, placeholders, ctes, outer, transaction )
                             .await?;
                         let start_value = self
-                            .evaluate_ra_value(&start, row, columns, placeholders, ctes, outer)
+                            .evaluate_ra_value(&start, row, columns, placeholders, ctes, outer, transaction)
                             .await?;
                         let count_value = match count.as_ref() {
                             Some(c) => {
                                 let val = self
-                                    .evaluate_ra_value(&c, row, columns, placeholders, ctes, outer)
+                                    .evaluate_ra_value(&c, row, columns, placeholders, ctes, outer, transaction)
                                     .await?;
                                 Some(val)
                             }
@@ -940,18 +949,19 @@ where
     }
 
     #[tracing::instrument(skip(self, cte))]
-    async fn execute_cte<'p, 'c>(
+    async fn execute_cte<'p, 'c, 't>(
         &self,
         cte: &ra::CTE,
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
+        transaction: &'t S::TransactionGuard,
     ) -> Result<storage::EntireRelation, EvaulateRaError<S::LoadingError>> {
         tracing::debug!("CTE: {:?}", cte);
 
         match &cte.value {
             ra::CTEValue::Standard { query } => match query {
                 ra::CTEQuery::Select(s) => {
-                    let evaluated = self.evaluate_ra(s.clone(), placeholders, ctes, &HashMap::new()).await?;
+                    let evaluated = self.evaluate_ra(s.clone(), placeholders, ctes, &HashMap::new(), transaction).await?;
                     Ok(evaluated)
                 }
             },
@@ -993,7 +1003,7 @@ where
 
                     loop {
                         let mut tmp = self
-                            .evaluate_ra(s.clone(), placeholders, &inner_cte, &HashMap::new())
+                            .evaluate_ra(s.clone(), placeholders, &inner_cte, &HashMap::new(), transaction )
                             .await?;
 
                         for (column, name) in tmp.columns.iter_mut().zip(columns.iter()) {
@@ -1041,7 +1051,7 @@ pub enum ExecuteBoundError<SE> {
     Other(&'static str),
 }
 
-impl<S> Execute for NaiveEngine<S>
+impl<S> Execute<S::TransactionGuard> for NaiveEngine<S>
 where
     S: crate::storage::Storage,
 {
@@ -1052,7 +1062,7 @@ where
     async fn prepare<'q>(
         &self,
         query: &crate::sql::Query<'q>,
-        _ctx: &mut Context,
+        _ctx: &mut Context<S::TransactionGuard>,
     ) -> Result<Self::Prepared, Self::PrepareError> {
         let (expected, columns) = match query {
             Query::Select(s) => {
@@ -1127,7 +1137,7 @@ where
     async fn execute_bound(
         &self,
         query: &<Self::Prepared as PreparedStatement>::Bound,
-        ctx: &mut Context,
+        ctx: &mut Context<S::TransactionGuard>,
     ) -> Result<ExecuteResult, Self::ExecuteBoundError> {
         tracing::debug!("Executing Bound Query");
         tracing::debug!("{:#?}", query.query);
@@ -1151,6 +1161,8 @@ where
                 }
                 Query::Select(select) => {
                     tracing::debug!("Selecting: {:?}", select);
+
+                    let transaction = ctx.transaction.as_ref().unwrap();
 
                     let schemas = self
                         .storage
@@ -1199,7 +1211,7 @@ where
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
                     let r = match self
-                        .evaluate_ra(ra_expression, &placeholder_values, &cte_queries, &HashMap::new())
+                        .evaluate_ra(ra_expression, &placeholder_values, &cte_queries, &HashMap::new(), transaction)
                         .await
                     {
                         Ok(r) => r,
@@ -1218,6 +1230,8 @@ where
                 }
                 Query::Insert(ins) => {
                     tracing::debug!("Inserting: {:?}", ins);
+
+                    let transaction = ctx.transaction.as_ref().unwrap();
 
                     let schemas = self
                         .storage
@@ -1322,7 +1336,7 @@ where
                     let relation = if table_schema.rows.iter().any(|c| &c.ty == &DataType::Serial) {
                         let relation = self
                             .storage
-                            .get_entire_relation(&ins.table.0)
+                            .get_entire_relation(&ins.table.0, transaction)
                             .await
                             .map_err(|e| ExecuteBoundError::StorageError(e))?;
                         Some(relation)
@@ -1410,7 +1424,7 @@ where
                     let inserted_rows = insert_rows.len();
 
                     self.storage
-                        .insert_rows(&ins.table.0, &mut insert_rows.into_iter())
+                        .insert_rows(&ins.table.0, &mut insert_rows.into_iter(), transaction )
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1423,9 +1437,11 @@ where
                 Query::Update(update) => {
                     tracing::info!("Update: {:#?}", update);
 
+                    let transaction = ctx.transaction.as_ref().unwrap();
+
                     let relation = self
                         .storage
-                        .get_entire_relation(&update.table.0)
+                        .get_entire_relation(&update.table.0, transaction )
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1479,6 +1495,7 @@ where
                                             &placeholder_values,
                                             &cte_queries,
                                             &HashMap::new(),
+                                            transaction,
                                         )
                                         .await
                                         .map_err(|e| ExecuteBoundError::Executing(e))?,
@@ -1501,6 +1518,7 @@ where
                                             &placeholder_values,
                                             &cte_queries,
                                             &HashMap::new(),
+                                            transaction
                                         )
                                         .await
                                         .map_err(|e| ExecuteBoundError::Executing(e))?;
@@ -1530,6 +1548,7 @@ where
                                     .update_rows(
                                         update.table.0.as_ref(),
                                         &mut core::iter::once((row.id(), row.data)),
+                                        transaction
                                     )
                                     .await
                                     .map_err(|e| ExecuteBoundError::StorageError(e))?;
@@ -1547,9 +1566,11 @@ where
                         } => {
                             dbg!(&fields, &condition, &other_table_src, &other_table_name);
 
+                            let transaction = ctx.transaction.as_ref().unwrap();
+
                             let table = self
                                 .storage
-                                .get_entire_relation(update.table.0.as_ref())
+                                .get_entire_relation(update.table.0.as_ref(), transaction)
                                 .await
                                 .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1564,6 +1585,8 @@ where
                 Query::Delete(delete) => {
                     tracing::info!("Deleting: {:#?}", delete);
 
+                    let transaction = ctx.transaction.as_ref().unwrap();
+
                     let schemas = self
                         .storage
                         .schemas()
@@ -1575,7 +1598,7 @@ where
 
                     let relation = self
                         .storage
-                        .get_entire_relation(&ra_delete.table)
+                        .get_entire_relation(&ra_delete.table, transaction )
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1614,6 +1637,7 @@ where
                                         &placeholders,
                                         &cte_queries,
                                         &HashMap::new(),
+                                        transaction
                                     )
                                     .await
                                     .map_err(|e| ExecuteBoundError::Executing(e))?;
@@ -1633,7 +1657,7 @@ where
                     let row_count = to_delete.len();
 
                     self.storage
-                        .delete_rows(&delete.table.0, &mut to_delete.into_iter())
+                        .delete_rows(&delete.table.0, &mut to_delete.into_iter(), transaction )
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1644,10 +1668,12 @@ where
                 Query::CreateTable(create) => {
                     tracing::debug!("Creating: {:?}", create);
 
+                    let transaction = ctx.transaction.as_ref().unwrap();
+
                     if create.if_not_exists
                         && self
                             .storage
-                            .relation_exists(&create.identifier.0)
+                            .relation_exists(&create.identifier.0, transaction )
                             .await
                             .map_err(|e| ExecuteBoundError::StorageError(e))?
                     {
@@ -1669,7 +1695,7 @@ where
 
                     tracing::trace!("Creating Relation");
                     self.storage
-                        .create_relation(&create.identifier.0, fields)
+                        .create_relation(&create.identifier.0, fields, transaction)
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1677,6 +1703,8 @@ where
                 }
                 Query::CreateIndex(create) => {
                     tracing::debug!("Creating Index: {:?}", create);
+
+                    let transaction = ctx.transaction.as_ref().unwrap();
 
                     self.storage
                         .insert_rows(
@@ -1688,6 +1716,7 @@ where
                                 storage::Data::Name(String::new()),
                                 storage::Data::Text(String::new()),
                             ]),
+                            transaction,
                         )
                         .await
                         .unwrap();
@@ -1697,12 +1726,14 @@ where
                 Query::AlterTable(alter) => {
                     tracing::debug!("Alter Table");
 
+let transaction = ctx.transaction.as_ref().unwrap();
+
                     match alter {
                         sql::AlterTable::Rename { from, to } => {
                             tracing::debug!("Renaming from {:?} -> {:?}", from, to);
 
                             self.storage
-                                .rename_relation(&from.0, &to.0)
+                                .rename_relation(&from.0, &to.0, transaction )
                                 .await
                                 .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1716,7 +1747,7 @@ where
                             modifications.rename_column(from.0.as_ref(), to.0.as_ref());
 
                             self.storage
-                                .modify_relation(&table.0, modifications)
+                                .modify_relation(&table.0, modifications, transaction)
                                 .await
                                 .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1737,7 +1768,7 @@ where
                             );
 
                             self.storage
-                                .modify_relation(&table.0, modifications)
+                                .modify_relation(&table.0, modifications, transaction )
                                 .await
                                 .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1755,7 +1786,7 @@ where
                             }
 
                             self.storage
-                                .modify_relation(&table.0, modifications)
+                                .modify_relation(&table.0, modifications, transaction)
                                 .await
                                 .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1767,7 +1798,7 @@ where
                             modifications.remove_modifier(&column.0, TypeModifier::NotNull);
 
                             self.storage
-                                .modify_relation(&table.0, modifications)
+                                .modify_relation(&table.0, modifications, transaction)
                                 .await
                                 .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1783,7 +1814,7 @@ where
                             modifications.set_default(&column.0, value.to_static());
 
                             self.storage
-                                .modify_relation(&table.0, modifications)
+                                .modify_relation(&table.0, modifications, transaction)
                                 .await
                                 .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1794,9 +1825,11 @@ where
                 Query::DropIndex(drop_index) => {
                     tracing::debug!("Dropping Index: {:?}", drop_index);
 
+                    let transaction = ctx.transaction.as_ref().unwrap();
+
                     let pg_indexes_table = self
                         .storage
-                        .get_entire_relation("pg_indexes")
+                        .get_entire_relation("pg_indexes", transaction )
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
@@ -1810,30 +1843,42 @@ where
                         .map(|row| row.id());
 
                     self.storage
-                        .delete_rows("pg_indexes", &mut cid)
+                        .delete_rows("pg_indexes", &mut cid, transaction )
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
 
                     Ok(ExecuteResult::Drop_)
                 }
                 Query::DropTable(drop_table) => {
+let transaction = ctx.transaction.as_ref().unwrap();
+
+                    for name in drop_table.names.iter() {
                     self.storage
-                        .remove_relation(&drop_table.name.0)
+                        .remove_relation(&name.0, transaction )
                         .await
                         .map_err(|e| ExecuteBoundError::StorageError(e))?;
+                    }
 
                     Ok(ExecuteResult::Drop_)
+                }
+                Query::TruncateTable(trunc_table) => {
+                    // TODO
+
+                    Ok(ExecuteResult::Truncate)
                 }
                 Query::BeginTransaction(isolation) => {
                     tracing::debug!("Starting Transaction: {:?}", isolation);
 
-                    ctx.transaction = Some(());
+                    let guard = self.storage.start_transaction().await.map_err(|e| ExecuteBoundError::StorageError(e))?;
+                    ctx.transaction = Some(guard);
 
                     Ok(ExecuteResult::Begin)
                 }
                 Query::CommitTransaction => {
                     tracing::debug!("Committing Transaction");
-                    // TODO
+                    
+                    let guard = ctx.transaction.take().unwrap();
+                    self.storage.commit_transaction(guard).await.map_err(|e| ExecuteBoundError::StorageError(e))?;
 
                     Ok(ExecuteResult::Commit)
                 }
@@ -1845,6 +1890,8 @@ where
                     ))
                 }
                 Query::WithCTE { cte, query } => {
+let transaction = ctx.transaction.as_ref().unwrap();
+
                     let schemas = self
                         .storage
                         .schemas()
@@ -1858,7 +1905,7 @@ where
                         parse_context.add_cte(cte.clone());
 
                         let cte_result = self
-                            .execute_cte(&cte, &HashMap::new(), &HashMap::new())
+                            .execute_cte(&cte, &HashMap::new(), &HashMap::new(), transaction )
                             .await
                             .map_err(|e| ExecuteBoundError::Executing(e))?;
                         cte_queries.insert(cte.name.clone(), cte_result);
@@ -1917,10 +1964,13 @@ mod tests {
         let storage = {
             let storage = InMemoryStorage::new();
 
+            let trans = storage.start_transaction().await.unwrap();
+
             storage
                 .create_relation(
                     "dashboard_acl",
                     vec![("dashboard_id".into(), DataType::Integer, Vec::new())],
+                    &trans
                 )
                 .await
                 .unwrap();
@@ -1929,12 +1979,13 @@ mod tests {
                 .create_relation(
                     "dashboard",
                     vec![("id".into(), DataType::Integer, Vec::new())],
+                    &trans
                 )
                 .await
                 .unwrap();
 
             storage
-                .insert_rows("dashboard", &mut vec![vec![Data::Integer(1)]].into_iter())
+                .insert_rows("dashboard", &mut vec![vec![Data::Integer(1)]].into_iter(), &trans)
                 .await
                 .unwrap();
 
@@ -1942,16 +1993,22 @@ mod tests {
                 .insert_rows(
                     "dashboard_acl",
                     &mut vec![vec![Data::Integer(132)], vec![Data::Integer(1)]].into_iter(),
+                    &trans
                 )
                 .await
                 .unwrap();
+
+            storage.commit_transaction(trans).await.unwrap();
 
             storage
         };
         let engine = NaiveEngine::new(storage);
 
         let query = Query::parse(query.as_bytes()).unwrap();
-        let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+        
+        let mut ctx = Context::new();
+        ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
+        let res = engine.execute(&query, &mut ctx).await.unwrap();
 
         assert_eq!(ExecuteResult::Delete { deleted_rows: 1 }, res);
     }
@@ -1965,6 +2022,8 @@ mod tests {
         let storage = {
             let storage = InMemoryStorage::new();
 
+            let trans = storage.start_transaction().await.unwrap();
+
             storage
                 .create_relation(
                     "user",
@@ -1972,6 +2031,7 @@ mod tests {
                         ("name".into(), DataType::Text, Vec::new()),
                         ("active".into(), DataType::Bool, Vec::new()),
                     ],
+                    &trans
                 )
                 .await
                 .unwrap();
@@ -1984,15 +2044,20 @@ mod tests {
                         vec![Data::Text("second-user".to_string()), Data::Boolean(true)],
                     ]
                     .into_iter(),
+                    &trans,
                 )
                 .await
                 .unwrap();
+
+            storage.commit_transaction(trans).await;
 
             storage
         };
         let engine = NaiveEngine::new(storage);
 
-        let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+        let mut ctx = Context::new();
+        ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
+        let res = engine.execute(&query, &mut ctx).await.unwrap();
 
         dbg!(&res);
 

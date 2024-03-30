@@ -21,10 +21,10 @@ pub enum RespondError {
     },
 }
 
-pub async fn responde_execute_result<W>(
+pub async fn responde_execute_result<T, W>(
     writer: &mut W,
     result: execution::ExecuteResult,
-    ctx: &mut execution::Context,
+    ctx: &mut execution::Context<T>,
     flow: MessageFlowContext,
     is_last_response: bool,
 ) -> Result<(), RespondError>
@@ -137,8 +137,6 @@ where
             Ok(())
         }
         execution::ExecuteResult::Begin => {
-            ctx.transaction = Some(());
-
             MessageResponse::CommandComplete {
                 tag: "BEGIN".to_string(),
             }
@@ -297,8 +295,6 @@ where
             Ok(())
         }
         execution::ExecuteResult::Commit => {
-            ctx.transaction = None;
-
             MessageResponse::CommandComplete {
                 tag: "COMMIT".to_string(),
             }
@@ -320,6 +316,25 @@ where
         execution::ExecuteResult::Drop_ => {
             MessageResponse::CommandComplete {
                 tag: "DROP".to_string(),
+            }
+            .send(writer)
+            .await
+            .unwrap();
+
+            if is_last_response {
+                MessageResponse::ReadyForQuery {
+                    transaction_state: ctx.transaction_state(),
+                }
+                .send(writer)
+                .await
+                .unwrap();
+            }
+
+            Ok(())
+        }
+        execution::ExecuteResult::Truncate => {
+            MessageResponse::CommandComplete {
+                tag: "TRUNCATE".to_string(),
             }
             .send(writer)
             .await

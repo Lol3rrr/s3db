@@ -44,6 +44,7 @@ pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<
         nom::bytes::complete::tag_no_case("TIMESTAMP").map(|_| DataType::Timestamp),
         nom::bytes::complete::tag_no_case("SMALLINT").map(|_| DataType::SmallInteger),
         nom::bytes::complete::tag_no_case("INTEGER").map(|_| DataType::Integer),
+        nom::bytes::complete::tag_no_case("INT").map(|_| DataType::Integer),
         nom::bytes::complete::tag_no_case("BIGINT").map(|_| DataType::BigInteger),
         nom::bytes::complete::tag_no_case("BYTEA").map(|_| DataType::ByteA),
         nom::bytes::complete::tag_no_case("Double Precision").map(|_| DataType::DoublePrecision),

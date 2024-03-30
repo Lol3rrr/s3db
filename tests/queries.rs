@@ -26,16 +26,27 @@ macro_rules! execute {
                     s3db::storage::inmemory::InMemoryStorage::new(),
                 );
 
+                let mut outer_context = s3db::execution::Context::new();
+                let query = s3db::sql::Query::parse("BEGIN".as_bytes()).unwrap();
+                engine.execute(&query, &mut outer_context).await.unwrap();
+
                 $(
                     {
                         let query = s3db::sql::Query::parse($queries.as_bytes()).unwrap();
-                        engine.execute(&query, &mut s3db::execution::Context::new()).await.unwrap();
+                        engine.execute(&query, &mut outer_context).await.unwrap();
                     }
                 )*
 
+                let query = s3db::sql::Query::parse("COMMIT".as_bytes()).unwrap();
+                engine.execute(&query, &mut outer_context).await.unwrap();
+
+                let mut last_context = s3db::execution::Context::new();
+                let query = s3db::sql::Query::parse("BEGIN".as_bytes()).unwrap();
+                engine.execute(&query, &mut last_context).await.unwrap();
+
                 let query = s3db::sql::Query::parse($select.as_bytes()).unwrap();
                 engine
-                    .execute(&query, &mut s3db::execution::Context::new())
+                    .execute(&query, &mut last_context)
                     .await
                     .unwrap()
             })

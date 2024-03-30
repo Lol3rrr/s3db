@@ -71,6 +71,7 @@ impl AggregateState {
         engine: &NaiveEngine<S>,
         row: &storage::Row,
         outer: &HashMap<AttributeId, storage::Data>,
+        transaction: &S::TransactionGuard,
     ) -> Result<(), EvaulateRaError<S::LoadingError>>
     where
         S: Storage,
@@ -114,7 +115,15 @@ impl AggregateState {
                 ..
             } => {
                 let tmp = engine
-                    .evaluate_ra_value(&expr, row, columns, &HashMap::new(), &HashMap::new(), outer)
+                    .evaluate_ra_value(
+                        &expr,
+                        row,
+                        columns,
+                        &HashMap::new(),
+                        &HashMap::new(),
+                        outer,
+                        transaction,
+                    )
                     .await?;
 
                 match value.as_mut() {

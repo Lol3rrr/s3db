@@ -35,7 +35,10 @@ mod transactions;
 pub use transactions::IsolationMode;
 
 mod drop;
-pub use drop::{DependentHandling, DropIndex};
+pub use drop::{DependentHandling, DropIndex, DropTable};
+
+mod truncate;
+pub use truncate::TruncateTable;
 
 mod with_cte;
 use with_cte::with_ctes;
@@ -60,6 +63,7 @@ pub enum Query<'s> {
     AlterTable(alter::AlterTable<'s>),
     DropIndex(drop::DropIndex<'s>),
     DropTable(drop::DropTable<'s>),
+    TruncateTable(truncate::TruncateTable<'s>),
     Configuration(set_config::Configuration),
     BeginTransaction(transactions::IsolationMode),
     CommitTransaction,
@@ -117,6 +121,7 @@ impl<'s> Query<'s> {
             Self::AlterTable(at) => Query::AlterTable(at.to_static()),
             Self::DropIndex(di) => Query::DropIndex(di.to_static()),
             Self::DropTable(dt) => Query::DropTable(dt.to_static()),
+            Self::TruncateTable(t) => Query::TruncateTable(t.to_static()),
             Self::Configuration(c) => Query::Configuration(c.clone()),
             Self::BeginTransaction(iso) => Query::BeginTransaction(iso.clone()),
             Self::CommitTransaction => Query::CommitTransaction,
@@ -136,6 +141,7 @@ impl<'s> Query<'s> {
             Self::CreateIndex(_) => 0,
             Self::AlterTable(_) => 0,
             Self::DropIndex(_) => 0,
+            Self::TruncateTable(_) => 0,
             Self::DropTable(_) => 0,
             Self::Configuration(_) => 0,
             Self::BeginTransaction(_) => 0,
@@ -170,6 +176,7 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
                 nom::combinator::map(alter::alter_table, |at| Query::AlterTable(at)),
                 nom::combinator::map(drop::drop_index, |di| Query::DropIndex(di)),
                 nom::combinator::map(drop::drop_table, |dt| Query::DropTable(dt)),
+                nom::combinator::map(truncate::parse, |tt| Query::TruncateTable(tt)),
                 nom::combinator::map(set_config::parse, |c| Query::Configuration(c)),
                 nom::combinator::map(prepare::parse, |p| Query::Prepare(p)),
             )),
@@ -193,11 +200,20 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
 
 #[cfg(test)]
 mod tests {
-    use tests::select::{OrderBy, TableExpression};
-
     use super::*;
 
     use pretty_assertions::assert_eq;
+
+    macro_rules! single_parse_test {
+        ($func:ident, $query:literal, $expected:expr) => {
+            let (remaining, result) = $func($query.as_bytes()).unwrap();
+
+            pretty_assertions::assert_eq!(&[] as &[u8], remaining);
+            pretty_assertions::assert_eq!($expected, result);
+        };
+    }
+
+    pub(crate) use single_parse_test;
 
     #[test]
     fn select_with_where() {

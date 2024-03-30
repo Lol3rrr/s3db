@@ -57,12 +57,12 @@ async fn postgres() {
 }
 
 #[tracing::instrument(skip(connection, engine))]
-async fn handle_postgres_connection<E>(
+async fn handle_postgres_connection<E, T>(
     mut connection: TcpStream,
     addr: std::net::SocketAddr,
     engine: Rc<E>,
 ) where
-    E: s3db::execution::Execute,
+    E: s3db::execution::Execute<T>,
 {
     let startmsg = match s3db::postgres::StartMessage::parse(&mut connection).await {
         Ok(sm) => sm,
