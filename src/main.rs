@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs::File, rc::Rc};
 
 use s3db::{
     execution::{self, PreparedStatement},
-    sql::{self, Query},
+    sql::Query,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tracing::Level;

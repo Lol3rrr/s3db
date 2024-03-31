@@ -15,11 +15,14 @@ pub struct InMemoryStorage {
     tables: RefCell<HashMap<String, Table>>,
     current_tid: AtomicU64,
     active_tids: RefCell<HashSet<u64>>,
+    latest_commit: AtomicU64,
 }
 
 #[derive(Debug)]
 pub struct InMemoryTransactionGuard {
     id: u64,
+    active: HashSet<u64>,
+    latest_commit: u64,
 }
 
 #[derive(Debug)]
@@ -31,8 +34,13 @@ pub enum LoadingError {
 
 struct Table {
     columns: Vec<(String, DataType, Vec<TypeModifier>)>,
-    rows: Vec<(Row, u64, u64)>,
+    rows: Vec<InternalRow>,
     cid: AtomicU64,
+}
+struct InternalRow {
+    data: Row,
+    created: u64,
+    expired: u64,
 }
 
 impl InMemoryStorage {
@@ -77,6 +85,7 @@ impl InMemoryStorage {
             ),
             current_tid: AtomicU64::new(1),
             active_tids: RefCell::new(HashSet::new()),
+            latest_commit: AtomicU64::new(0),
         }
     }
 }
@@ -93,6 +102,12 @@ impl Storage for InMemoryStorage {
         guard: Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
         <&InMemoryStorage as Storage>::commit_transaction(&self, guard).await
+    }
+    async fn abort_transaction(
+        &self,
+        guard: Self::TransactionGuard,
+    ) -> Result<(), Self::LoadingError> {
+        <&InMemoryStorage as Storage>::abort_transaction(&self, guard).await
     }
 
     async fn get_entire_relation(
@@ -187,7 +202,11 @@ impl Storage for &InMemoryStorage {
         let mut active_ids = self.active_tids.try_borrow_mut().unwrap();
         active_ids.insert(id);
 
-        Ok(InMemoryTransactionGuard { id })
+        Ok(InMemoryTransactionGuard {
+            id,
+            active: active_ids.clone(),
+            latest_commit: self.latest_commit.load(Ordering::Acquire),
+        })
     }
 
     async fn commit_transaction(
@@ -196,6 +215,30 @@ impl Storage for &InMemoryStorage {
     ) -> Result<(), Self::LoadingError> {
         let mut active_ids = self.active_tids.try_borrow_mut().unwrap();
         active_ids.remove(&guard.id);
+
+        loop {
+            let value = self.latest_commit.load(Ordering::Acquire);
+            let n_value = core::cmp::max(value, guard.id);
+
+            match self.latest_commit.compare_exchange(
+                value,
+                n_value,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(_) => continue,
+            };
+        }
+
+        Ok(())
+    }
+
+    async fn abort_transaction(
+        &self,
+        guard: Self::TransactionGuard,
+    ) -> Result<(), Self::LoadingError> {
+        // TODO
 
         Ok(())
     }
@@ -218,20 +261,24 @@ impl Storage for &InMemoryStorage {
                     rows: table
                         .rows
                         .iter()
-                        .filter(|(_, created, deleted)| {
-                            if active_transactions.contains(created) && created != &transaction.id {
+                        .filter(|row| {
+                            if (transaction.active.contains(&row.created)
+                                && row.created != transaction.id)
+                                || row.created < transaction.latest_commit
+                            {
                                 return false;
                             }
-                            if *deleted != 0
-                                && (!active_transactions.contains(deleted)
-                                    || deleted == &transaction.id)
+                            if row.expired != 0
+                                && (!transaction.active.contains(&row.expired)
+                                    || row.expired == transaction.id
+                                    || row.expired < transaction.latest_commit)
                             {
                                 return false;
                             }
 
                             true
                         })
-                        .map(|(r, _, _)| r.clone())
+                        .map(|r| r.data.clone())
                         .collect(),
                 }],
             })
@@ -273,8 +320,8 @@ impl Storage for &InMemoryStorage {
         );
 
         let pg_tables = tables_mut.get_mut("pg_tables").unwrap();
-        pg_tables.rows.push((
-            Row::new(
+        pg_tables.rows.push(InternalRow {
+            data: Row::new(
                 pg_tables.cid.fetch_add(1, Ordering::SeqCst),
                 vec![
                     Data::Name("".to_string()),
@@ -287,9 +334,9 @@ impl Storage for &InMemoryStorage {
                     Data::Boolean(false),
                 ],
             ),
-            transaction.id,
-            0,
-        ));
+            created: transaction.id,
+            expired: 0,
+        });
 
         Ok(())
     }
@@ -369,7 +416,7 @@ impl Storage for &InMemoryStorage {
                         .unwrap_or(Data::Null);
 
                     for row in table.rows.iter_mut() {
-                        row.0.data.push(value.clone());
+                        row.data.data.push(value.clone());
                     }
                 }
                 RelationModification::RenameColumn { from, to } => {
@@ -455,11 +502,11 @@ impl Storage for &InMemoryStorage {
         let table = tables.get_mut(name).ok_or(LoadingError::UnknownRelation)?;
 
         for row in rows {
-            table.rows.push((
-                Row::new(table.cid.fetch_add(1, Ordering::SeqCst), row),
-                transaction.id,
-                0,
-            ));
+            table.rows.push(InternalRow {
+                data: Row::new(table.cid.fetch_add(1, Ordering::SeqCst), row),
+                created: transaction.id,
+                expired: 0,
+            });
         }
 
         Ok(())
@@ -482,14 +529,19 @@ impl Storage for &InMemoryStorage {
             let row = table
                 .rows
                 .iter_mut()
-                .find(|(row, _, _)| row.id() == row_id)
+                .find(|row| row.data.id() == row_id)
                 .ok_or(LoadingError::Other("Could not find Row"))?;
 
-            row.2 = transaction.id;
+            row.expired = transaction.id;
 
-            row.0.data = new_values;
-            let n_row = row.0.clone();
-            table.rows.push((n_row, transaction.id, 0));
+            let mut n_row = InternalRow {
+                data: row.data.clone(),
+                created: transaction.id,
+                expired: 0,
+            };
+            n_row.data.rid = table.cid.fetch_add(1, Ordering::SeqCst);
+            n_row.data.data = new_values;
+            table.rows.push(n_row);
         }
 
         Ok(())
@@ -509,9 +561,9 @@ impl Storage for &InMemoryStorage {
         let table = tables.get_mut(name).ok_or(LoadingError::UnknownRelation)?;
 
         for cid in rows {
-            for (_, _, exp_id) in table.rows.iter_mut().filter(|(row, _, _)| row.rid == cid) {
-                assert_eq!(0, *exp_id);
-                *exp_id = transaction.id;
+            for row in table.rows.iter_mut().filter(|row| row.data.rid == cid) {
+                assert_eq!(0, row.expired);
+                row.expired = transaction.id;
             }
         }
 

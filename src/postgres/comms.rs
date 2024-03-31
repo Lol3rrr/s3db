@@ -313,6 +313,25 @@ where
 
             Ok(())
         }
+        execution::ExecuteResult::Rollback => {
+            MessageResponse::CommandComplete {
+                tag: "ROLLBACK".to_string(),
+            }
+            .send(writer)
+            .await
+            .unwrap();
+
+            if is_last_response {
+                MessageResponse::ReadyForQuery {
+                    transaction_state: ctx.transaction_state(),
+                }
+                .send(writer)
+                .await
+                .unwrap();
+            }
+
+            Ok(())
+        }
         execution::ExecuteResult::Drop_ => {
             MessageResponse::CommandComplete {
                 tag: "DROP".to_string(),

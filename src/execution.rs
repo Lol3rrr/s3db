@@ -34,6 +34,7 @@ pub enum ExecuteResult {
     Alter,
     Begin,
     Commit,
+    Rollback,
     Drop_,
     Truncate,
 }

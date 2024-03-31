@@ -607,7 +607,7 @@ async fn update_basic() {
                 ]
             ),
             Row::new(
-                1,
+                3,
                 vec![
                     Data::Text("second".to_string()),
                     Data::Integer(12),

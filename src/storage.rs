@@ -69,6 +69,11 @@ pub trait Storage {
         guard: Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 
+    fn abort_transaction(
+        &self,
+        guard: Self::TransactionGuard,
+    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
+
     fn get_entire_relation(
         &self,
         name: &str,

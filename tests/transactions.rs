@@ -96,3 +96,92 @@ async fn basic() {
 
     execute!(&engine, &mut second_ctx, "COMMIT");
 }
+
+#[tokio::test]
+async fn delete_during() {
+    let mut first_ctx = Context::new();
+    let mut second_ctx = Context::new();
+
+    let engine = NaiveEngine::new(InMemoryStorage::new());
+
+    let mut prev_ctx = Context::new();
+    execute!(&engine, &mut prev_ctx, "BEGIN");
+
+    execute!(&engine, &mut prev_ctx, "CREATE TABLE users(name text)");
+
+    execute!(
+        &engine,
+        &mut prev_ctx,
+        "INSERT INTO users(name) VALUES('previous')"
+    );
+
+    let previous_select = execute!(&engine, &mut prev_ctx, "SELECT name FROM users");
+    pretty_assertions::assert_eq!(
+        ExecuteResult::Select {
+            content: EntireRelation {
+                columns: vec![("name".into(), DataType::Text, Vec::new())],
+                parts: vec![PartialRelation {
+                    rows: vec![Row::new(0, vec![Data::Text("previous".into())])]
+                }],
+            },
+            formats: vec![]
+        },
+        previous_select
+    );
+
+    execute!(&engine, &mut prev_ctx, "COMMIT");
+
+    execute!(&engine, &mut first_ctx, "BEGIN");
+    execute!(&engine, &mut second_ctx, "BEGIN");
+
+    let delete_res = execute!(
+        &engine,
+        &mut first_ctx,
+        "DELETE FROM users WHERE name = 'previous'"
+    );
+    pretty_assertions::assert_eq!(ExecuteResult::Delete { deleted_rows: 1 }, delete_res);
+
+    let select_res_1 = execute!(&engine, &mut first_ctx, "SELECT name FROM users");
+    pretty_assertions::assert_eq!(
+        ExecuteResult::Select {
+            content: EntireRelation {
+                columns: vec![("name".into(), DataType::Text, Vec::new())],
+                parts: vec![PartialRelation { rows: vec![] }],
+            },
+            formats: vec![]
+        },
+        select_res_1
+    );
+
+    let select_res_2 = execute!(&engine, &mut second_ctx, "SELECT name FROM users");
+    pretty_assertions::assert_eq!(
+        ExecuteResult::Select {
+            content: EntireRelation {
+                columns: vec![("name".into(), DataType::Text, Vec::new())],
+                parts: vec![PartialRelation {
+                    rows: vec![Row::new(0, vec![Data::Text("previous".into())])]
+                }],
+            },
+            formats: vec![]
+        },
+        select_res_2
+    );
+
+    execute!(&engine, &mut first_ctx, "COMMIT");
+
+    let select_res_2 = execute!(&engine, &mut second_ctx, "SELECT name FROM users");
+    pretty_assertions::assert_eq!(
+        ExecuteResult::Select {
+            content: EntireRelation {
+                columns: vec![("name".into(), DataType::Text, Vec::new())],
+                parts: vec![PartialRelation {
+                    rows: vec![Row::new(0, vec![Data::Text("previous".into())])]
+                }],
+            },
+            formats: vec![]
+        },
+        select_res_2
+    );
+
+    execute!(&engine, &mut second_ctx, "COMMIT");
+}

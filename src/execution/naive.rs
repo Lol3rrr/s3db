@@ -1885,9 +1885,10 @@ let transaction = ctx.transaction.as_ref().unwrap();
                 Query::RollbackTransaction => {
                     tracing::debug!("Rollback Transaction");
 
-                    Err(ExecuteBoundError::NotImplemented(
-                        "Rolling back a transaction",
-                    ))
+                    let guard = ctx.transaction.take().unwrap();
+                    self.storage.abort_transaction(guard).await.map_err(|e| ExecuteBoundError::StorageError(e))?;
+
+                    Ok(ExecuteResult::Rollback)
                 }
                 Query::WithCTE { cte, query } => {
 let transaction = ctx.transaction.as_ref().unwrap();
