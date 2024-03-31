@@ -2,8 +2,8 @@ use pretty_assertions::assert_eq;
 
 use s3db::sql::{
     AggregateExpression, BinaryOperator, ColumnReference, Condition, ConflictHandling, Delete,
-    FunctionCall, Identifier, Insert, InsertValues, Literal, NullOrdering, OrderBy, Ordering,
-    Query, Select, SelectLimit, TableExpression, ValueExpression,
+    FunctionCall, Identifier, Insert, InsertValues, JoinKind, Literal, NullOrdering, OrderBy,
+    Ordering, Query, Select, SelectLimit, TableExpression, ValueExpression,
 };
 
 #[test]
@@ -173,7 +173,6 @@ fn delete_test() {
 }
 
 #[test]
-#[ignore = "TODO Comparison"]
 fn something() {
     let query_str = "
         SELECT \"id\", \"version\", \"email\", \"name\", \"login\", \"password\", \"salt\", \"rands\", \"company\", \"email_verified\", \"theme\", \"help_flags1\", \"is_disabled\", \"is_admin\", \"is_service_account\", \"org_id\", \"created\", \"updated\", \"last_seen_at\"
@@ -186,19 +185,129 @@ fn something() {
         other => panic!("{:?}", other),
     };
 
-    /*
     assert_eq!(
         Select {
-            values: vec![],
-            table: None,
-            where_condition: None,
+            values: vec![
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "id".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "version".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "email".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "name".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "login".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "password".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "salt".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "rands".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "company".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "email_verified".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "theme".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "help_flags1".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "is_disabled".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "is_admin".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "is_service_account".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "org_id".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "created".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "updated".into()
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "last_seen_at".into()
+                })
+            ],
+            table: Some(TableExpression::Relation("user".into())),
+            where_condition: Some(Condition::And(vec![Condition::Or(vec![
+                Condition::And(vec![Condition::Value(Box::new(
+                    ValueExpression::Operator {
+                        first: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: "email".into()
+                            }))
+                        })),
+                        second: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Box::new(ValueExpression::Placeholder(1))
+                        })),
+                        operator: BinaryOperator::Equal
+                    }
+                )),]),
+                Condition::And(vec![Condition::Value(Box::new(
+                    ValueExpression::Operator {
+                        first: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: "login".into()
+                            }))
+                        })),
+                        second: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Box::new(ValueExpression::Placeholder(2))
+                        })),
+                        operator: BinaryOperator::Equal
+                    }
+                ))])
+            ])])),
+            having: None,
             order_by: None,
             group_by: None,
-            limit: None,
+            limit: Some(SelectLimit {
+                limit: 1,
+                offset: None,
+            }),
+            for_update: None,
+            combine: None,
         },
         query
     );
-    */
 }
 
 #[test]
@@ -421,20 +530,136 @@ fn update_something() {
 }
 
 #[test]
-#[ignore = "TODO"]
 fn testing() {
-    //  let query_str = "\n\t\tSELECT\n\t\t\tpermission.action,\n\t\t\tpermission.scope\n\t\t\tFROM permission\n\t\t\tINNER JOIN role ON role.id = permission.role_id\n\t\tINNER JOIN (\n\t\t\tSELECT br.role_id FROM builtin_role AS br\n\t\t\tWHERE br.role IN ($1)\n\t\t\tAND (br.org_id = $2 OR br.org_id = $3)\n\t\t) as all_role ON role.id = all_role.role_id WHERE ( role.name LIKE $4 OR role.name LIKE $5 )";
-
-    let query_str = "\n\t\tSELECT\n\t\t\tpermission.action,\n\t\t\tpermission.scope\n\t\t\tFROM permission\n\t\t\tINNER JOIN role ON role.id = permission.role_id\n\t\tINNER JOIN (\n\t\t\tSELECT br.role_id FROM builtin_role AS br\n\t\t\tWHERE br.role IN ($1)\n\t\t\tAND (br.org_id = $2 OR br.org_id = $3)\n\t\t) as all_role ON role.id = all_role.role_id";
+    let query_str = "SELECT permission.action,permission.scope
+FROM permission
+INNER JOIN role ON role.id = permission.role_id
+INNER JOIN (
+    SELECT br.role_id
+    FROM builtin_role AS br
+    WHERE br.role IN ($1) AND (br.org_id = $2 OR br.org_id = $3)
+) as all_role ON role.id = all_role.role_id";
 
     let select = match Query::parse(query_str.as_bytes()) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
 
-    dbg!(&select);
-
-    todo!()
+    assert_eq!(
+        Select {
+            values: vec![
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: Some("permission".into()),
+                    column: "action".into(),
+                }),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: Some("permission".into()),
+                    column: "scope".into(),
+                })
+            ],
+            table: Some(TableExpression::Join {
+                left: Box::new(TableExpression::Join {
+                    left: Box::new(TableExpression::Relation("permission".into())),
+                    right: Box::new(TableExpression::Relation("role".into())),
+                    kind: JoinKind::Inner,
+                    condition: Condition::And(vec![Condition::Value(Box::new(
+                        ValueExpression::Operator {
+                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: Some("role".into()),
+                                column: "id".into(),
+                            })),
+                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: Some("permission".into()),
+                                column: "role_id".into(),
+                            })),
+                            operator: BinaryOperator::Equal
+                        }
+                    ))])
+                }),
+                right: Box::new(TableExpression::Renamed {
+                    inner: Box::new(TableExpression::SubQuery(Box::new(Select {
+                        values: vec![ValueExpression::ColumnReference(ColumnReference {
+                            relation: Some("br".into()),
+                            column: "role_id".into(),
+                        })],
+                        table: Some(TableExpression::Renamed {
+                            inner: Box::new(TableExpression::Relation("builtin_role".into())),
+                            name: "br".into()
+                        }),
+                        where_condition: Some(Condition::And(vec![
+                            Condition::Value(Box::new(ValueExpression::Operator {
+                                first: Box::new(ValueExpression::ColumnReference(
+                                    ColumnReference {
+                                        relation: Some("br".into()),
+                                        column: "role".into(),
+                                    }
+                                )),
+                                second: Box::new(ValueExpression::List(vec![
+                                    ValueExpression::Placeholder(1)
+                                ])),
+                                operator: BinaryOperator::In
+                            })),
+                            Condition::Or(vec![
+                                Condition::And(vec![Condition::Value(Box::new(
+                                    ValueExpression::Operator {
+                                        first: Box::new(ValueExpression::ColumnReference(
+                                            ColumnReference {
+                                                relation: Some("br".into()),
+                                                column: "org_id".into()
+                                            }
+                                        )),
+                                        second: Box::new(ValueExpression::Placeholder(2)),
+                                        operator: BinaryOperator::Equal,
+                                    }
+                                ))]),
+                                Condition::And(vec![Condition::Value(Box::new(
+                                    ValueExpression::Operator {
+                                        first: Box::new(ValueExpression::ColumnReference(
+                                            ColumnReference {
+                                                relation: Some("br".into()),
+                                                column: "org_id".into()
+                                            }
+                                        )),
+                                        second: Box::new(ValueExpression::Placeholder(3)),
+                                        operator: BinaryOperator::Equal,
+                                    }
+                                ))])
+                            ])
+                        ])),
+                        having: None,
+                        order_by: None,
+                        group_by: None,
+                        limit: None,
+                        for_update: None,
+                        combine: None,
+                    }))),
+                    name: "all_role".into()
+                }),
+                kind: JoinKind::Inner,
+                condition: Condition::And(vec![Condition::Value(Box::new(
+                    ValueExpression::Operator {
+                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            relation: Some("role".into()),
+                            column: "id".into(),
+                        })),
+                        second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            relation: Some("all_role".into()),
+                            column: "role_id".into(),
+                        })),
+                        operator: BinaryOperator::Equal
+                    }
+                ))])
+            }),
+            where_condition: None,
+            having: None,
+            order_by: None,
+            group_by: None,
+            limit: None,
+            for_update: None,
+            combine: None,
+        },
+        select
+    );
 }
 
 #[test]

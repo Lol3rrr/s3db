@@ -1,5 +1,3 @@
-use std::borrow::BorrowMut;
-
 use pretty_assertions::assert_eq;
 
 use s3db::{
