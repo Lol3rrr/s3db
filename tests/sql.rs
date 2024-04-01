@@ -727,34 +727,6 @@ fn testing_subquery() {
 }
 
 #[test]
-#[ignore = "TODO"]
-fn testing_something() {
-    let query_str = "\n\t\tSELECT\n\t\t\tpermission.action,\n\t\t\tpermission.scope\n\t\t\tFROM permission\n\t\t\tINNER JOIN role ON role.id = permission.role_id\n\t\tINNER JOIN (\n\t\t\tSELECT ur.role_id\n\t\t\tFROM user_role AS ur\n\t\t\tWHERE ur.user_id = $1\n\t\t\tAND (ur.org_id = $2 OR ur.org_id = $3)\n\t\tUNION\n\t\t\tSELECT br.role_id FROM builtin_role AS br\n\t\t\tWHERE br.role IN ($4, $5)\n\t\t\tAND (br.org_id = $6 OR br.org_id = $7)\n\t\t) as all_role ON role.id = all_role.role_id WHERE ( role.name LIKE $8 OR role.name LIKE $9 )";
-
-    let select = match Query::parse(query_str.as_bytes()) {
-        Ok(Query::Select(s)) => s,
-        other => panic!("{:?}", other),
-    };
-
-    dbg!(&select);
-
-    assert_eq!(
-        Select {
-            values: vec![],
-            table: None,
-            where_condition: None,
-            order_by: None,
-            group_by: None,
-            having: None,
-            limit: None,
-            for_update: None,
-            combine: None
-        },
-        select
-    );
-}
-
-#[test]
 fn with_select() {
     let query_str = "
 WITH regional_sales AS (

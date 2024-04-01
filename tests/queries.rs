@@ -5,6 +5,7 @@ use s3db::{
 };
 
 use tracing::error_span;
+use tracing_subscriber::{layer::SubscriberExt, Layer};
 
 macro_rules! execute {
     ($select:literal, $expected:expr) => {
@@ -16,9 +17,12 @@ macro_rules! execute {
             .build()
             .unwrap();
 
-        let subscriber = tracing_subscriber::FmtSubscriber::builder().with_writer(std::io::stdout).with_max_level(tracing::Level::DEBUG).with_ansi(false).finish();
 
-        let tmp = tracing::subscriber::with_default(subscriber, || {
+        let fmt_layer = tracing_subscriber::fmt::layer().with_ansi(false).with_test_writer();
+
+        let registry = tracing_subscriber::Registry::default().with(fmt_layer.with_filter(tracing_subscriber::filter::LevelFilter::DEBUG));
+
+        let tmp = tracing::subscriber::with_default(registry, || {
             let _span_guard = error_span!("running-test").entered();
 
             runtime.block_on(async move {

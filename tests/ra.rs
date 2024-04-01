@@ -9,7 +9,7 @@ use s3db::{
         RaConditionValue, RaExpression, RaUpdate, RaValueExpression, CTE,
     },
     sql::{
-        BinaryOperator, ColumnReference, DataType, Identifier, Literal, Query, Select,
+        BinaryOperator, ColumnReference, DataType, Identifier, JoinKind, Literal, Query, Select,
         TypeModifier, ValueExpression,
     },
     storage::Schemas,
@@ -451,7 +451,6 @@ fn update_fields_using_parameters() {
 }
 
 #[test]
-#[ignore = "Not yet done"]
 fn inner_join() {
     let query = "SELECT user.name, password.hash FROM user JOIN password ON user.id = password.uid";
 
@@ -482,9 +481,63 @@ fn inner_join() {
     let (ra_expr, placeholders) = RaExpression::parse_select(&query, &schemas).unwrap();
     assert_eq!(HashMap::new(), placeholders);
 
-    dbg!(&ra_expr);
-
-    todo!()
+    assert_eq!(
+        RaExpression::Projection {
+            inner: Box::new(RaExpression::Join {
+                left: Box::new(RaExpression::BaseRelation {
+                    name: "user".into(),
+                    columns: vec![
+                        ("id".into(), DataType::Integer, AttributeId::new(0)),
+                        ("name".into(), DataType::Text, AttributeId::new(1))
+                    ]
+                }),
+                right: Box::new(RaExpression::BaseRelation {
+                    name: "password".into(),
+                    columns: vec![
+                        ("uid".into(), DataType::Integer, AttributeId::new(2)),
+                        ("hash".into(), DataType::Text, AttributeId::new(3))
+                    ]
+                }),
+                kind: JoinKind::Inner,
+                condition: RaCondition::And(vec![RaCondition::Value(Box::new(
+                    RaConditionValue::Comparison {
+                        first: RaValueExpression::Attribute {
+                            name: "id".into(),
+                            ty: DataType::Integer,
+                            a_id: AttributeId::new(0)
+                        },
+                        second: RaValueExpression::Attribute {
+                            name: "uid".into(),
+                            ty: DataType::Integer,
+                            a_id: AttributeId::new(2)
+                        },
+                        comparison: RaComparisonOperator::Equals
+                    }
+                ))])
+            }),
+            attributes: vec![
+                ProjectionAttribute {
+                    id: AttributeId::new(4),
+                    name: "name".into(),
+                    value: RaValueExpression::Attribute {
+                        name: "name".into(),
+                        ty: DataType::Text,
+                        a_id: AttributeId::new(1)
+                    }
+                },
+                ProjectionAttribute {
+                    id: AttributeId::new(5),
+                    name: "hash".into(),
+                    value: RaValueExpression::Attribute {
+                        name: "hash".into(),
+                        ty: DataType::Text,
+                        a_id: AttributeId::new(3)
+                    }
+                }
+            ]
+        },
+        ra_expr
+    );
 }
 
 #[test]
