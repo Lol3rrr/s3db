@@ -1,0 +1,13 @@
+[package]
+name = "storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[target.'cfg(not(loom))'.dependencies]
+tokio = { version = "1.36.0", default-features = false, features = ["io-util", "rt", "net", "macros", "time"] }
+
+[target.'cfg(loom)'.dependencies]
+loom = { version = "0.7", features = [] }
+futures = { version = "0.3", no_default_features = true, features = ["executor"] }
