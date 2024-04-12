@@ -70,7 +70,11 @@ pub fn begin_transaction(
 }
 
 pub fn commit_transaction(i: &[u8]) -> IResult<&[u8], (), nom::error::VerboseError<&[u8]>> {
-    let (remaining, _) = nom::bytes::complete::tag_no_case("COMMIT")(i)?;
+    let (remaining, _) = nom::branch::alt((
+        nom::bytes::complete::tag_no_case("COMMIT"),
+        // This is a Postgres Extension
+        nom::bytes::complete::tag_no_case("END"),
+    ))(i)?;
 
     Ok((remaining, ()))
 }

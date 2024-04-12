@@ -50,6 +50,26 @@ pub use set_config::Configuration;
 mod prepare;
 pub use prepare::Prepare;
 
+mod copy_;
+pub use copy_::Copy_;
+
+mod vacuum;
+pub use vacuum::Vacuum;
+
+pub mod dialects {
+    /// Indicates that the parser should be compatible with the Postgres Dialect of SQL
+    pub struct Postgres;
+}
+
+/// Should be implemented by parser to indicate that it is compatible with the given dialect `D`
+pub trait CompatibleParser<D> {
+    type StaticVersion: 'static;
+
+    fn to_static(&self) -> Self::StaticVersion;
+
+    fn parameter_count(&self) -> usize;
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Query<'s> {
     WithCTE { cte: WithCTEs<'s>, query: Box<Self> },
@@ -57,6 +77,7 @@ pub enum Query<'s> {
     Select(select::Select<'s>),
     Insert(insert::Insert<'s>),
     Update(update::Update<'s>),
+    Copy_(copy_::Copy_<'s>),
     Delete(delete::Delete<'s>),
     CreateTable(create::CreateTable<'s>),
     CreateIndex(create::CreateIndex<'s>),
@@ -68,6 +89,7 @@ pub enum Query<'s> {
     BeginTransaction(transactions::IsolationMode),
     CommitTransaction,
     RollbackTransaction,
+    Vacuum(vacuum::Vacuum),
 }
 
 impl<'s> Query<'s> {
@@ -115,6 +137,7 @@ impl<'s> Query<'s> {
             Self::Select(s) => Query::Select(s.to_static()),
             Self::Insert(ins) => Query::Insert(ins.to_static()),
             Self::Update(ups) => Query::Update(ups.to_static()),
+            Self::Copy_(c) => Query::Copy_(c.to_static()),
             Self::Delete(d) => Query::Delete(d.to_static()),
             Self::CreateTable(ct) => Query::CreateTable(ct.to_static()),
             Self::CreateIndex(ci) => Query::CreateIndex(ci.to_static()),
@@ -126,16 +149,20 @@ impl<'s> Query<'s> {
             Self::BeginTransaction(iso) => Query::BeginTransaction(iso.clone()),
             Self::CommitTransaction => Query::CommitTransaction,
             Self::RollbackTransaction => Query::RollbackTransaction,
+            Self::Vacuum(v) => Query::Vacuum(v.to_static()),
         }
     }
 
     pub fn parameter_count(&self) -> usize {
         match self {
-            Self::WithCTE { cte, query } => core::cmp::max(0, query.parameter_count()),
+            Self::WithCTE { cte, query } => {
+                core::cmp::max(cte.parameter_count(), query.parameter_count())
+            }
             Self::Prepare(p) => p.params.len(),
             Self::Select(s) => s.max_parameter(),
             Self::Insert(i) => i.max_parameter(),
             Self::Update(u) => u.max_parameter(),
+            Self::Copy_(c) => c.parameter_count(),
             Self::Delete(d) => d.max_parameter(),
             Self::CreateTable(_) => 0,
             Self::CreateIndex(_) => 0,
@@ -147,6 +174,7 @@ impl<'s> Query<'s> {
             Self::BeginTransaction(_) => 0,
             Self::CommitTransaction => 0,
             Self::RollbackTransaction => 0,
+            Self::Vacuum(_) => 0,
         }
     }
 }
@@ -161,6 +189,7 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
                 nom::combinator::map(select::select, |s| Query::Select(s)),
                 nom::combinator::map(insert::insert, |ins| Query::Insert(ins)),
                 nom::combinator::map(update::update, |upd| Query::Update(upd)),
+                nom::combinator::map(copy_::parse, |c| Query::Copy_(c)),
                 nom::combinator::map(delete::delete, |d| Query::Delete(d)),
                 nom::combinator::map(transactions::begin_transaction, |iso| {
                     Query::BeginTransaction(iso)
@@ -179,6 +208,7 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
                 nom::combinator::map(truncate::parse, |tt| Query::TruncateTable(tt)),
                 nom::combinator::map(set_config::parse, |c| Query::Configuration(c)),
                 nom::combinator::map(prepare::parse, |p| Query::Prepare(p)),
+                nom::combinator::map(vacuum::parse, |v| Query::Vacuum(v)),
             )),
             nom::character::complete::multispace0,
             nom::combinator::opt(nom::bytes::complete::tag(";")),

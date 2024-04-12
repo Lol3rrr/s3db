@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{common::identifier, Literal};
+use crate::{common::identifier, dialects, CompatibleParser, Literal};
 
 use super::common::{data_type, literal, type_modifier, DataType, Identifier, TypeModifier};
 
@@ -26,8 +26,10 @@ pub enum WithOptions {
     FillFactor(usize),
 }
 
-impl<'s> CreateTable<'s> {
-    pub fn to_static(&self) -> CreateTable<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for CreateTable<'s> {
+    type StaticVersion = CreateTable<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         CreateTable {
             identifier: self.identifier.to_static(),
             fields: self.fields.iter().map(|f| f.to_static()).collect(),
@@ -39,16 +41,26 @@ impl<'s> CreateTable<'s> {
             withs: self.withs.clone(),
         }
     }
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
 }
 
-impl<'s> CreateIndex<'s> {
-    pub fn to_static(&self) -> CreateIndex<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for CreateIndex<'s> {
+    type StaticVersion = CreateIndex<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         CreateIndex {
             identifier: self.identifier.to_static(),
             table: self.table.to_static(),
             columns: self.columns.iter().map(|c| c.to_static()).collect(),
             unique: self.unique,
         }
+    }
+
+    fn parameter_count(&self) -> usize {
+        0
     }
 }
 

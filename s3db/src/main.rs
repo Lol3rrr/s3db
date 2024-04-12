@@ -1,9 +1,14 @@
 #![feature(variant_count)]
 #![feature(alloc_layout_extra)]
 
-use std::{collections::HashMap, fs::File, rc::Rc};
+use std::{
+    collections::{HashMap, VecDeque},
+    fs::File,
+    rc::Rc,
+};
 
-use s3db::execution::{self, PreparedStatement};
+use futures::SinkExt;
+use s3db::execution::{self, CopyState, PreparedStatement};
 use sql::Query;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::Level;
@@ -36,8 +41,11 @@ fn main() {
     runtime.block_on(local_set);
 }
 
+#[tracing::instrument]
 async fn postgres() {
     let listener = TcpListener::bind("0.0.0.0:5432").await.unwrap();
+    let listener_addr = listener.local_addr().unwrap();
+    tracing::info!("Postgres Interface listening on '{:?}'", listener_addr);
 
     let storage = s3db::storage::inmemory::InMemoryStorage::new();
     let engine = Rc::new(s3db::execution::naive::NaiveEngine::new(storage));
@@ -176,6 +184,107 @@ async fn handle_postgres_connection<E, T>(
                         continue;
                     }
 
+                    let mut implicit_transaction = false;
+                    if ctx.transaction.is_none() && !matches!(query, Query::BeginTransaction(_)) {
+                        implicit_transaction = true;
+                        engine
+                            .execute(
+                                &Query::BeginTransaction(sql::IsolationMode::Standard),
+                                &mut ctx,
+                            )
+                            .await
+                            .unwrap();
+                    }
+
+                    if let Query::Copy_(c) = query {
+                        dbg!(&c);
+
+                        let mut copy_state =
+                            engine.start_copy(&c.target.0, &mut ctx).await.unwrap();
+
+                        let tmp = copy_state.columns();
+
+                        s3db::postgres::MessageResponse::CopyInResponse {
+                            format: s3db::postgres::FormatCode::Text,
+                            columns: tmp.len() as i16,
+                            column_formats: tmp
+                                .into_iter()
+                                .map(|_| s3db::postgres::FormatCode::Text)
+                                .collect(),
+                        }
+                        .send(&mut connection)
+                        .await
+                        .unwrap();
+
+                        tracing::info!("Send CopyInResponse");
+
+                        let mut data_buffer = VecDeque::with_capacity(1024);
+                        loop {
+                            let msg = match s3db::postgres::Message::parse(&mut connection).await {
+                                Ok(m) => m,
+                                Err(e) => {
+                                    tracing::error!("Parsing Message: {:?}", e);
+                                    todo!()
+                                }
+                            };
+
+                            match msg {
+                                s3db::postgres::Message::CopyData { data } => {
+                                    data_buffer.extend(data);
+
+                                    while let Some(idx) = data_buffer
+                                        .iter()
+                                        .enumerate()
+                                        .find(|(_, v)| **v == b'\n')
+                                        .map(|(i, _)| i)
+                                    {
+                                        let remaining = data_buffer.split_off(idx);
+
+                                        let mut inner = data_buffer;
+                                        data_buffer = remaining;
+                                        data_buffer.pop_front();
+
+                                        let inner = inner.make_contiguous();
+
+                                        if inner == &[b'\\', b'.'] {
+                                            continue;
+                                        }
+
+                                        copy_state.insert(inner).await.unwrap();
+                                    }
+                                }
+                                s3db::postgres::Message::CopyDone => {
+                                    // TODO
+                                    break;
+                                }
+                                other => todo!("Unexpected Message: {:?}", other),
+                            };
+                        }
+
+                        drop(copy_state);
+
+                        if implicit_transaction {
+                            engine
+                                .execute(&Query::CommitTransaction, &mut ctx)
+                                .await
+                                .unwrap();
+                        }
+
+                        s3db::postgres::MessageResponse::CommandComplete { tag: "COPY".into() }
+                            .send(&mut connection)
+                            .await
+                            .unwrap();
+
+                        s3db::postgres::MessageResponse::ReadyForQuery {
+                            transaction_state: ctx.transaction_state(),
+                        }
+                        .send(&mut connection)
+                        .await
+                        .unwrap();
+
+                        continue;
+                    }
+
                     let result = match engine.execute(&query, &mut ctx).await {
                         Ok(r) => r,
                         Err(e) => {
@@ -201,6 +310,13 @@ async fn handle_postgres_connection<E, T>(
                             continue;
                         }
                     };
+
+                    if implicit_transaction {
+                        engine
+                            .execute(&Query::CommitTransaction, &mut ctx)
+                            .await
+                            .unwrap();
+                    }
 
                     tracing::debug!("Result: {:?}", result);
 
@@ -449,6 +565,32 @@ async fn handle_postgres_connection<E, T>(
                         tracing::error!("Sending Response: {:?}", e);
                     }
                 };
+            }
+            s3db::postgres::Message::CopyData { data } => {
+                tracing::error!("CopyData message in normal Context");
+
+                s3db::postgres::ErrorResponseBuilder::new(
+                    s3db::postgres::ErrorSeverities::Fatal,
+                    "0A000",
+                )
+                .message("CopyData in normal/non-copy context")
+                .build()
+                .send(&mut connection)
+                .await
+                .unwrap();
+            }
+            s3db::postgres::Message::CopyDone => {
+                tracing::error!("CopyDone message in normal Context");
+
+                s3db::postgres::ErrorResponseBuilder::new(
+                    s3db::postgres::ErrorSeverities::Fatal,
+                    "0A000",
+                )
+                .message("CopyDone in normal/non-copy context")
+                .build()
+                .send(&mut connection)
+                .await
+                .unwrap();
             }
         };
     }

@@ -1,5 +1,7 @@
 use nom::IResult;
 
+use crate::{dialects, CompatibleParser};
+
 use super::{common::identifier, Identifier};
 
 #[derive(Debug, PartialEq)]
@@ -27,11 +29,17 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], TruncateTable<'_>, nom::error::VerboseE
     )(i)
 }
 
-impl<'s> TruncateTable<'s> {
-    pub fn to_static(&self) -> TruncateTable<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for TruncateTable<'s> {
+    type StaticVersion = TruncateTable<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         TruncateTable {
             names: self.names.iter().map(|n| n.to_static()).collect(),
         }
+    }
+
+    fn parameter_count(&self) -> usize {
+        0
     }
 }
 

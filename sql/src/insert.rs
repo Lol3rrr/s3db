@@ -1,6 +1,9 @@
 use nom::{IResult, Parser};
 
-use crate::common::{column_reference, identifier, value_expression};
+use crate::{
+    common::{column_reference, identifier, value_expression},
+    dialects, CompatibleParser,
+};
 
 use super::{common::Identifier, select::select, ColumnReference, Select, ValueExpression};
 
@@ -19,8 +22,10 @@ pub struct ConflictHandling<'s> {
     pub update: Vec<(ColumnReference<'s>, ValueExpression<'s>)>,
 }
 
-impl<'s> Insert<'s> {
-    pub fn to_static(&self) -> Insert<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for Insert<'s> {
+    type StaticVersion = Insert<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         Insert {
             table: self.table.to_static(),
             fields: self.fields.iter().map(|f| f.to_static()).collect(),
@@ -30,7 +35,7 @@ impl<'s> Insert<'s> {
         }
     }
 
-    pub fn max_parameter(&self) -> usize {
+    fn parameter_count(&self) -> usize {
         match &self.values {
             InsertValues::Values(values) => values
                 .iter()
@@ -40,6 +45,12 @@ impl<'s> Insert<'s> {
                 .unwrap_or(0),
             InsertValues::Select(s) => s.max_parameter(),
         }
+    }
+}
+
+impl<'s> Insert<'s> {
+    pub fn max_parameter(&self) -> usize {
+        Self::parameter_count(self)
     }
 }
 

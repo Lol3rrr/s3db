@@ -370,5 +370,24 @@ where
 
             Ok(())
         }
+        execution::ExecuteResult::Vacuum => {
+            MessageResponse::CommandComplete {
+                tag: "VACUUM".to_string(),
+            }
+            .send(writer)
+            .await
+            .unwrap();
+
+            if is_last_response {
+                MessageResponse::ReadyForQuery {
+                    transaction_state: ctx.transaction_state(),
+                }
+                .send(writer)
+                .await
+                .unwrap();
+            }
+
+            Ok(())
+        }
     }
 }

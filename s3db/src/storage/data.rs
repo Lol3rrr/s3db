@@ -55,6 +55,17 @@ impl Data {
 
                 Ok(Self::Varchar(name))
             }
+            sql::DataType::Char { size } => {
+                let name: Vec<_> = core::str::from_utf8(raw)
+                    .map(|s| s.chars().collect())
+                    .map_err(|e| (RealizeError::ConvertToString(e), ty, raw))?;
+
+                if name.len() > *size {
+                    return Err((RealizeError::NotImplemented, ty, raw));
+                }
+
+                Ok(Self::Char(name))
+            }
             sql::DataType::Bool => {
                 let result = if raw.len() == 1 {
                     dbg!(&raw);

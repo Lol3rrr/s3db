@@ -1,5 +1,7 @@
 use nom::{IResult, Parser};
 
+use crate::{dialects, CompatibleParser};
+
 use super::{
     common::{data_type, identifier},
     query, DataType, Identifier, Query,
@@ -54,13 +56,19 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&
     Ok((i, tmp))
 }
 
-impl<'s> Prepare<'s> {
-    pub fn to_static(&self) -> Prepare<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for Prepare<'s> {
+    type StaticVersion = Prepare<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         Prepare {
             name: self.name.to_static(),
             params: self.params.clone(),
             query: Box::new(self.query.to_static()),
         }
+    }
+
+    fn parameter_count(&self) -> usize {
+        0
     }
 }
 

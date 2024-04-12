@@ -245,3 +245,62 @@ fn prepare() {
 
     let _ = select;
 }
+
+#[test]
+fn copy_query() {
+    let query_str = "copy pgbench_accounts from stdin";
+
+    let copy_ = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Copy_(c)) => c,
+        other => panic!("{:?}", other),
+    };
+
+    let _ = copy_;
+}
+
+#[test]
+fn vacuum() {
+    let query_str = "vacuum analyze pgbench_branches";
+
+    let vac = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Vacuum(v)) => v,
+        other => panic!("{:?}", other),
+    };
+
+    let _ = vac;
+}
+
+#[test]
+#[ignore = "I dont even know the exact behaviour and meaning of this query"]
+fn pgbench_1() {
+    let query_str = "
+select o.n, p.partstrat, pg_catalog.count(i.inhparent)
+from pg_catalog.pg_class as c
+join pg_catalog.pg_namespace as n on (n.oid = c.relnamespace)
+cross join lateral (
+    select pg_catalog.array_position(pg_catalog.current_schemas(true), n.nspname)
+) as o(n)
+left join pg_catalog.pg_partitioned_table as p on (p.partrelid = c.oid)
+left join pg_catalog.pg_inherits as i on (c.oid = i.inhparent)
+where c.relname = 'pgbench_accounts' and o.n is not null
+group by 1, 2 order by 1 asc limit 1";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    let _ = select;
+}
+
+#[test]
+fn alter_add_primary_key() {
+    let query_str = "alter table pgbench_branches add primary key (bid)";
+
+    let alter = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::AlterTable(a)) => a,
+        other => panic!("{:?}", other),
+    };
+
+    let _ = alter;
+}

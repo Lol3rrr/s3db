@@ -6,11 +6,11 @@ use std::collections::HashMap;
 use futures::{future::LocalBoxFuture, FutureExt};
 
 use crate::{
-    execution::algorithms::{self, joins::Join}, postgres::FormatCode, ra::{self, AttributeId, RaUpdate}, storage::{self, Data, Storage}
+    execution::algorithms::{self, joins::Join}, postgres::FormatCode, ra::{self, AttributeId, RaUpdate}, storage::{self, Data, Storage, TableSchema}
 };
-use sql::{ BinaryOperator, ColumnReference, DataType, Query, TypeModifier};
+use sql::{ BinaryOperator, ColumnReference, DataType, Query, TypeModifier, CompatibleParser};
 
-use super::{Context, Execute, ExecuteResult, PreparedStatement};
+use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
 mod aggregate;
 use aggregate::AggregateState;
@@ -53,6 +53,13 @@ pub struct NaiveBound {
     expected_parameters: Vec<DataType>,
     values: Vec<Vec<u8>>,
     result_columns: Vec<FormatCode>,
+}
+
+pub struct NaiveCopyState<'engine, S, T> {
+    table: String,
+    engine: &'engine S,
+    schema: TableSchema,
+    tx: &'engine T,
 }
 
 impl<S> NaiveEngine<S> {
@@ -999,6 +1006,8 @@ where
     type PrepareError = PrepareError<S::LoadingError>;
     type ExecuteBoundError = ExecuteBoundError<S::LoadingError>;
 
+    type CopyState<'e> = NaiveCopyState<'e, S, S::TransactionGuard> where S: 'e, S::TransactionGuard: 'e;
+
     async fn prepare<'q>(
         &self,
         query: &sql::Query<'q>,
@@ -1071,6 +1080,23 @@ where
             expected_parameters: expected,
             columns,
         })
+    }
+
+    async fn start_copy<'s, 'e, 'c>(
+            &'s self,
+            table_name: &str,
+            ctx: &'c mut Context<S::TransactionGuard>,
+        ) ->  Result<Self::CopyState<'e>, Self::ExecuteBoundError>
+        where
+            's: 'e, 'c: 'e {
+        let schemas = self.storage.schemas().await.map_err(|e| ExecuteBoundError::StorageError(e))?;
+
+        let table = match schemas.get_table(table_name) {
+            Some(t) => t.clone(),
+            None => return Err(ExecuteBoundError::Other("Missing Table")),
+        };
+
+        Ok(NaiveCopyState { table: table_name.into(), engine: &self.storage, schema: table, tx: ctx.transaction.as_ref().unwrap() })
     }
 
     #[tracing::instrument(skip(self, query, ctx))]
@@ -1226,6 +1252,15 @@ where
 
                                                 Ok(data)
                                             }
+                                            sql::ValueExpression::FunctionCall(func) => match func {
+                                                sql::FunctionCall::CurrentTimestamp => {
+                                                    Ok(storage::Data::Timestamp("2024-04-12 12:00:00.000000-05".into()))
+                                                }
+                                                other => {
+                                                    dbg!(other);
+                                                    Err(ExecuteBoundError::NotImplemented("FunctionCall"))
+                                                }
+                                            },
                                             other => {
                                                 dbg!(other);
                                                 Err(ExecuteBoundError::NotImplemented(
@@ -1522,6 +1557,11 @@ where
                         }
                     }
                 }
+                Query::Copy_(c) => {
+                    tracing::info!("Copy: {:?}", c);
+
+                    Err(ExecuteBoundError::NotImplemented("Copy"))
+                }
                 Query::Delete(delete) => {
                     tracing::info!("Deleting: {:#?}", delete);
 
@@ -1760,6 +1800,11 @@ let transaction = ctx.transaction.as_ref().unwrap();
 
                             Ok(ExecuteResult::Alter)
                         }
+                        sql::AlterTable::AddPrimaryKey { table, column } => {
+                            tracing::warn!(?table, ?column, "[TODO] Adding Primary Key");
+
+                            Ok(ExecuteResult::Alter)
+                        }
                     }
                 }
                 Query::DropIndex(drop_index) => {
@@ -1790,7 +1835,12 @@ let transaction = ctx.transaction.as_ref().unwrap();
                     Ok(ExecuteResult::Drop_)
                 }
                 Query::DropTable(drop_table) => {
-let transaction = ctx.transaction.as_ref().unwrap();
+                    let transaction = match ctx.transaction.as_ref() {
+                        Some(t) => t,
+                        None => {
+                            return Err(ExecuteBoundError::Other("Missing Transaction State"))
+                        }
+                    };
 
                     for name in drop_table.names.iter() {
                     self.storage
@@ -1855,6 +1905,13 @@ let transaction = ctx.transaction.as_ref().unwrap();
                     to_process = Some(&query);
                     continue;
                 }
+                Query::Vacuum(v) => {
+                    tracing::info!("Vacuum");
+
+                    // TODO
+
+                    return Ok(ExecuteResult::Vacuum);
+                }
             };
 
             return result;
@@ -1887,6 +1944,36 @@ impl PreparedStatement for NaivePrepared {
 
     fn row_columns(&self) -> Vec<(String, DataType)> {
         self.columns.clone()
+    }
+}
+
+impl<'e, S> CopyState for NaiveCopyState<'e, S, S::TransactionGuard> where S: Storage {
+    fn columns(&self) -> Vec<()> {
+        self.schema.rows.iter().map(|_| ()).collect()
+    }
+
+    async fn insert(&mut self, raw_column: &[u8]) -> Result<(), ()> {
+        // TODO
+
+        let raw_str = core::str::from_utf8(raw_column).map_err(|e| ())?;
+
+        let parts: Vec<_> = raw_str.split('\t').collect();
+
+        if parts.len() != self.schema.rows.len() {
+            dbg!(parts, &self.schema.rows);
+
+            return Err(());
+        }
+
+        let mut row_data = Vec::with_capacity(parts.len());
+        for (column, raw) in self.schema.rows.iter().zip(parts) {
+            let tmp = Data::realize(&column.ty, raw.as_bytes()).map_err(|e| ())?;
+            row_data.push(tmp);
+        }
+
+        self.engine.insert_rows(&self.table, &mut core::iter::once(row_data), self.tx).await.unwrap();
+
+        Ok(())
     }
 }
 

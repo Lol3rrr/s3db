@@ -315,6 +315,13 @@ impl RaValueExpression {
                         count,
                     }))
                 }
+                FunctionCall::CurrentTimestamp => {
+                    // TODO
+
+                    Err(ParseSelectError::NotImplemented(
+                        "Parse CurrentTimestamp Function",
+                    ))
+                }
             },
             ValueExpression::Operator {
                 first,

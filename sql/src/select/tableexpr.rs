@@ -1,6 +1,8 @@
 use nom::{IResult, Parser};
 
-use crate::{self as sql, common::identifier, select::select, Condition, Identifier};
+use crate::{
+    self as sql, common::identifier, select::select, CompatibleParser, Condition, Identifier,
+};
 
 use super::Select;
 

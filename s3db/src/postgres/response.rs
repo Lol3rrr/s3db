@@ -4,21 +4,40 @@ use bytes::BufMut;
 use nom::AsBytes;
 use tokio::io::AsyncWriteExt;
 
+use super::FormatCode;
+
 /// [Reference](https://www.postgresql.org/docs/current/protocol-message-formats.html) all Messages
 /// being send by the backend are marked with a `(B)`
 #[derive(Debug)]
 pub enum MessageResponse<'d> {
     DenySSL,
-    Error { fields: Vec<ErrorField> },
+    Error {
+        fields: Vec<ErrorField>,
+    },
     AuthenticationOk,
-    ReadyForQuery { transaction_state: u8 },
+    ReadyForQuery {
+        transaction_state: u8,
+    },
     ParseComplete,
-    ParameterDescription { parameters: Vec<i32> },
-    RowDescription { fields: Vec<RowDescriptionField> },
+    ParameterDescription {
+        parameters: Vec<i32>,
+    },
+    RowDescription {
+        fields: Vec<RowDescriptionField>,
+    },
     BindComplete,
-    DataRow { values: Vec<Cow<'d, [u8]>> },
+    DataRow {
+        values: Vec<Cow<'d, [u8]>>,
+    },
     NoData,
-    CommandComplete { tag: String },
+    CommandComplete {
+        tag: String,
+    },
+    CopyInResponse {
+        format: FormatCode,
+        columns: i16,
+        column_formats: Vec<FormatCode>,
+    },
 }
 
 #[derive(Debug)]
@@ -294,6 +313,51 @@ impl<'d> MessageResponse<'d> {
                     .write(tag.as_bytes())
                     .map_err(SendError::Write)?;
                 buff_writer.write(&[0]).map_err(SendError::Write)?;
+
+                writer
+                    .write(buffer.as_bytes())
+                    .await
+                    .map_err(SendError::Write)?;
+
+                Ok(())
+            }
+            Self::CopyInResponse {
+                format,
+                columns,
+                column_formats,
+            } => {
+                let total_length = 4 + 1 + 2 + column_formats.iter().map(|_| 2).sum::<i32>();
+
+                let mut buffer = bytes::BytesMut::with_capacity(total_length as usize);
+
+                let mut buff_writer = (&mut buffer).writer();
+
+                buff_writer.write(&[b'G']).map_err(SendError::Write)?;
+                buff_writer
+                    .write(&total_length.to_be_bytes())
+                    .map_err(SendError::Write)?;
+
+                buff_writer
+                    .write(match format {
+                        FormatCode::Text => &[0],
+                        FormatCode::Binary => &[1],
+                    })
+                    .map_err(SendError::Write)?;
+
+                buff_writer
+                    .write(&columns.to_be_bytes())
+                    .map_err(SendError::Write)?;
+
+                for column in column_formats {
+                    buff_writer
+                        .write(match column {
+                            FormatCode::Text => &[0, 0],
+                            FormatCode::Binary => &[0, 1],
+                        })
+                        .map_err(SendError::Write)?;
+                }
+
+                assert_eq!(buffer.len() - 1, total_length as usize);
 
                 writer
                     .write(buffer.as_bytes())

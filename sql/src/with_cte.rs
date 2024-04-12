@@ -15,6 +15,13 @@ pub struct WithCTEs<'s> {
     pub recursive: bool,
 }
 
+impl<'s> WithCTEs<'s> {
+    pub fn parameter_count(&self) -> usize {
+        // TODO
+        0
+    }
+}
+
 pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, _, recursive)) = nom::sequence::tuple((
         nom::character::complete::multispace0,

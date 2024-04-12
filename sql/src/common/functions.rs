@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{select, Select};
+use crate::{select, CompatibleParser, Select};
 
 use super::{literal, value_expression, Identifier, Literal, ValueExpression};
 
@@ -30,6 +30,7 @@ pub enum FunctionCall<'s> {
         start: Box<ValueExpression<'s>>,
         count: Option<Box<ValueExpression<'s>>>,
     },
+    CurrentTimestamp,
 }
 
 pub fn function_call(
@@ -154,6 +155,10 @@ pub fn function_call(
                 count,
             },
         ),
+        nom::combinator::map(
+            nom::bytes::complete::tag_no_case("CURRENT_TIMESTAMP"),
+            |_| FunctionCall::CurrentTimestamp,
+        ),
     ))(i)
 }
 
@@ -196,6 +201,7 @@ impl<'s> FunctionCall<'s> {
                 start: Box::new(start.to_static()),
                 count: count.as_ref().map(|c| Box::new(c.to_static())),
             },
+            Self::CurrentTimestamp => FunctionCall::CurrentTimestamp,
         }
     }
 
@@ -220,6 +226,7 @@ impl<'s> FunctionCall<'s> {
             .into_iter()
             .max()
             .unwrap_or(0),
+            Self::CurrentTimestamp => 0,
         }
     }
 }

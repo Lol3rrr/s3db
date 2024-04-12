@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{common::value_expressions, condition::condition};
+use crate::{common::value_expressions, condition::condition, dialects, CompatibleParser};
 
 use super::{
     common::{column_reference, ValueExpression},
@@ -46,8 +46,10 @@ pub struct SelectLimit {
     pub offset: Option<usize>,
 }
 
-impl<'s> Select<'s> {
-    pub fn to_static(&self) -> Select<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
+    type StaticVersion = Select<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         Select {
             values: self.values.iter().map(|v| v.to_static()).collect(),
             table: self.table.as_ref().map(|t| t.to_static()),
@@ -76,7 +78,7 @@ impl<'s> Select<'s> {
         }
     }
 
-    pub fn max_parameter(&self) -> usize {
+    fn parameter_count(&self) -> usize {
         let value_max = self
             .values
             .iter()
@@ -99,6 +101,12 @@ impl<'s> Select<'s> {
             .into_iter()
             .max()
             .unwrap_or(0)
+    }
+}
+
+impl<'s> Select<'s> {
+    pub fn max_parameter(&self) -> usize {
+        Self::parameter_count(self)
     }
 }
 

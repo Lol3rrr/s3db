@@ -11,7 +11,7 @@ pub use literal::{literal, Literal};
 mod datatype;
 pub use datatype::{data_type, DataType};
 
-use super::select;
+use crate::{select, CompatibleParser};
 
 /// [Reference](https://www.postgresql.org/docs/current/sql-expressions.html)
 #[derive(Debug, PartialEq, Clone)]
@@ -1030,6 +1030,16 @@ mod tests {
                 ],
                 else_case: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(0)))),
             },
+            tmp
+        );
+    }
+
+    #[test]
+    fn current_timestamp() {
+        let (remaining, tmp) = value_expression("CURRENT_TIMESTAMP".as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            ValueExpression::FunctionCall(FunctionCall::CurrentTimestamp),
             tmp
         );
     }

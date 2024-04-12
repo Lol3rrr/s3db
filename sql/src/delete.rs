@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::common::identifier;
+use crate::{common::identifier, dialects, CompatibleParser};
 
 use super::{condition::condition, Condition, Identifier};
 
@@ -10,19 +10,26 @@ pub struct Delete<'s> {
     pub condition: Option<Condition<'s>>,
 }
 
-impl<'s> Delete<'s> {
-    pub fn to_static(&self) -> Delete<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for Delete<'s> {
+    type StaticVersion = Delete<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         Delete {
             table: self.table.to_static(),
             condition: self.condition.as_ref().map(|c| c.to_static()),
         }
     }
 
-    pub fn max_parameter(&self) -> usize {
+    fn parameter_count(&self) -> usize {
         self.condition
             .as_ref()
             .map(|c| c.max_parameter())
             .unwrap_or(0)
+    }
+}
+impl<'s> Delete<'s> {
+    pub fn max_parameter(&self) -> usize {
+        Self::parameter_count(self)
     }
 }
 

@@ -3,6 +3,7 @@ use nom::{IResult, Parser};
 use crate::{
     common::{identifier, value_expression},
     condition::condition,
+    dialects, CompatibleParser,
 };
 
 use super::{Condition, Identifier, ValueExpression};
@@ -24,8 +25,10 @@ pub enum UpdateFrom<'s> {
     },
 }
 
-impl<'s> Update<'s> {
-    pub fn to_static(&self) -> Update<'static> {
+impl<'s> CompatibleParser<dialects::Postgres> for Update<'s> {
+    type StaticVersion = Update<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         Update {
             table: self.table.to_static(),
             fields: self
@@ -38,7 +41,7 @@ impl<'s> Update<'s> {
         }
     }
 
-    pub fn max_parameter(&self) -> usize {
+    fn parameter_count(&self) -> usize {
         core::cmp::max(
             self.fields
                 .iter()
@@ -50,6 +53,12 @@ impl<'s> Update<'s> {
                 .map(|c| c.max_parameter())
                 .unwrap_or(0),
         )
+    }
+}
+
+impl<'s> Update<'s> {
+    pub fn max_parameter(&self) -> usize {
+        Self::parameter_count(self)
     }
 }
 

@@ -41,6 +41,7 @@ pub enum ExecuteResult {
     Rollback,
     Drop_,
     Truncate,
+    Vacuum,
 }
 
 #[derive(Debug)]
@@ -55,6 +56,11 @@ pub trait Execute<T> {
     type PrepareError: Debug;
     type ExecuteBoundError: Debug;
 
+    type CopyState<'e>: CopyState
+    where
+        Self: 'e,
+        T: 'e;
+
     fn prepare<'q>(
         &self,
         query: &sql::Query<'q>,
@@ -66,6 +72,15 @@ pub trait Execute<T> {
         query: &<Self::Prepared as PreparedStatement>::Bound,
         ctx: &mut Context<T>,
     ) -> impl Future<Output = Result<ExecuteResult, Self::ExecuteBoundError>>;
+
+    fn start_copy<'s, 'e, 'c>(
+        &'s self,
+        table: &str,
+        ctx: &'c mut Context<T>,
+    ) -> impl Future<Output = Result<Self::CopyState<'e>, Self::ExecuteBoundError>>
+    where
+        's: 'e,
+        'c: 'e;
 
     fn execute<'q>(
         &self,
@@ -113,6 +128,12 @@ pub trait PreparedStatement {
     fn parameters(&self) -> Vec<DataType>;
 
     fn row_columns(&self) -> Vec<(String, DataType)>;
+}
+
+pub trait CopyState {
+    fn columns(&self) -> Vec<()>;
+
+    fn insert(&mut self, raw_column: &[u8]) -> impl Future<Output = Result<(), ()>>;
 }
 
 impl<T> Context<T> {

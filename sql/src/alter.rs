@@ -37,6 +37,10 @@ pub enum AlterTable<'s> {
         column: Identifier<'s>,
         value: Literal<'s>,
     },
+    AddPrimaryKey {
+        table: Identifier<'s>,
+        column: Identifier<'s>,
+    },
 }
 
 impl<'s> AlterTable<'s> {
@@ -81,6 +85,10 @@ impl<'s> AlterTable<'s> {
                 table: table.to_static(),
                 column: column.to_static(),
                 value: value.to_static(),
+            },
+            Self::AddPrimaryKey { table, column } => AlterTable::AddPrimaryKey {
+                table: table.to_static(),
+                column: column.to_static(),
             },
         }
     }
@@ -213,6 +221,25 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
                 table: table.clone(),
                 column,
                 value,
+            },
+        ),
+        nom::sequence::tuple((
+            nom::bytes::complete::tag_no_case("add"),
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("primary"),
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("key"),
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag("("),
+            nom::character::complete::multispace0,
+            identifier,
+            nom::character::complete::multispace0,
+            nom::bytes::complete::tag(")"),
+        ))
+        .map(
+            |(_, _, _, _, _, _, _, _, column, _, _)| AlterTable::AddPrimaryKey {
+                table: table.clone(),
+                column,
             },
         ),
     ))(remaining)?;

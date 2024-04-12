@@ -1,8 +1,8 @@
-use bytes::{Buf, BufMut};
-use nom::{error::dbg_dmp, IResult, Parser};
+use bytes::BufMut;
+use nom::{IResult, Parser};
 use tokio::io::AsyncReadExt;
 
-use super::{parse_string, read_string, ParseMessageError};
+use super::{parse_string, ParseMessageError};
 
 #[derive(Debug, PartialEq)]
 pub enum Message {
@@ -31,6 +31,10 @@ pub enum Message {
         portal: String,
         max_rows: i32,
     },
+    CopyData {
+        data: Vec<u8>,
+    },
+    CopyDone,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -151,6 +155,9 @@ impl Message {
                     }
                 },
             ),
+            nom::sequence::tuple((nom::bytes::streaming::tag([b'd']), Self::parse_copy_data))
+                .map(|(_, d)| Self::CopyData { data: d }),
+            nom::bytes::streaming::tag([b'c']).map(|_| Self::CopyDone),
             nom::bytes::streaming::tag([b'S']).map(|_| Self::Sync_),
             nom::bytes::streaming::tag([b'X']).map(|_| Self::Terminate),
         ))(data)
@@ -205,6 +212,10 @@ impl Message {
         }
 
         Ok((i, result))
+    }
+
+    fn parse_copy_data(i: &[u8]) -> IResult<&[u8], Vec<u8>> {
+        Ok((&[], i.to_vec()))
     }
 }
 
