@@ -20,7 +20,7 @@ fn main() {
     )
     .unwrap();
 
-    tracing::info!("Hello, world!");
+    tracing::info!("Starting...");
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
