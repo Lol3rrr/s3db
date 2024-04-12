@@ -245,8 +245,8 @@ pub fn value_expression(
     let (remaining, parsed) = nom::branch::alt((
         nom::bytes::complete::tag("*").map(|_| ValueExpression::All),
         nom::bytes::complete::tag_no_case("NULL").map(|_| ValueExpression::Null),
-        functions::function_call.map(|f| ValueExpression::FunctionCall(f)),
-        aggregate.map(|t| ValueExpression::AggregateExpression(t)),
+        functions::function_call.map(ValueExpression::FunctionCall),
+        aggregate.map(ValueExpression::AggregateExpression),
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("NOT"),
             nom::character::complete::multispace1,
@@ -292,8 +292,8 @@ pub fn value_expression(
         .map(
             |(_, _, matched_value, cases, else_case, _, _)| ValueExpression::Case {
                 matched_value: Box::new(matched_value),
-                cases: cases,
-                else_case: else_case.map(|v| Box::new(v)),
+                cases,
+                else_case: else_case.map(Box::new),
             },
         ),
         nom::combinator::map(
@@ -321,8 +321,8 @@ pub fn value_expression(
                 target_ty: ty,
             },
         ),
-        literal.map(|lit| ValueExpression::Literal(lit)),
-        nom::combinator::map(column_reference, |t| ValueExpression::ColumnReference(t)),
+        literal.map(ValueExpression::Literal),
+        nom::combinator::map(column_reference, ValueExpression::ColumnReference),
         nom::sequence::tuple((
             nom::bytes::complete::tag("$"),
             nom::character::complete::digit1,

@@ -91,7 +91,7 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
                     nom::character::complete::multispace0,
                 )),
                 nom::branch::alt((
-                    create_field.map(|f| ParsedTableField::Field(f)),
+                    create_field.map(ParsedTableField::Field),
                     nom::sequence::tuple((
                         nom::bytes::complete::tag_no_case("PRIMARY"),
                         nom::character::complete::multispace1,

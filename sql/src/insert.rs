@@ -221,7 +221,7 @@ fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::Verbo
             )),
             |(_, values)| InsertValues::Values(values),
         ),
-        nom::combinator::map(select, |s| InsertValues::Select(s)),
+        nom::combinator::map(select, InsertValues::Select),
     ))(i)
 }
 

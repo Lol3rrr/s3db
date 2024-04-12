@@ -7,7 +7,6 @@ use std::{
     rc::Rc,
 };
 
-use futures::SinkExt;
 use s3db::execution::{self, CopyState, PreparedStatement};
 use sql::Query;
 use tokio::net::{TcpListener, TcpStream};
@@ -246,7 +245,7 @@ async fn handle_postgres_connection<E, T>(
 
                                         let inner = inner.make_contiguous();
 
-                                        if inner == &[b'\\', b'.'] {
+                                        if inner == [b'\\', b'.'] {
                                             continue;
                                         }
 
@@ -566,7 +565,7 @@ async fn handle_postgres_connection<E, T>(
                     }
                 };
             }
-            s3db::postgres::Message::CopyData { data } => {
+            s3db::postgres::Message::CopyData { .. } => {
                 tracing::error!("CopyData message in normal Context");
 
                 s3db::postgres::ErrorResponseBuilder::new(

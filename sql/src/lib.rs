@@ -99,7 +99,7 @@ impl<'s> Query<'s> {
     {
         let (remaining, query) = nom::combinator::complete(query)(raw).map_err(|e| {
             dbg!(&e);
-            ()
+            
         })?;
 
         if !remaining.is_empty() {
@@ -116,7 +116,7 @@ impl<'s> Query<'s> {
     {
         let (remaining, queries) = nom::multi::many1(query)(raw).map_err(|e| {
             dbg!(e);
-            ()
+            
         })?;
 
         if !remaining.is_empty() {
@@ -186,11 +186,11 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
         nom::sequence::tuple((
             nom::character::complete::multispace0,
             nom::branch::alt((
-                nom::combinator::map(select::select, |s| Query::Select(s)),
-                nom::combinator::map(insert::insert, |ins| Query::Insert(ins)),
-                nom::combinator::map(update::update, |upd| Query::Update(upd)),
-                nom::combinator::map(copy_::parse, |c| Query::Copy_(c)),
-                nom::combinator::map(delete::delete, |d| Query::Delete(d)),
+                nom::combinator::map(select::select, Query::Select),
+                nom::combinator::map(insert::insert, Query::Insert),
+                nom::combinator::map(update::update, Query::Update),
+                nom::combinator::map(copy_::parse, Query::Copy_),
+                nom::combinator::map(delete::delete, Query::Delete),
                 nom::combinator::map(transactions::begin_transaction, |iso| {
                     Query::BeginTransaction(iso)
                 }),
@@ -200,15 +200,15 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
                 nom::combinator::map(transactions::rollback_transaction, |_| {
                     Query::RollbackTransaction
                 }),
-                nom::combinator::map(create::create_table, |ct| Query::CreateTable(ct)),
-                nom::combinator::map(create::create_index, |ci| Query::CreateIndex(ci)),
-                nom::combinator::map(alter::alter_table, |at| Query::AlterTable(at)),
-                nom::combinator::map(drop::drop_index, |di| Query::DropIndex(di)),
-                nom::combinator::map(drop::drop_table, |dt| Query::DropTable(dt)),
-                nom::combinator::map(truncate::parse, |tt| Query::TruncateTable(tt)),
-                nom::combinator::map(set_config::parse, |c| Query::Configuration(c)),
-                nom::combinator::map(prepare::parse, |p| Query::Prepare(p)),
-                nom::combinator::map(vacuum::parse, |v| Query::Vacuum(v)),
+                nom::combinator::map(create::create_table, Query::CreateTable),
+                nom::combinator::map(create::create_index, Query::CreateIndex),
+                nom::combinator::map(alter::alter_table, Query::AlterTable),
+                nom::combinator::map(drop::drop_index, Query::DropIndex),
+                nom::combinator::map(drop::drop_table, Query::DropTable),
+                nom::combinator::map(truncate::parse, Query::TruncateTable),
+                nom::combinator::map(set_config::parse, Query::Configuration),
+                nom::combinator::map(prepare::parse, Query::Prepare),
+                nom::combinator::map(vacuum::parse, Query::Vacuum),
             )),
             nom::character::complete::multispace0,
             nom::combinator::opt(nom::bytes::complete::tag(";")),

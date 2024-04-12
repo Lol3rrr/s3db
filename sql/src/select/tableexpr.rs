@@ -43,7 +43,7 @@ pub fn table_expression(
                 nom::bytes::complete::tag(")"),
             ))
             .map(|(_, _, query, _, _)| TableExpression::SubQuery(Box::new(query))),
-            identifier.map(|ident| TableExpression::Relation(ident)),
+            identifier.map(TableExpression::Relation),
         ))(i)?;
 
         match nom::branch::alt((

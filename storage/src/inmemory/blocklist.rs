@@ -225,7 +225,7 @@ impl<const N: usize> Block<N> {
         let lock_addr = row_addr as *mut AtomicU64;
         let lock_field = unsafe { &*lock_addr };
 
-        if lock_field.load(atomic::Ordering::SeqCst) <= 0 {
+        if lock_field.load(atomic::Ordering::SeqCst) == 0 {
             return None;
         }
 

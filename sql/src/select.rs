@@ -70,7 +70,7 @@ impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
                 .map(|idents| idents.iter().map(|i| i.to_static()).collect()),
             having: self.having.as_ref().map(|h| h.to_static()),
             limit: self.limit.clone(),
-            for_update: self.for_update.clone(),
+            for_update: self.for_update,
             combine: self
                 .combine
                 .as_ref()
