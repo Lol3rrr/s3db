@@ -496,7 +496,7 @@ impl RaExpression {
                                     .map(|(_, n, t, i)| (n, t, i))
                                     .collect::<Vec<_>>();
                                 for (c, name) in s_columns.iter_mut().zip(columns.iter()) {
-                                    c.0 = name.clone();
+                                    c.0.clone_from(name);
                                 }
 
                                 Some(s_columns)

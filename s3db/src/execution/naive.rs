@@ -71,7 +71,8 @@ impl<S> NaiveEngine<S> {
 #[derive(Debug)]
 pub enum EvaulateRaError<SE> {
     UnknownAttribute {
-        attribute: ColumnReference<'static>,
+        name: String,
+        id: AttributeId,
     },
     CastingType {
         value: storage::Data,
@@ -377,10 +378,10 @@ where
                         let mut columns = Vec::new();
 
                         let mut part_results = Vec::new();
-                        for part in parts {
+                        for _part in parts {
                             let input = results.pop().unwrap();
 
-                            columns = input.columns.clone();
+                            columns.clone_from(&input.columns);
                             part_results.push(input.parts);
                         }
 
@@ -562,8 +563,8 @@ where
     {
         async move {
             match condition {
-                ra::RaConditionValue::Attribute { name, ty, a_id } => {
-                    let data_result = row.data.iter().zip(columns.iter()).find(|(data, column)| &column.2 == a_id).map(|(d, _)| d);
+                ra::RaConditionValue::Attribute { name,  a_id, .. } => {
+                    let data_result = row.data.iter().zip(columns.iter()).find(|(_, column)| &column.2 == a_id).map(|(d, _)| d);
                     
                     match data_result {
                         Some(storage::Data::Boolean(v)) => Ok(*v),
@@ -571,7 +572,7 @@ where
                             dbg!(&d);
                             Err(EvaulateRaError::Other("Invalid Data Type"))
                         },
-                        None => Err(EvaulateRaError::UnknownAttribute { attribute: todo!("{:?} - {:?}", name, a_id) }),
+                        None => Err(EvaulateRaError::UnknownAttribute { name: name.clone(), id: *a_id }),
                     }
 
                 }
@@ -704,7 +705,7 @@ where
     {
         async move {
             match expr {
-                ra::RaValueExpression::Attribute { a_id, .. } => {
+                ra::RaValueExpression::Attribute { a_id, name, .. } => {
                     // TODO
 
                     let column_index = columns
@@ -712,12 +713,12 @@ where
                         .enumerate()
                         .find(|(_, (_, _, id))| id == a_id)
                         .map(|(i, _)| i)
-                        .ok_or_else(|| EvaulateRaError::UnknownAttribute { attribute: todo!() })?;
+                        .ok_or_else(|| EvaulateRaError::UnknownAttribute { name: name.clone(), id: *a_id })?;
 
                     Ok(row.data[column_index].clone())
                 }
-                ra::RaValueExpression::OuterAttribute { a_id, .. } => {
-                    let value = outer.get(a_id).ok_or_else(|| EvaulateRaError::UnknownAttribute { attribute: todo!() })?;
+                ra::RaValueExpression::OuterAttribute { a_id, name, .. } => {
+                    let value = outer.get(a_id).ok_or_else(|| EvaulateRaError::UnknownAttribute { name: name.clone(), id: *a_id })?;
 
                     Ok(value.clone())
                 }
@@ -954,7 +955,7 @@ where
                             .await?;
 
                         for (column, name) in tmp.columns.iter_mut().zip(columns.iter()) {
-                            column.0 = name.clone();
+                            column.0.clone_from(name);
                         }
 
                         let tmp_rows = tmp.parts.iter().flat_map(|p| p.rows.iter());

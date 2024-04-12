@@ -87,12 +87,7 @@ impl StartMessage {
         let mut fields = HashMap::new();
 
         let mut buffer_iter = buffer.into_iter();
-        loop {
-            let key = match read_string(&mut buffer_iter) {
-                Some(k) => k,
-                None => break,
-            };
-
+        while let Some(key) = read_string(&mut buffer_iter) {
             if key.is_empty() {
                 break;
             }
