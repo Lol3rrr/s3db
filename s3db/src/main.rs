@@ -3,6 +3,7 @@
 
 use std::fs::File;
 
+use s3db::endpoint::Endpoint;
 use tracing::Level;
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -27,18 +28,17 @@ fn main() {
         .build()
         .unwrap();
 
-    let local_set = tokio::task::LocalSet::new();
-    local_set.spawn_local(postgres());
-
-    runtime.block_on(local_set);
-}
-
-#[tracing::instrument]
-async fn postgres() {
     let storage = s3db::storage::inmemory::InMemoryStorage::new();
     let engine = s3db::execution::naive::NaiveEngine::new(storage);
 
-    if let Err(e) = s3db::endpoint::postgres::run("0.0.0.0:5432", engine).await {
-        tracing::error!("Running Postgres Endpoint: {:?}", e);
-    }
+    let endpoint = s3db::endpoint::postgres::PostgresEndpoint::new("0.0.0.0.:5432");
+
+    let local_set = tokio::task::LocalSet::new();
+    local_set.spawn_local(async move {
+        if let Err(e) = endpoint.run(engine).await {
+            tracing::error!("Running Endpoint: {:?}", e);
+        }
+    });
+
+    runtime.block_on(local_set);
 }

@@ -66,7 +66,7 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
         ))(remaining)
         {
             Ok(r) => r,
-            Err(e) => break,
+            Err(_) => break,
         };
 
         let (rem, other) = match nom::branch::alt((
@@ -82,7 +82,7 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
         ))(rem)
         {
             Ok(c) => c,
-            Err(e) => break,
+            Err(_) => break,
         };
 
         remaining = rem;

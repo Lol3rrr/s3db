@@ -1308,7 +1308,7 @@ where
 
                     tracing::trace!("Values: {:?}", values);
 
-                    let relation = if table_schema.rows.iter().any(|c| &c.ty == &DataType::Serial) {
+                    let relation = if table_schema.rows.iter().any(|c| c.ty == DataType::Serial) {
                         let relation = self
                             .storage
                             .get_entire_relation(&ins.table.0, transaction)
@@ -1342,7 +1342,7 @@ where
                                     }
                                 }
                                 None => {
-                                    if &column.ty == &DataType::Serial {
+                                    if column.ty == DataType::Serial {
                                         let rel = relation.as_ref().ok_or_else(|| {
                                             ExecuteBoundError::Other("Missing Relation")
                                         })?;

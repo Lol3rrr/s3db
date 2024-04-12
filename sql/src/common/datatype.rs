@@ -56,8 +56,8 @@ impl DataType {
     pub fn size(&self) -> i16 {
         match self {
             Self::Name => -1,
-            Self::VarChar { size } => -1,
-            Self::Char { size } => -1,
+            Self::VarChar { .. } => -1,
+            Self::Char { .. } => -1,
             Self::ByteA => -1,
             Self::Text => -1,
             Self::Timestamp => -1,

@@ -2,15 +2,33 @@
 //! An endpoint defines the entrypoint for a specific protocol. For example the [`postgres`]
 //! endpoint allows for communication using the Postgres Protocol
 
+use std::fmt::Debug;
+
+use futures::future::LocalBoxFuture;
+
+use crate::execution;
+
+pub trait Endpoint<E, T>
+where
+    E: execution::Execute<T> + 'static,
+    T: 'static,
+{
+    fn run<'s, 'f>(&'s self, engine: E) -> LocalBoxFuture<'f, Result<(), Box<dyn Debug>>>
+    where
+        's: 'f;
+}
+
 pub mod postgres {
     //! # Postgres-Endpoint
     //! Allows for communication using the Postgres Protocol
 
     use std::{
         collections::{HashMap, VecDeque},
+        fmt::Debug,
         rc::Rc,
     };
 
+    use futures::FutureExt;
     use sql::Query;
     use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
@@ -19,38 +37,66 @@ pub mod postgres {
         postgres,
     };
 
+    use super::Endpoint;
+
+    pub struct PostgresEndpoint<A> {
+        address: A,
+    }
+
+    impl<A> PostgresEndpoint<A>
+    where
+        A: ToSocketAddrs,
+    {
+        pub fn new(address: A) -> Self {
+            Self { address }
+        }
+    }
+
     #[derive(Debug)]
     pub enum RunError {
         Bind(tokio::io::Error),
         LocalAddr(tokio::io::Error),
     }
 
-    /// Listens on the given `address`
-    pub async fn run<A, E, T>(address: A, engine: E) -> Result<(), RunError>
+    impl<A, E, T> Endpoint<E, T> for PostgresEndpoint<A>
     where
-        A: ToSocketAddrs,
-        E: execution::Execute<T>,
-        E: 'static,
+        A: ToSocketAddrs + Clone,
+        E: execution::Execute<T> + 'static,
         T: 'static,
     {
-        let listener = TcpListener::bind(address)
-            .await
-            .map_err(RunError::Bind)?;
-        let listener_addr = listener.local_addr().map_err(RunError::LocalAddr)?;
-        tracing::info!("Postgres Interface listening on '{:?}'", listener_addr);
+        fn run<'s, 'f>(
+            &'s self,
+            engine: E,
+        ) -> futures::prelude::future::LocalBoxFuture<'f, Result<(), Box<dyn Debug>>>
+        where
+            's: 'f,
+        {
+            async {
+                let listener = TcpListener::bind(self.address.clone())
+                    .await
+                    .map_err(RunError::Bind)
+                    .map_err(|e| Box::new(e) as Box<dyn Debug>)?;
+                let listener_addr = listener
+                    .local_addr()
+                    .map_err(RunError::LocalAddr)
+                    .map_err(|e| Box::new(e) as Box<dyn Debug>)?;
+                tracing::info!("Postgres Interface listening on '{:?}'", listener_addr);
 
-        let engine = Rc::new(engine);
+                let engine = Rc::new(engine);
 
-        loop {
-            let (c, addr) = match listener.accept().await {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::error!("Accepting: {:?}", e);
-                    continue;
+                loop {
+                    let (c, addr) = match listener.accept().await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            tracing::error!("Accepting: {:?}", e);
+                            continue;
+                        }
+                    };
+
+                    tokio::task::spawn_local(handle_postgres_connection(c, addr, engine.clone()));
                 }
-            };
-
-            tokio::task::spawn_local(handle_postgres_connection(c, addr, engine.clone()));
+            }
+            .boxed_local()
         }
     }
 
