@@ -38,5 +38,7 @@ async fn postgres() {
     let storage = s3db::storage::inmemory::InMemoryStorage::new();
     let engine = s3db::execution::naive::NaiveEngine::new(storage);
 
-    s3db::endpoint::postgres::run("0.0.0.0:5432", engine).await;
+    if let Err(e) = s3db::endpoint::postgres::run("0.0.0.0:5432", engine).await {
+        tracing::error!("Running Postgres Endpoint: {:?}", e);
+    }
 }

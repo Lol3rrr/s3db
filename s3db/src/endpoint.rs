@@ -1,4 +1,11 @@
+//! # Endpoint
+//! An endpoint defines the entrypoint for a specific protocol. For example the [`postgres`]
+//! endpoint allows for communication using the Postgres Protocol
+
 pub mod postgres {
+    //! # Postgres-Endpoint
+    //! Allows for communication using the Postgres Protocol
+
     use std::{
         collections::{HashMap, VecDeque},
         rc::Rc,
@@ -12,15 +19,24 @@ pub mod postgres {
         postgres,
     };
 
-    pub async fn run<A, E, T>(address: A, engine: E)
+    #[derive(Debug)]
+    pub enum RunError {
+        Bind(tokio::io::Error),
+        LocalAddr(tokio::io::Error),
+    }
+
+    /// Listens on the given `address`
+    pub async fn run<A, E, T>(address: A, engine: E) -> Result<(), RunError>
     where
         A: ToSocketAddrs,
         E: execution::Execute<T>,
         E: 'static,
         T: 'static,
     {
-        let listener = TcpListener::bind(address).await.unwrap();
-        let listener_addr = listener.local_addr().unwrap();
+        let listener = TcpListener::bind(address)
+            .await
+            .map_err(|e| RunError::Bind(e))?;
+        let listener_addr = listener.local_addr().map_err(|e| RunError::LocalAddr(e))?;
         tracing::info!("Postgres Interface listening on '{:?}'", listener_addr);
 
         let engine = Rc::new(engine);
