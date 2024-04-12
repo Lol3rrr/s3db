@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ra::{self, Attribute, AttributeId, RaValueExpression},
+    ra::{self, AttributeId, RaValueExpression},
     storage::{self, Storage},
 };
 use sql::DataType;
@@ -55,7 +55,7 @@ impl AggregateState {
                     .unwrap(),
                 value: None,
             },
-            ra::AggregateExpression::Renamed { inner, .. } => Self::new(&inner, columns),
+            ra::AggregateExpression::Renamed { inner, .. } => Self::new(inner, columns),
             ra::AggregateExpression::Max { inner, dtype } => Self::Max {
                 value: None,
                 ty: dtype.clone(),
@@ -116,7 +116,7 @@ impl AggregateState {
             } => {
                 let tmp = engine
                     .evaluate_ra_value(
-                        &expr,
+                        expr,
                         row,
                         columns,
                         &HashMap::new(),

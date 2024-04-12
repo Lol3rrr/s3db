@@ -62,7 +62,7 @@ where
             if formats.is_empty() {
                 formats.extend(core::iter::repeat(FormatCode::Text).take(content.columns.len()));
             } else if formats.len() == 1 {
-                let entry = formats.get(0).cloned().unwrap();
+                let entry = formats.first().cloned().unwrap();
                 formats.extend(
                     core::iter::repeat(entry).take(content.columns.len().saturating_sub(1)),
                 );
@@ -201,11 +201,11 @@ where
             tracing::trace!("Insert completed");
             tracing::trace!("Returning: {:?}", returning);
 
-            if returning.len() > 0 {
+            if !returning.is_empty() {
                 if formats.is_empty() {
                     formats.extend(core::iter::repeat(FormatCode::Text).take(returning[0].len()));
                 } else if formats.len() == 1 {
-                    let entry = formats.get(0).cloned().unwrap();
+                    let entry = formats.first().cloned().unwrap();
                     formats.extend(
                         core::iter::repeat(entry).take(returning[0].len().saturating_sub(1)),
                     );

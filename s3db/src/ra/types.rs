@@ -114,7 +114,7 @@ impl PossibleTypes {
             pos: self
                 .pos
                 .iter()
-                .filter(|ty| other.pos.contains(&ty))
+                .filter(|ty| other.pos.contains(ty))
                 .cloned()
                 .collect(),
         }

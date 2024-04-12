@@ -100,17 +100,17 @@ pub trait Execute<T> {
             let prepared = self
                 .prepare(query, ctx)
                 .await
-                .map_err(|e| ExecuteError::Prepare(e))?;
+                .map_err(ExecuteError::Prepare)?;
 
             // TODO
             // Can we just leave the result_formats empty or should we populate them
             let bound = prepared
                 .bind(Vec::new(), Vec::new())
-                .map_err(|e| ExecuteError::Bind(e))?;
+                .map_err(ExecuteError::Bind)?;
 
             self.execute_bound(&bound, ctx)
                 .await
-                .map_err(|e| ExecuteError::Execute(e))
+                .map_err(ExecuteError::Execute)
         }
     }
 }
@@ -134,6 +134,12 @@ pub trait CopyState {
     fn columns(&self) -> Vec<()>;
 
     fn insert(&mut self, raw_column: &[u8]) -> impl Future<Output = Result<(), ()>>;
+}
+
+impl<T> Default for Context<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> Context<T> {

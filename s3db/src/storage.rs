@@ -147,6 +147,12 @@ impl Row {
     }
 }
 
+impl Default for ModifyRelation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModifyRelation {
     pub fn new() -> Self {
         Self {

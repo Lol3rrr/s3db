@@ -58,11 +58,11 @@ impl Message {
         let raw_type = reader
             .read_u8()
             .await
-            .map_err(|e| ParseMessageError::Receive(e))?;
+            .map_err(ParseMessageError::Receive)?;
         let length = reader
             .read_i32()
             .await
-            .map_err(|e| ParseMessageError::Receive(e))?
+            .map_err(ParseMessageError::Receive)?
             - 4;
 
         tracing::trace!("Raw-Type: {:?} - Length: {:?}", raw_type, length,);
@@ -73,7 +73,7 @@ impl Message {
             reader
                 .read_buf(&mut buffer)
                 .await
-                .map_err(|e| ParseMessageError::Receive(e))?;
+                .map_err(ParseMessageError::Receive)?;
         }
 
         tracing::trace!("Buffer-Len: {:?}", buffer.len());
@@ -83,7 +83,7 @@ impl Message {
             ParseMessageError::Other
         })?;
 
-        if remaining.len() > 0 {
+        if !remaining.is_empty() {
             return Err(ParseMessageError::UnparsedData {
                 parsed: result,
                 remaining: buffer,
@@ -142,7 +142,7 @@ impl Message {
                     if pformats.is_empty() {
                         pformats.extend((0..pvalues.len()).map(|_| FormatCode::Text));
                     } else if pformats.len() == 1 {
-                        let first_format = pformats.get(0).cloned().unwrap();
+                        let first_format = pformats.first().cloned().unwrap();
                         pformats.extend((1..pvalues.len()).map(|_| first_format.clone()));
                     }
 
@@ -164,9 +164,9 @@ impl Message {
     }
 
     fn parse_bind_parameters(i: &[u8]) -> IResult<&[u8], Vec<FormatCode>> {
-        let (mut i, count) = nom::number::streaming::be_i16(i)?;
+        let (i, count) = nom::number::streaming::be_i16(i)?;
 
-        let mut result = Vec::with_capacity(count as usize);
+        let result = Vec::with_capacity(count as usize);
         for _ in 0..count {
             todo!()
         }

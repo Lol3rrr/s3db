@@ -166,7 +166,7 @@ enum CustomCow<'s, T> {
 impl<'s, T> Borrow<T> for CustomCow<'s, T> {
     fn borrow(&self) -> &T {
         match self {
-            Self::Owned(v) => &v,
+            Self::Owned(v) => v,
             Self::Borrowed(v) => v,
         }
     }
@@ -174,7 +174,7 @@ impl<'s, T> Borrow<T> for CustomCow<'s, T> {
 impl<'s, T> AsRef<T> for CustomCow<'s, T> {
     fn as_ref(&self) -> &T {
         match self {
-            Self::Owned(v) => &v,
+            Self::Owned(v) => v,
             Self::Borrowed(v) => v,
         }
     }
@@ -336,8 +336,7 @@ impl RaExpression {
             Self::Projection { attributes, .. } => attributes
                 .iter()
                 .find(|attr| attr.name == name)
-                .map(|attr| attr.value.datatype())
-                .flatten(),
+                .and_then(|attr| attr.value.datatype()),
             Self::Selection { inner, .. } => inner.get_column(name),
             Self::BaseRelation {
                 name: _name,
@@ -516,7 +515,7 @@ impl RaExpression {
                 Err(ParseSelectError::UnknownRelation(relation.0.to_string()))
             }
             TableExpression::Renamed { inner, name } => {
-                let inner_result = Self::parse_table_expression(&inner, scope, placeholders)?;
+                let inner_result = Self::parse_table_expression(inner, scope, placeholders)?;
 
                 match inner.as_ref() {
                     TableExpression::Relation(inner_name) => {
@@ -547,8 +546,8 @@ impl RaExpression {
                 kind,
                 condition,
             } => {
-                let left_ra = Self::parse_table_expression(&left, scope, placeholders)?;
-                let right_ra = Self::parse_table_expression(&right, scope, placeholders)?;
+                let left_ra = Self::parse_table_expression(left, scope, placeholders)?;
+                let right_ra = Self::parse_table_expression(right, scope, placeholders)?;
 
                 let mut joined = Self::Join {
                     left: Box::new(left_ra),
@@ -627,7 +626,7 @@ impl RaExpression {
                 // (order_attr, order)
 
                 let attributes: Vec<_> = orders
-                    .into_iter()
+                    .iter()
                     .map(|ordering| {
                         let attr = table_expression
                             .get_columns()
@@ -658,13 +657,13 @@ impl RaExpression {
             let agg_condition = match query.group_by.as_ref() {
                 Some(tmp) => {
                     let mut fields: Vec<_> = tmp
-                        .into_iter()
+                        .iter()
                         .map(|field| {
                             previous_columns
                                 .iter()
                                 .find_map(|(n, _, id)| {
                                     if n == field.column.0.as_ref() {
-                                        Some((n.to_string(), id.clone()))
+                                        Some((n.to_string(), *id))
                                     } else {
                                         None
                                     }
@@ -814,21 +813,21 @@ impl RaExpression {
                 Some(limit) => Ok(Self::Limit {
                     inner: Box::new(Self::Projection {
                         inner: Box::new(table_expression),
-                        attributes: select_attributes.into_iter().flat_map(|v| v).collect(),
+                        attributes: select_attributes.into_iter().flatten().collect(),
                     }),
                     limit: limit.limit,
                     offset: limit.offset.unwrap_or(0),
                 }),
                 None => Ok(Self::Projection {
                     inner: Box::new(table_expression),
-                    attributes: select_attributes.into_iter().flat_map(|v| v).collect(),
+                    attributes: select_attributes.into_iter().flatten().collect(),
                 }),
             }
         }?;
 
         match query.combine.as_ref() {
             Some((c, s)) => {
-                let other = Self::parse_s(&s, scope, placeholders, ra_expr, outer)?;
+                let other = Self::parse_s(s, scope, placeholders, ra_expr, outer)?;
 
                 match c {
                     Combination::Union => Ok(Self::Chain {

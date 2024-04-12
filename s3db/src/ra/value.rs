@@ -152,7 +152,7 @@ impl RaValueExpression {
                     length,
                     padding,
                 } => {
-                    let ra_base = Self::parse_internal(scope, &base, placeholders, ra_expr, outer)?;
+                    let ra_base = Self::parse_internal(scope, base, placeholders, ra_expr, outer)?;
 
                     let length = match length {
                         Literal::SmallInteger(v) => *v as i64,
@@ -195,7 +195,7 @@ impl RaValueExpression {
                     let possible_types: Vec<_> = ra_values
                         .iter()
                         .map(|v| {
-                            v.possible_type(&scope).map_err(|_| {
+                            v.possible_type(scope).map_err(|_| {
                                 ParseSelectError::DeterminePossibleTypes { expr: v.clone() }
                             })
                         })
@@ -245,7 +245,7 @@ impl RaValueExpression {
                 } => {
                     let ra_value = RaValueExpression::parse_internal(
                         scope,
-                        &value,
+                        value,
                         placeholders,
                         ra_expr,
                         outer,
@@ -264,7 +264,7 @@ impl RaValueExpression {
                 FunctionCall::Lower { value } => {
                     let raw_ra_value = RaValueExpression::parse_internal(
                         scope,
-                        &value,
+                        value,
                         placeholders,
                         ra_expr,
                         outer,
@@ -283,14 +283,14 @@ impl RaValueExpression {
                 } => {
                     let str_value = RaValueExpression::parse_internal(
                         scope,
-                        &value,
+                        value,
                         placeholders,
                         ra_expr,
                         outer,
                     )?;
                     let start = RaValueExpression::parse_internal(
                         scope,
-                        &start,
+                        start,
                         placeholders,
                         ra_expr,
                         outer,
@@ -328,8 +328,8 @@ impl RaValueExpression {
                 second,
                 operator,
             } => {
-                let ra_first = Self::parse_internal(scope, &first, placeholders, ra_expr, outer)?;
-                let ra_second = Self::parse_internal(scope, &second, placeholders, ra_expr, outer)?;
+                let ra_first = Self::parse_internal(scope, first, placeholders, ra_expr, outer)?;
+                let ra_second = Self::parse_internal(scope, second, placeholders, ra_expr, outer)?;
 
                 match operator {
                     BinaryOperator::Concat => {
@@ -405,7 +405,7 @@ impl RaValueExpression {
             }
             ValueExpression::TypeCast { base, target_ty } => {
                 dbg!(&base, &target_ty);
-                let ra_base = Self::parse_internal(scope, &base, placeholders, ra_expr, outer)?;
+                let ra_base = Self::parse_internal(scope, base, placeholders, ra_expr, outer)?;
 
                 let base_types = ra_base
                     .possible_type(scope)
@@ -432,7 +432,7 @@ impl RaValueExpression {
             }
             ValueExpression::Null => Ok(Self::Literal(Literal::Null)),
             ValueExpression::Renamed { inner, name } => {
-                let inner_ra = Self::parse_internal(scope, &inner, placeholders, ra_expr, outer)?;
+                let inner_ra = Self::parse_internal(scope, inner, placeholders, ra_expr, outer)?;
 
                 Ok(Self::Renamed {
                     name: name.0.to_string(),
@@ -552,7 +552,7 @@ impl RaValueExpression {
                     is_called,
                 } => Ok(types::PossibleTypes::fixed(DataType::BigInteger)),
                 RaFunction::Lower(val) => Ok(types::PossibleTypes::fixed(DataType::Text)),
-                RaFunction::Substr { str_value, .. } => {
+                RaFunction::Substr {  .. } => {
                     Ok(types::PossibleTypes::fixed(DataType::Text))
                 }
             },
@@ -605,7 +605,7 @@ impl RaValueExpression {
                     is_called,
                 } => Some(DataType::BigInteger),
                 RaFunction::Lower(_) => Some(DataType::Text),
-                RaFunction::Substr { str_value, .. } => Some(DataType::Text),
+                RaFunction::Substr {  .. } => Some(DataType::Text),
             },
             Self::Renamed { name, value } => value.datatype(),
         }

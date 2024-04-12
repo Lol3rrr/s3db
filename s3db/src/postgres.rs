@@ -68,14 +68,14 @@ impl StartMessage {
         let length = reader
             .read_i32()
             .await
-            .map_err(|e| ParseMessageError::Receive(e))?
+            .map_err(ParseMessageError::Receive)?
             - 4;
 
         let mut buffer = bytes::BytesMut::with_capacity(length as usize);
         reader
             .read_buf(&mut buffer)
             .await
-            .map_err(|e| ParseMessageError::Receive(e))?;
+            .map_err(ParseMessageError::Receive)?;
 
         let protocol_version_major = buffer.get_u16();
         let protocol_version_minor = buffer.get_u16();

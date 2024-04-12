@@ -89,13 +89,13 @@ impl AggregateExpression {
                 sql::AggregateExpression::Max(val) => {
                     let inner = RaValueExpression::parse_internal(
                         scope,
-                        &val,
+                        val,
                         placeholders,
                         ra_expr,
                         &mut Vec::new(),
                     )?;
 
-                    let inner_ty = inner.possible_type(&scope).map_err(|e| {
+                    let inner_ty = inner.possible_type(scope).map_err(|e| {
                         ParseSelectError::DeterminePossibleTypes {
                             expr: inner.clone(),
                         }
@@ -142,13 +142,13 @@ impl AggregateExpression {
                     value: AggregateExpression::Column {
                         name: cr.column.0.to_string(),
                         dtype: ty.clone(),
-                        a_id: column.clone(),
+                        a_id: *column,
                     },
                 })
             }
             ValueExpression::Literal(lit) => todo!(),
             ValueExpression::Renamed { inner, name } => {
-                let inner = Self::parse(&inner, scope, previous_columns, placeholders, ra_expr)?;
+                let inner = Self::parse(inner, scope, previous_columns, placeholders, ra_expr)?;
 
                 Ok(Attribute {
                     id: inner.id,
@@ -211,7 +211,7 @@ impl AggregateExpression {
                 AggregateExpression::Renamed { inner, .. } => inner.check(cond, schemas),
                 AggregateExpression::Count { a_id } => Ok(()),
                 AggregateExpression::Column { name, dtype, a_id } => {
-                    if fields.iter().find(|(_, id)| a_id == id).is_none() {
+                    if !fields.iter().any(|(_, id)| a_id == id) {
                         dbg!(&name, &dtype, &a_id);
                         Err(ParseSelectError::NotImplemented(
                             "Not Aggregated Attribute used",
@@ -230,11 +230,11 @@ impl AggregateExpression {
                     while let Some(expr) = pending.pop() {
                         match expr {
                             RaValueExpression::Renamed { value, .. } => {
-                                pending.push(&value);
+                                pending.push(value);
                             }
                             RaValueExpression::Literal(_) => {}
                             RaValueExpression::Attribute { name, ty, a_id } => {
-                                if fields.iter().find(|(_, id)| a_id == id).is_none() {
+                                if !fields.iter().any(|(_, id)| a_id == id) {
                                     return Err(ParseSelectError::NotImplemented(
                                         "Not Aggregated Attribute used",
                                     ));
@@ -249,25 +249,25 @@ impl AggregateExpression {
                                     length,
                                     padding,
                                 } => {
-                                    pending.push(&base);
+                                    pending.push(base);
                                 }
                                 RaFunction::SetValue {
                                     name,
                                     value,
                                     is_called,
                                 } => {
-                                    pending.push(&value);
+                                    pending.push(value);
                                 }
                                 RaFunction::Lower(parts) => {
-                                    pending.push(&parts);
+                                    pending.push(parts);
                                 }
                                 RaFunction::Substr {
                                     str_value,
                                     start,
                                     count,
                                 } => {
-                                    pending.push(&str_value);
-                                    pending.push(&start);
+                                    pending.push(str_value);
+                                    pending.push(start);
                                     if let Some(c) = count {
                                         pending.push(c);
                                     }

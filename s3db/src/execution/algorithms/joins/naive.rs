@@ -42,7 +42,7 @@ where
                         };
 
                         let row = storage::Row::new(result_rows.len() as u64, joined_row_data);
-                        if condition_eval.evaluate(&args.conditon, &row).await? {
+                        if condition_eval.evaluate(args.conditon, &row).await? {
                             result_rows.push(row);
                         }
                     }
@@ -71,7 +71,7 @@ where
 
                         let row = storage::Row::new(result_rows.len() as u64, joined_row_data);
 
-                        if condition_eval.evaluate(&args.conditon, &row).await? {
+                        if condition_eval.evaluate(args.conditon, &row).await? {
                             result_rows.push(row);
                             included = true;
                         }
@@ -101,7 +101,7 @@ where
             other => {
                 dbg!(other);
 
-                return Err(EvaulateRaError::Other("Unsupported Join Kind"));
+                Err(EvaulateRaError::Other("Unsupported Join Kind"))
             }
         }
     }

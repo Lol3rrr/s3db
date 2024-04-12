@@ -43,6 +43,12 @@ struct InternalRow {
     expired: u64,
 }
 
+impl Default for InMemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryStorage {
     pub fn new() -> Self {
         Self {
@@ -416,10 +422,7 @@ impl Storage for &InMemoryStorage {
                     let value = modifiers
                         .iter()
                         .find_map(|modifier| match modifier {
-                            TypeModifier::DefaultValue { value } => match value {
-                                Some(v) => Some(Data::from_literal(v)),
-                                None => None,
-                            },
+                            TypeModifier::DefaultValue { value } => value.as_ref().map(|v| Data::from_literal(v)),
                             _ => None,
                         })
                         .unwrap_or(Data::Null);

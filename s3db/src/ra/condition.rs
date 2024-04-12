@@ -155,12 +155,12 @@ impl RaConditionValue {
                     outer,
                 )?;
 
-                let first_types = ra_first.possible_type(&scope).map_err(|e| {
+                let first_types = ra_first.possible_type(scope).map_err(|e| {
                     ParseSelectError::DeterminePossibleTypes {
                         expr: ra_first.clone(),
                     }
                 })?;
-                let second_types = ra_second.possible_type(&scope).map_err(|e| {
+                let second_types = ra_second.possible_type(scope).map_err(|e| {
                     ParseSelectError::DeterminePossibleTypes {
                         expr: ra_second.clone(),
                     }
@@ -233,7 +233,7 @@ impl RaConditionValue {
             }
             ValueExpression::Not(inner) => {
                 let inner =
-                    RaConditionValue::parse_internal(scope, &inner, placeholders, ra_expr, outer)?;
+                    RaConditionValue::parse_internal(scope, inner, placeholders, ra_expr, outer)?;
 
                 Ok(RaConditionValue::Negation {
                     inner: Box::new(inner),

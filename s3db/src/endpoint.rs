@@ -35,8 +35,8 @@ pub mod postgres {
     {
         let listener = TcpListener::bind(address)
             .await
-            .map_err(|e| RunError::Bind(e))?;
-        let listener_addr = listener.local_addr().map_err(|e| RunError::LocalAddr(e))?;
+            .map_err(RunError::Bind)?;
+        let listener_addr = listener.local_addr().map_err(RunError::LocalAddr)?;
         tracing::info!("Postgres Interface listening on '{:?}'", listener_addr);
 
         let engine = Rc::new(engine);

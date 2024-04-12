@@ -134,7 +134,7 @@ impl Data {
                 let tmp = match self {
                     Self::Null => Cow::Borrowed("NULL".as_bytes()),
                     Self::Name(n) => Cow::Borrowed(n.as_bytes()),
-                    Self::Varchar(c) => Cow::Owned(c.into_iter().map(|c| *c as u8).collect()),
+                    Self::Varchar(c) => Cow::Owned(c.iter().map(|c| *c as u8).collect()),
                     Self::Text(c) => Cow::Owned(c.as_bytes().to_vec()),
                     Self::Timestamp(n) => Cow::Borrowed(n.as_bytes()),
                     Self::Serial(v) => Cow::Owned(format!("{}", v).into_bytes()),

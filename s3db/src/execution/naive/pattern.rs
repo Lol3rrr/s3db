@@ -5,7 +5,7 @@ enum Pattern<'p> {
     AnyChars,
 }
 fn match_pattern(patterns: &[Pattern<'_>], haystack: &str) -> bool {
-    let pattern = match patterns.get(0) {
+    let pattern = match patterns.first() {
         Some(p) => p,
         None => return haystack.is_empty(),
     };
