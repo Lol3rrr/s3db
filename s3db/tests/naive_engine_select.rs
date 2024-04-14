@@ -437,8 +437,10 @@ async fn select_with_limit() {
 
 #[tokio::test]
 async fn select_with_order() {
-    let query = "SELECT name FROM users ORDER BY id ASC";
+    let query = "SELECT id, name FROM users ORDER BY id ASC";
     let query = Query::parse(query.as_bytes()).unwrap();
+
+    dbg!(&query);
 
     let storage = storage_setup!((
         "users",
@@ -463,12 +465,15 @@ async fn select_with_order() {
     assert_eq!(
         ExecuteResult::Select {
             content: EntireRelation {
-                columns: vec![("name".to_string(), DataType::Text, Vec::new())],
+                columns: vec![
+                    ("id".to_string(), DataType::Integer, Vec::new()),
+                    ("name".to_string(), DataType::Text, Vec::new())
+                ],
                 parts: vec![PartialRelation {
                     rows: vec![
-                        Row::new(0, vec![Data::Text("second".to_string())]),
-                        Row::new(0, vec![Data::Text("third".to_string())]),
-                        Row::new(0, vec![Data::Text("first".to_string())])
+                        Row::new(0, vec![Data::Integer(12), Data::Text("second".to_string())]),
+                        Row::new(0, vec![Data::Integer(57), Data::Text("third".to_string())]),
+                        Row::new(0, vec![Data::Integer(132), Data::Text("first".to_string())])
                     ]
                 }],
             },
@@ -477,19 +482,22 @@ async fn select_with_order() {
         res
     );
 
-    let query = "SELECT name FROM users ORDER BY id DESC";
+    let query = "SELECT id, name FROM users ORDER BY id DESC";
     let query = Query::parse(query.as_bytes()).unwrap();
     let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
             content: EntireRelation {
-                columns: vec![("name".to_string(), DataType::Text, Vec::new())],
+                columns: vec![
+                    ("id".to_string(), DataType::Integer, Vec::new()),
+                    ("name".to_string(), DataType::Text, Vec::new())
+                ],
                 parts: vec![PartialRelation {
                     rows: vec![
-                        Row::new(0, vec![Data::Text("first".to_string())]),
-                        Row::new(0, vec![Data::Text("third".to_string())]),
-                        Row::new(0, vec![Data::Text("second".to_string())])
+                        Row::new(0, vec![Data::Integer(132), Data::Text("first".to_string())]),
+                        Row::new(0, vec![Data::Integer(57), Data::Text("third".to_string())]),
+                        Row::new(0, vec![Data::Integer(12), Data::Text("second".to_string())])
                     ]
                 }],
             },
@@ -498,19 +506,22 @@ async fn select_with_order() {
         res
     );
 
-    let query = "SELECT name FROM users ORDER BY id";
+    let query = "SELECT id, name FROM users ORDER BY id";
     let query = Query::parse(query.as_bytes()).unwrap();
     let res = engine.execute(&query, &mut ctx).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
             content: EntireRelation {
-                columns: vec![("name".to_string(), DataType::Text, Vec::new())],
+                columns: vec![
+                    ("id".to_string(), DataType::Integer, Vec::new()),
+                    ("name".to_string(), DataType::Text, Vec::new())
+                ],
                 parts: vec![PartialRelation {
                     rows: vec![
-                        Row::new(0, vec![Data::Text("second".to_string())]),
-                        Row::new(0, vec![Data::Text("third".to_string())]),
-                        Row::new(0, vec![Data::Text("first".to_string())])
+                        Row::new(0, vec![Data::Integer(12), Data::Text("second".to_string())]),
+                        Row::new(0, vec![Data::Integer(57), Data::Text("third".to_string())]),
+                        Row::new(0, vec![Data::Integer(132), Data::Text("first".to_string())])
                     ]
                 }],
             },
@@ -986,6 +997,51 @@ async fn select_with_in_filter() {
                 columns: vec![("name".into(), DataType::Text, Vec::new())],
                 parts: vec![storage::PartialRelation {
                     rows: vec![
+                        storage::Row::new(0, vec![Data::Text("other".into())]),
+                        storage::Row::new(0, vec![Data::Text("something".into())])
+                    ]
+                }]
+            },
+            formats: Vec::new()
+        },
+        res
+    );
+}
+
+#[tokio::test]
+async fn select_with_table_column_rename() {
+    let query_str = "SELECT n from (SELECT name from users) AS u(n)";
+    let query = Query::parse(query_str.as_bytes()).unwrap();
+
+    let storage = storage_setup!((
+        "users",
+        vec![
+            ("id".into(), DataType::Serial, Vec::new()),
+            ("name".into(), DataType::Text, Vec::new()),
+        ],
+        vec![
+            vec![Data::Serial(1), Data::Text("testing".into())],
+            vec![Data::Serial(2), Data::Text("other".into())],
+            vec![Data::Serial(3), Data::Text("something".into())],
+        ]
+    ));
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
+
+    dbg!(&res);
+
+    assert_eq!(
+        ExecuteResult::Select {
+            content: storage::EntireRelation {
+                columns: vec![("n".into(), DataType::Text, Vec::new())],
+                parts: vec![storage::PartialRelation {
+                    rows: vec![
+                        storage::Row::new(0, vec![Data::Text("testing".into())]),
                         storage::Row::new(0, vec![Data::Text("other".into())]),
                         storage::Row::new(0, vec![Data::Text("something".into())])
                     ]

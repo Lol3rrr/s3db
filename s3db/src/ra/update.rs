@@ -36,7 +36,7 @@ impl RaUpdate {
 
         let table_schema = schemas
             .get_table(query.table.0.as_ref())
-            .ok_or(ParseSelectError::Other)?;
+            .ok_or(ParseSelectError::Other("Loading Schemas"))?;
 
         let mut table_expr = RaExpression::BaseRelation {
             name: query.table.to_static(),
@@ -61,7 +61,7 @@ impl RaUpdate {
                     UpdateFrom::Relation(name) => {
                         let table_schema = schemas
                             .get_table(name.0.as_ref())
-                            .ok_or(ParseSelectError::Other)?;
+                            .ok_or(ParseSelectError::Other("Getting Table Schema"))?;
 
                         scope.current_attributes.extend(
                             table_schema
@@ -75,7 +75,7 @@ impl RaUpdate {
                     UpdateFrom::Renamed { inner, name } => {
                         let table_schema = schemas
                             .get_table(inner.0.as_ref())
-                            .ok_or(ParseSelectError::Other)?;
+                            .ok_or(ParseSelectError::Other("Getting Table Schema"))?;
 
                         scope.current_attributes.extend(
                             table_schema

@@ -539,7 +539,10 @@ fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression, nom::error::Verbos
         nom::combinator::map(
             nom::sequence::delimited(
                 nom::sequence::tuple((
-                    nom::bytes::complete::tag_no_case("count"),
+                    nom::branch::alt((
+                        nom::bytes::complete::tag_no_case("count"),
+                        nom::bytes::complete::tag_no_case("pg_catalog.count"),
+                    )),
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                 )),
@@ -874,7 +877,8 @@ mod tests {
                     values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
                     table: Some(TableExpression::Renamed {
                         inner: Box::new(TableExpression::Relation("alert_rule".into())),
-                        name: "a".into()
+                        name: "a".into(),
+                        column_rename: None,
                     }),
                     where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {

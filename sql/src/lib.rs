@@ -16,7 +16,8 @@ pub use alter::AlterTable;
 
 mod select;
 pub use select::{
-    Combination, JoinKind, NullOrdering, OrderBy, Ordering, Select, SelectLimit, TableExpression,
+    Combination, GroupAttribute, JoinKind, NullOrdering, OrderAttribute, OrderBy, Ordering, Select,
+    SelectLimit, TableExpression,
 };
 
 mod insert;
@@ -99,7 +100,6 @@ impl<'s> Query<'s> {
     {
         let (remaining, query) = nom::combinator::complete(query)(raw).map_err(|e| {
             dbg!(&e);
-            
         })?;
 
         if !remaining.is_empty() {
@@ -116,7 +116,6 @@ impl<'s> Query<'s> {
     {
         let (remaining, queries) = nom::multi::many1(query)(raw).map_err(|e| {
             dbg!(e);
-            
         })?;
 
         if !remaining.is_empty() {
@@ -230,6 +229,8 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
 
 #[cfg(test)]
 mod tests {
+    use crate::select::{GroupAttribute, OrderAttribute};
+
     use super::*;
 
     use pretty_assertions::assert_eq;
@@ -388,7 +389,8 @@ mod tests {
                 })],
                 table: Some(TableExpression::Renamed {
                     inner: Box::new(TableExpression::Relation(Identifier("permission".into()))),
-                    name: Identifier("p".into())
+                    name: Identifier("p".into()),
+                    column_rename: None,
                 }),
                 where_condition: None,
                 order_by: None,
@@ -520,10 +522,10 @@ mod tests {
                 table: Some(TableExpression::Relation(Identifier("alert_rule".into()))),
                 where_condition: None,
                 order_by: Some(vec![Ordering {
-                    column: ColumnReference {
+                    column: OrderAttribute::ColumnRef(ColumnReference {
                         relation: None,
                         column: Identifier("id".into())
-                    },
+                    }),
                     order: OrderBy::Ascending,
                     nulls: NullOrdering::Last
                 }]),
@@ -554,10 +556,10 @@ mod tests {
                 table: Some(TableExpression::Relation(Identifier("alert_rule".into()))),
                 where_condition: None,
                 order_by: None,
-                group_by: Some(vec![ColumnReference {
+                group_by: Some(vec![GroupAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
-                }]),
+                })]),
                 having: None,
                 limit: None,
                 for_update: None,

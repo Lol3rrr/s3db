@@ -271,7 +271,6 @@ fn vacuum() {
 }
 
 #[test]
-#[ignore = "I dont even know the exact behaviour and meaning of this query"]
 fn pgbench_1() {
     let query_str = "
 select o.n, p.partstrat, pg_catalog.count(i.inhparent)
@@ -283,7 +282,32 @@ cross join lateral (
 left join pg_catalog.pg_partitioned_table as p on (p.partrelid = c.oid)
 left join pg_catalog.pg_inherits as i on (c.oid = i.inhparent)
 where c.relname = 'pgbench_accounts' and o.n is not null
-group by 1, 2 order by 1 asc limit 1";
+group by 1, 2
+order by 1 asc
+limit 1";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    let _ = select;
+}
+
+#[test]
+fn pgbench_1_altered() {
+    let query_str = "
+select o.n, p.partstrat, pg_catalog.count(i.inhparent)
+from pg_catalog.pg_class as c
+join pg_catalog.pg_namespace as n on (n.oid = c.relnamespace)
+cross join lateral (
+    select pg_catalog.array_position(pg_catalog.current_schemas(true), n.nspname)
+) as o(n)
+left join pg_catalog.pg_partitioned_table as p on (p.partrelid = c.oid)
+left join pg_catalog.pg_inherits as i on (c.oid = i.inhparent)
+where c.relname = 'pgbench_accounts' and o.n is not null
+group by 1, 2
+order by 1 asc";
 
     let select = match Query::parse(query_str.as_bytes()) {
         Ok(Query::Select(s)) => s,
@@ -303,4 +327,16 @@ fn alter_add_primary_key() {
     };
 
     let _ = alter;
+}
+
+#[test]
+fn truncate() {
+    let query_str = "truncate pgbench_history";
+
+    let table = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::TruncateTable(t)) => t,
+        other => panic!("{:?}", other),
+    };
+
+    let _ = table;
 }

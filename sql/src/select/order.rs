@@ -1,12 +1,21 @@
 use nom::{IResult, Parser};
 
-use crate::{common::column_reference, ColumnReference};
+use crate::{
+    common::{column_reference, literal},
+    ColumnReference, Literal,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Ordering<'s> {
-    pub column: ColumnReference<'s>,
+    pub column: OrderAttribute<'s>,
     pub order: OrderBy,
     pub nulls: NullOrdering,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum OrderAttribute<'s> {
+    ColumnRef(ColumnReference<'s>),
+    ColumnIndex(usize),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -38,7 +47,15 @@ pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::Verbo
                 nom::character::complete::multispace0,
             )),
             nom::sequence::tuple((
-                column_reference,
+                nom::branch::alt((
+                    column_reference.map(|c| OrderAttribute::ColumnRef(c)),
+                    nom::combinator::map_res(literal, |lit| match lit {
+                        Literal::SmallInteger(v) => Ok(OrderAttribute::ColumnIndex(v as usize)),
+                        Literal::Integer(v) => Ok(OrderAttribute::ColumnIndex(v as usize)),
+                        Literal::BigInteger(v) => Ok(OrderAttribute::ColumnIndex(v as usize)),
+                        _ => Err(()),
+                    }),
+                )),
                 nom::combinator::opt(nom::sequence::tuple((
                     nom::character::complete::multispace1,
                     nom::branch::alt((
@@ -91,10 +108,10 @@ mod tests {
         assert_eq!(&[] as &[u8], rem);
         assert_eq!(
             vec![Ordering {
-                column: ColumnReference {
+                column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
-                },
+                }),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::Last,
             }],
@@ -105,10 +122,10 @@ mod tests {
         assert_eq!(&[] as &[u8], rem);
         assert_eq!(
             vec![Ordering {
-                column: ColumnReference {
+                column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
-                },
+                }),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::Last,
             }],
@@ -119,10 +136,10 @@ mod tests {
         assert_eq!(&[] as &[u8], rem);
         assert_eq!(
             vec![Ordering {
-                column: ColumnReference {
+                column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
-                },
+                }),
                 order: OrderBy::Descending,
                 nulls: NullOrdering::First,
             }],
@@ -133,10 +150,10 @@ mod tests {
         assert_eq!(&[] as &[u8], rem);
         assert_eq!(
             vec![Ordering {
-                column: ColumnReference {
+                column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
-                },
+                }),
                 order: OrderBy::Descending,
                 nulls: NullOrdering::Last,
             }],
@@ -147,10 +164,10 @@ mod tests {
         assert_eq!(&[] as &[u8], rem);
         assert_eq!(
             vec![Ordering {
-                column: ColumnReference {
+                column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
-                },
+                }),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::First,
             }],
@@ -165,6 +182,20 @@ mod tests {
             matches!(test, nom::Err::Failure(_)),
             "Expected Failure error, got {:?}",
             test
+        );
+    }
+
+    #[test]
+    fn order_by_index() {
+        let (rem, tmp) = order_by("order by 1".as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], rem);
+        assert_eq!(
+            vec![Ordering {
+                column: OrderAttribute::ColumnIndex(1),
+                order: OrderBy::Ascending,
+                nulls: NullOrdering::Last
+            }],
+            tmp
         );
     }
 }

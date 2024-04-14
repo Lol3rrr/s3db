@@ -85,6 +85,26 @@ impl InMemoryStorage {
                             cid: AtomicU64::new(0),
                         },
                     ),
+                    (
+                        "pg_class".to_string(),
+                        Table {
+                            columns: vec![
+                                ("oid".to_string(), DataType::Integer, vec![]),
+                                ("relname".to_string(), DataType::Name, vec![]),
+                                ("relnamespace".to_string(), DataType::Integer, vec![]),
+                            ],
+                            rows: Vec::new(),
+                            cid: AtomicU64::new(0),
+                        },
+                    ),
+                    (
+                        "pg_namespace".to_string(),
+                        Table {
+                            columns: vec![],
+                            rows: Vec::new(),
+                            cid: AtomicU64::new(0),
+                        },
+                    ),
                 ]
                 .into_iter()
                 .collect(),
@@ -422,7 +442,9 @@ impl Storage for &InMemoryStorage {
                     let value = modifiers
                         .iter()
                         .find_map(|modifier| match modifier {
-                            TypeModifier::DefaultValue { value } => value.as_ref().map(|v| Data::from_literal(v)),
+                            TypeModifier::DefaultValue { value } => {
+                                value.as_ref().map(|v| Data::from_literal(v))
+                            }
                             _ => None,
                         })
                         .unwrap_or(Data::Null);

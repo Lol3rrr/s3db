@@ -6,7 +6,7 @@ use std::{
 use crate::storage::Schemas;
 use sql::{
     self, ColumnReference, Combination, DataType, Identifier, Select, TableExpression,
-    TypeModifier, ValueExpression,
+    ValueExpression,
 };
 
 mod types;
@@ -32,6 +32,8 @@ pub use cte::{parse_ctes, CTEQuery, CTEValue, CTE};
 
 mod context;
 pub use context::ParsingContext;
+
+mod select;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct AttributeId(usize);
@@ -155,7 +157,7 @@ pub enum ParseSelectError {
     IncompatibleTypes {
         mismatching_types: Vec<types::PossibleTypes>,
     },
-    Other,
+    Other(&'static str),
 }
 
 enum CustomCow<'s, T> {
@@ -296,7 +298,7 @@ impl ProjectionAttribute {
 impl RaExpression {
     pub fn get_source(&self, attribute: AttributeId) -> Option<&RaExpression> {
         match self {
-            Self::Renamed { name, inner } => inner.get_source(attribute),
+            Self::Renamed { inner, .. } => inner.get_source(attribute),
             Self::Projection { inner, .. } => {
                 if let Some(src) = inner.get_source(attribute) {
                     return Some(src);
@@ -410,7 +412,7 @@ impl RaExpression {
                 .collect(),
             Self::Limit { inner, .. } => inner.get_columns(),
             Self::OrderBy { inner, .. } => inner.get_columns(),
-            Self::CTE { name, columns } => columns
+            Self::CTE { columns, .. } => columns
                 .iter()
                 .map(|(n, t, id)| ("".into(), n.clone(), t.clone(), *id))
                 .collect(),
@@ -514,7 +516,11 @@ impl RaExpression {
 
                 Err(ParseSelectError::UnknownRelation(relation.0.to_string()))
             }
-            TableExpression::Renamed { inner, name } => {
+            TableExpression::Renamed {
+                inner,
+                name,
+                column_rename,
+            } => {
                 let inner_result = Self::parse_table_expression(inner, scope, placeholders)?;
 
                 match inner.as_ref() {
@@ -523,7 +529,7 @@ impl RaExpression {
                             .renamings
                             .insert(name.0.to_string(), inner_name.0.to_string());
                     }
-                    other => {}
+                    _ => {}
                 };
 
                 scope.named_tables.insert(
@@ -535,9 +541,42 @@ impl RaExpression {
                         .collect(),
                 );
 
+                let inner = match column_rename {
+                    Some(columns) => {
+                        let inner_columns = inner_result.get_columns();
+
+                        if inner_columns.len() != columns.len() {
+                            dbg!(&inner_columns, &columns);
+                            return Err(ParseSelectError::Other(
+                                "Inner Result Colums and renamed columns are not matching in count",
+                            ));
+                        }
+
+                        let columns: Vec<_> = inner_columns
+                            .into_iter()
+                            .zip(columns.iter())
+                            .map(|((n1, n2, ty, id), renamed)| ProjectionAttribute {
+                                id: scope.attribute_id(),
+                                name: renamed.0.to_string(),
+                                value: RaValueExpression::Attribute {
+                                    name: n2.clone(),
+                                    ty,
+                                    a_id: id,
+                                },
+                            })
+                            .collect();
+
+                        RaExpression::Projection {
+                            inner: Box::new(inner_result),
+                            attributes: columns,
+                        }
+                    }
+                    None => inner_result,
+                };
+
                 Ok(RaExpression::Renamed {
                     name: name.0.to_string(),
-                    inner: Box::new(inner_result),
+                    inner: Box::new(inner),
                 })
             }
             TableExpression::Join {
@@ -591,239 +630,32 @@ impl RaExpression {
         ra_expr: &mut RaExpression,
         outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
-        let mut table_expression = match query.table.as_ref() {
+        let base_ra = match query.table.as_ref() {
             Some(table_expr) => Self::parse_table_expression(table_expr, scope, placeholders)?,
             None => Self::EmptyRelation,
         };
 
-        scope.current_attributes.extend(
-            table_expression
-                .get_columns()
-                .into_iter()
-                .map(|(_, n, d, _)| (n, d)),
-        );
+        scope
+            .current_attributes
+            .extend(base_ra.get_columns().into_iter().map(|(_, n, d, _)| (n, d)));
 
-        let table_expression = match &query.where_condition {
-            Some(condition) => {
-                let or_condition = RaCondition::parse_internal(
-                    scope,
-                    condition,
-                    placeholders,
-                    &mut table_expression,
-                    outer,
-                )?;
+        let where_ra =
+            select::parse_condition(base_ra, &query.where_condition, scope, placeholders, outer)?;
 
-                Self::Selection {
-                    inner: Box::new(table_expression),
-                    filter: or_condition,
-                }
-            }
-            None => table_expression,
+        // FIXME
+        // This is currently the wrong way around, however this should yield the same result at
+        // least at the moment
+        let ordered_ra = select::parse_order(where_ra, &query.order_by)?;
+        let selected_ra = select::parse_aggregate(ordered_ra, &query, scope, placeholders, outer)?;
+
+        let limited_ra = match &query.limit {
+            Some(limit) => Self::Limit {
+                inner: Box::new(selected_ra),
+                limit: limit.limit,
+                offset: limit.offset.unwrap_or(0),
+            },
+            None => selected_ra,
         };
-
-        let mut table_expression = match &query.order_by {
-            Some(orders) => {
-                // (order_attr, order)
-
-                let attributes: Vec<_> = orders
-                    .iter()
-                    .map(|ordering| {
-                        let attr = table_expression
-                            .get_columns()
-                            .into_iter()
-                            .find(|(_, name, _, _)| name == ordering.column.column.0.as_ref())
-                            .map(|(_, _, _, id)| id)
-                            .ok_or_else(|| ParseSelectError::Other)?;
-
-                        Ok((attr, ordering.order.clone()))
-                    })
-                    .collect::<Result<_, _>>()?;
-
-                RaExpression::OrderBy {
-                    inner: Box::new(table_expression),
-                    attributes,
-                }
-            }
-            None => table_expression,
-        };
-
-        let res = if query.values.iter().any(|v| v.is_aggregate()) || query.group_by.is_some() {
-            let previous_columns = table_expression
-                .get_columns()
-                .into_iter()
-                .map(|(_, n, t, i)| (n, t, i))
-                .collect::<Vec<_>>();
-
-            let agg_condition = match query.group_by.as_ref() {
-                Some(tmp) => {
-                    let mut fields: Vec<_> = tmp
-                        .iter()
-                        .map(|field| {
-                            previous_columns
-                                .iter()
-                                .find_map(|(n, _, id)| {
-                                    if n == field.column.0.as_ref() {
-                                        Some((n.to_string(), *id))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .ok_or_else(|| ParseSelectError::UnknownAttribute {
-                                    attr: field.to_static(),
-                                    available: previous_columns
-                                        .iter()
-                                        .map(|(n, _, _)| (String::new(), n.clone()))
-                                        .collect(),
-                                    context: "Aggregate Condition Parsing".into(),
-                                })
-                        })
-                        .collect::<Result<_, _>>()?;
-
-                    let extra_fields_from_primary_keys: Vec<_> = fields
-                        .iter()
-                        .filter_map(|(f_name, f_id)| {
-                            table_expression.get_source(*f_id).zip(Some(f_id))
-                        })
-                        .filter_map(|(src_expr, f_id)| {
-                            let (table_name, column_name) = match src_expr {
-                                RaExpression::BaseRelation { name, columns } => {
-                                    let column_name = columns
-                                        .iter()
-                                        .find(|(_, _, id)| f_id == id)
-                                        .map(|(n, _, _)| n)?;
-
-                                    (name.0.as_ref(), column_name)
-                                }
-                                _ => return None,
-                            };
-                            let table_schema = match scope.schemas.get_table(table_name) {
-                                Some(s) => s,
-                                None => return None,
-                            };
-                            let column_schema = match table_schema.get_column_by_name(column_name) {
-                                Some(s) => s,
-                                None => return None,
-                            };
-
-                            if !column_schema
-                                .mods
-                                .iter()
-                                .any(|modifier| modifier == &TypeModifier::PrimaryKey)
-                            {
-                                return None;
-                            }
-
-                            Some(src_expr.get_columns())
-                        })
-                        .flat_map(|tmp| {
-                            tmp.into_iter()
-                                .map(|(_, n, _, id)| (n, id))
-                                .filter(|(_, id)| {
-                                    previous_columns.iter().any(|(_, _, pid)| id == pid)
-                                })
-                        })
-                        .collect();
-
-                    fields.extend(extra_fields_from_primary_keys);
-
-                    fields.sort_unstable_by_key(|(_, id)| id.0);
-                    fields.dedup_by_key(|(_, id)| id.0);
-
-                    AggregationCondition::GroupBy { fields }
-                }
-                None => AggregationCondition::Everything,
-            };
-
-            let attribute_values: Vec<_> = query
-                .values
-                .iter()
-                .map(|value| {
-                    AggregateExpression::parse(
-                        value,
-                        scope,
-                        &previous_columns,
-                        placeholders,
-                        &mut table_expression,
-                    )
-                })
-                .collect::<Result<_, _>>()?;
-
-            // TODO
-            // Check if everything used here is  correct
-            for value in attribute_values.iter() {
-                value.value.check(&agg_condition, scope.schemas)?;
-            }
-
-            let select_columns: Vec<_> = attribute_values
-                .iter()
-                .map(|attr| ProjectionAttribute {
-                    id: scope.attribute_id(),
-                    name: attr.name.clone(),
-                    value: RaValueExpression::Attribute {
-                        name: attr.name.clone(),
-                        ty: attr.value.return_ty(),
-                        a_id: attr.id,
-                    },
-                })
-                .collect();
-
-            let mut aggregated = Self::Aggregation {
-                inner: Box::new(table_expression),
-                attributes: attribute_values,
-                aggregation_condition: agg_condition,
-            };
-
-            let filtered = match query.having.as_ref() {
-                Some(having) => {
-                    let condition = RaCondition::parse_internal(
-                        scope,
-                        having,
-                        placeholders,
-                        &mut aggregated,
-                        &mut Vec::new(),
-                    )?;
-
-                    Self::Selection {
-                        inner: Box::new(aggregated),
-                        filter: condition,
-                    }
-                }
-                None => aggregated,
-            };
-
-            Ok(Self::Projection {
-                inner: Box::new(filtered),
-                attributes: select_columns,
-            })
-        } else {
-            let select_attributes: Vec<Vec<ProjectionAttribute>> = query
-                .values
-                .iter()
-                .map(|ve| {
-                    ProjectionAttribute::parse_internal(
-                        scope,
-                        ve,
-                        placeholders,
-                        &mut table_expression,
-                    )
-                })
-                .collect::<Result<_, _>>()?;
-
-            match &query.limit {
-                Some(limit) => Ok(Self::Limit {
-                    inner: Box::new(Self::Projection {
-                        inner: Box::new(table_expression),
-                        attributes: select_attributes.into_iter().flatten().collect(),
-                    }),
-                    limit: limit.limit,
-                    offset: limit.offset.unwrap_or(0),
-                }),
-                None => Ok(Self::Projection {
-                    inner: Box::new(table_expression),
-                    attributes: select_attributes.into_iter().flatten().collect(),
-                }),
-            }
-        }?;
 
         match query.combine.as_ref() {
             Some((c, s)) => {
@@ -831,7 +663,7 @@ impl RaExpression {
 
                 match c {
                     Combination::Union => Ok(Self::Chain {
-                        parts: vec![res, other],
+                        parts: vec![limited_ra, other],
                     }),
                     Combination::Intersection => Err(ParseSelectError::NotImplemented(
                         "Combine using Intersection",
@@ -841,7 +673,7 @@ impl RaExpression {
                     }
                 }
             }
-            None => Ok(res),
+            None => Ok(limited_ra),
         }
     }
 }

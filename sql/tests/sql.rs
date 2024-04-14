@@ -2,8 +2,9 @@ use pretty_assertions::assert_eq;
 
 use sql::{
     AggregateExpression, BinaryOperator, ColumnReference, Condition, ConflictHandling, Delete,
-    FunctionCall, Identifier, Insert, InsertValues, JoinKind, Literal, NullOrdering, OrderBy,
-    Ordering, Query, Select, SelectLimit, TableExpression, ValueExpression,
+    FunctionCall, Identifier, Insert, InsertValues, JoinKind, Literal, NullOrdering,
+    OrderAttribute, OrderBy, Ordering, Query, Select, SelectLimit, TableExpression,
+    ValueExpression,
 };
 
 #[test]
@@ -413,18 +414,18 @@ fn select_limit_offset() {
             ])])),
             order_by: Some(vec![
                 Ordering {
-                    column: ColumnReference {
+                    column: OrderAttribute::ColumnRef(ColumnReference {
                         relation: None,
                         column: Identifier("id".into())
-                    },
+                    }),
                     order: OrderBy::Descending,
                     nulls: NullOrdering::First,
                 },
                 Ordering {
-                    column: ColumnReference {
+                    column: OrderAttribute::ColumnRef(ColumnReference {
                         relation: None,
                         column: Identifier("id".into())
-                    },
+                    }),
                     order: OrderBy::Ascending,
                     nulls: NullOrdering::Last
                 }
@@ -584,7 +585,8 @@ INNER JOIN (
                         })],
                         table: Some(TableExpression::Renamed {
                             inner: Box::new(TableExpression::Relation("builtin_role".into())),
-                            name: "br".into()
+                            name: "br".into(),
+                            column_rename: None,
                         }),
                         where_condition: Some(Condition::And(vec![
                             Condition::Value(Box::new(ValueExpression::Operator {
@@ -633,7 +635,8 @@ INNER JOIN (
                         for_update: None,
                         combine: None,
                     }))),
-                    name: "all_role".into()
+                    name: "all_role".into(),
+                    column_rename: None,
                 }),
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![Condition::Value(Box::new(
@@ -681,7 +684,8 @@ fn testing_subquery() {
             })],
             table: Some(TableExpression::Renamed {
                 inner: Box::new(TableExpression::Relation("builtin_role".into())),
-                name: "br".into()
+                name: "br".into(),
+                column_rename: None,
             }),
             where_condition: Some(Condition::And(vec![
                 Condition::Value(Box::new(ValueExpression::Operator {

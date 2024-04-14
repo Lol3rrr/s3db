@@ -4,6 +4,30 @@ use crate::{select, CompatibleParser, Select};
 
 use super::{literal, value_expression, Identifier, Literal, ValueExpression};
 
+macro_rules! function_call {
+    ($name:literal, $parser:expr, $mapping:expr) => {
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::combinator::opt(nom::bytes::complete::tag_no_case("pg_catalog.")),
+                nom::bytes::complete::tag_no_case($name),
+                nom::character::complete::multispace0,
+                nom::sequence::delimited(
+                    nom::sequence::tuple((
+                        nom::bytes::complete::tag("("),
+                        nom::character::complete::multispace0,
+                    )),
+                    $parser,
+                    nom::sequence::tuple((
+                        nom::character::complete::multispace0,
+                        nom::bytes::complete::tag(")"),
+                    )),
+                ),
+            )),
+            |(_, _, _, raw)| $mapping(raw),
+        )
+    };
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum FunctionCall<'s> {
     LPad {
@@ -31,6 +55,13 @@ pub enum FunctionCall<'s> {
         count: Option<Box<ValueExpression<'s>>>,
     },
     CurrentTimestamp,
+    CurrentSchemas {
+        implicit: bool,
+    },
+    ArrayPosition {
+        array: Box<ValueExpression<'s>>,
+        target: Box<ValueExpression<'s>>,
+    },
 }
 
 pub fn function_call(
@@ -126,12 +157,9 @@ pub fn function_call(
                 value: Box::new(val),
             },
         ),
-        nom::combinator::map(
+        function_call!(
+            "substr",
             nom::sequence::tuple((
-                nom::bytes::complete::tag_no_case("substr"),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag("("),
-                nom::character::complete::multispace0,
                 value_expression,
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
@@ -146,18 +174,41 @@ pub fn function_call(
                         nom::character::complete::multispace0,
                     ))
                     .map(|(_, _, v, _)| Box::new(v)),
-                ),
-                nom::bytes::complete::tag(")"),
+                )
             )),
-            |(_, _, _, _, content, _, _, _, start, _, count, _)| FunctionCall::Substr {
-                value: Box::new(content),
-                start: Box::new(start),
-                count,
-            },
+            |(content, _, _, _, start, _, count)| {
+                FunctionCall::Substr {
+                    value: Box::new(content),
+                    start: Box::new(start),
+                    count,
+                }
+            }
         ),
         nom::combinator::map(
             nom::bytes::complete::tag_no_case("CURRENT_TIMESTAMP"),
             |_| FunctionCall::CurrentTimestamp,
+        ),
+        function_call!(
+            "current_schemas",
+            nom::combinator::map_res(value_expression, |val| match val {
+                ValueExpression::Literal(Literal::Bool(v)) => Ok(v),
+                _ => Err(()),
+            }),
+            |val| { FunctionCall::CurrentSchemas { implicit: val } }
+        ),
+        function_call!(
+            "array_position",
+            nom::sequence::tuple((
+                value_expression,
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag(","),
+                nom::character::complete::multispace0,
+                value_expression,
+            )),
+            |(array, _, _, _, target)| FunctionCall::ArrayPosition {
+                array: Box::new(array),
+                target: Box::new(target)
+            }
         ),
     ))(i)
 }
@@ -202,6 +253,13 @@ impl<'s> FunctionCall<'s> {
                 count: count.as_ref().map(|c| Box::new(c.to_static())),
             },
             Self::CurrentTimestamp => FunctionCall::CurrentTimestamp,
+            Self::CurrentSchemas { implicit } => FunctionCall::CurrentSchemas {
+                implicit: *implicit,
+            },
+            Self::ArrayPosition { array, target } => FunctionCall::ArrayPosition {
+                array: Box::new(array.to_static()),
+                target: Box::new(target.to_static()),
+            },
         }
     }
 
@@ -227,6 +285,10 @@ impl<'s> FunctionCall<'s> {
             .max()
             .unwrap_or(0),
             Self::CurrentTimestamp => 0,
+            Self::CurrentSchemas { .. } => 0,
+            Self::ArrayPosition { array, target } => {
+                core::cmp::max(array.max_parameter(), target.max_parameter())
+            }
         }
     }
 }
@@ -369,6 +431,32 @@ mod tests {
                 count: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(2))))
             },
             call
+        );
+    }
+
+    #[test]
+    fn current_schemas() {
+        let (remaining, tmp) = function_call("current_schemas(true)".as_bytes()).unwrap();
+
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(FunctionCall::CurrentSchemas { implicit: true }, tmp);
+    }
+
+    #[test]
+    fn array_position() {
+        let (remaining, tmp) =
+            function_call("array_position('this is wrong but anyway', 'first')".as_bytes())
+                .unwrap();
+
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            FunctionCall::ArrayPosition {
+                array: Box::new(ValueExpression::Literal(Literal::Str(
+                    "this is wrong but anyway".into()
+                ))),
+                target: Box::new(ValueExpression::Literal(Literal::Str("first".into())))
+            },
+            tmp
         );
     }
 }

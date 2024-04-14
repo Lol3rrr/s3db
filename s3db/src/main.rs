@@ -31,7 +31,7 @@ fn main() {
     let storage = s3db::storage::inmemory::InMemoryStorage::new();
     let engine = s3db::execution::naive::NaiveEngine::new(storage);
 
-    let endpoint = s3db::endpoint::postgres::PostgresEndpoint::new("0.0.0.0.:5432");
+    let endpoint = s3db::endpoint::postgres::PostgresEndpoint::new("0.0.0.0:5432");
 
     let local_set = tokio::task::LocalSet::new();
     local_set.spawn_local(async move {

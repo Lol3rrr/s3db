@@ -12,6 +12,7 @@ pub enum TableExpression<'s> {
     Renamed {
         inner: Box<TableExpression<'s>>,
         name: Identifier<'s>,
+        column_rename: Option<Vec<Identifier<'s>>>,
     },
     Join {
         left: Box<TableExpression<'s>>,
@@ -28,6 +29,7 @@ pub enum JoinKind {
     LeftOuter,
     RightOuter,
     FullOuter,
+    Cross,
 }
 
 pub fn table_expression(
@@ -43,6 +45,8 @@ pub fn table_expression(
                 nom::bytes::complete::tag(")"),
             ))
             .map(|(_, _, query, _, _)| TableExpression::SubQuery(Box::new(query))),
+            nom::sequence::tuple((identifier, nom::bytes::complete::tag("."), identifier))
+                .map(|(schema, _, name)| TableExpression::Relation(name)),
             identifier.map(TableExpression::Relation),
         ))(i)?;
 
@@ -52,8 +56,23 @@ pub fn table_expression(
                 nom::bytes::complete::tag_no_case("AS"),
                 nom::character::complete::multispace1,
                 identifier,
+                nom::combinator::opt(nom::sequence::tuple((
+                    nom::character::complete::multispace0,
+                    nom::bytes::complete::tag("("),
+                    nom::character::complete::multispace0,
+                    nom::multi::separated_list1(
+                        nom::sequence::tuple((
+                            nom::character::complete::multispace0,
+                            nom::bytes::complete::tag(","),
+                            nom::character::complete::multispace0,
+                        )),
+                        identifier,
+                    ),
+                    nom::character::complete::multispace0,
+                    nom::bytes::complete::tag(")"),
+                ))),
             ))
-            .map(|(_, _, _, ident)| ident),
+            .map(|(_, _, _, ident, columns)| (ident, columns.map(|(_, _, _, c, _, _)| c))),
             nom::sequence::tuple((
                 nom::character::complete::multispace1,
                 nom::combinator::not(nom::combinator::peek(nom::branch::alt((
@@ -69,14 +88,15 @@ pub fn table_expression(
                 )))),
                 identifier,
             ))
-            .map(|(_, _, ident)| ident),
+            .map(|(_, _, ident)| (ident, None)),
         ))(remaining)
         {
-            Ok((remaining, name)) => Ok((
+            Ok((remaining, (name, columns))) => Ok((
                 remaining,
                 TableExpression::Renamed {
                     inner: Box::new(table),
                     name,
+                    column_rename: columns,
                 },
             )),
             Err(_) => Ok((remaining, table)),
@@ -122,11 +142,33 @@ pub fn table_expression(
                 nom::character::complete::multispace1,
             ))
             .map(|_| JoinKind::FullOuter),
+            nom::sequence::tuple((
+                nom::character::complete::multispace1,
+                nom::bytes::complete::tag_no_case("CROSS"),
+                nom::character::complete::multispace1,
+                nom::bytes::complete::tag_no_case("JOIN"),
+                nom::character::complete::multispace1,
+            ))
+            .map(|_| JoinKind::Cross),
         ))(outer_remaining);
 
         let (remaining, join_kind) = match join_res {
             Ok(v) => v,
             Err(_) => break,
+        };
+
+        let tmp: IResult<&[u8], _, nom::error::VerboseError<&[u8]>> = nom::sequence::tuple((
+            nom::bytes::complete::tag_no_case("LATERAL"),
+            nom::character::complete::multispace1,
+        ))(remaining);
+
+        let (remaining, tmp) = match tmp {
+            Ok((rem, other)) => {
+                dbg!("Lateral", other);
+
+                (rem, ())
+            }
+            Err(_) => (remaining, ()),
         };
 
         let (remaining, other_table) = base(remaining)?;
@@ -169,9 +211,16 @@ impl<'s> TableExpression<'s> {
     pub fn to_static(&self) -> TableExpression<'static> {
         match self {
             Self::Relation(r) => TableExpression::Relation(r.to_static()),
-            Self::Renamed { inner, name } => TableExpression::Renamed {
+            Self::Renamed {
+                inner,
+                name,
+                column_rename,
+            } => TableExpression::Renamed {
                 inner: Box::new(inner.to_static()),
                 name: name.to_static(),
+                column_rename: column_rename
+                    .as_ref()
+                    .map(|c| c.iter().map(|c| c.to_static()).collect()),
             },
             Self::Join {
                 left,
@@ -239,6 +288,21 @@ mod tests {
                 }))),
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![])
+            },
+            table
+        );
+    }
+
+    #[test]
+    fn rename_with_columns() {
+        let query_str = "something as o(n)";
+        let (remaining, table) = table_expression(query_str.as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            TableExpression::Renamed {
+                inner: Box::new(TableExpression::Relation(Identifier("something".into()))),
+                name: "o".into(),
+                column_rename: Some(vec![Identifier("n".into())])
             },
             table
         );

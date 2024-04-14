@@ -155,7 +155,7 @@ fn grafana_query_2() {
         other => panic!("{:?}", other),
     };
 
-    let _ = select;
+    dbg!(&select);
 
     let schemas: Schemas = [
         (

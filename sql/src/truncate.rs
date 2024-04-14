@@ -13,8 +13,10 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], TruncateTable<'_>, nom::error::VerboseE
     nom::combinator::map(
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("TRUNCATE"),
-            nom::character::complete::multispace1,
-            nom::bytes::complete::tag_no_case("TABLE"),
+            nom::combinator::opt(nom::sequence::tuple((
+                nom::character::complete::multispace1,
+                nom::bytes::complete::tag_no_case("TABLE"),
+            ))),
             nom::character::complete::multispace1,
             nom::multi::separated_list1(
                 nom::sequence::tuple((
@@ -25,7 +27,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], TruncateTable<'_>, nom::error::VerboseE
                 identifier,
             ),
         )),
-        |(_, _, _, _, tables)| TruncateTable { names: tables },
+        |(_, _, _, tables)| TruncateTable { names: tables },
     )(i)
 }
 

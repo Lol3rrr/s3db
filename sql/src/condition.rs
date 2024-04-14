@@ -121,7 +121,7 @@ mod tests {
 
     use crate::{
         common::{BinaryOperator, Identifier},
-        select::{NullOrdering, Ordering, SelectLimit},
+        select::{NullOrdering, OrderAttribute, Ordering, SelectLimit},
         ColumnReference, FunctionCall, Literal, OrderBy, Select, TableExpression,
     };
 
@@ -442,10 +442,10 @@ mod tests {
                             ))),
                             where_condition: None,
                             order_by: Some(vec![Ordering {
-                                column: ColumnReference {
+                                column: OrderAttribute::ColumnRef(ColumnReference {
                                     relation: None,
                                     column: "id".into(),
-                                },
+                                }),
                                 order: OrderBy::Descending,
                                 nulls: NullOrdering::First,
                             }]),

@@ -160,7 +160,7 @@ impl RaValueExpression {
                         Literal::BigInteger(v) => *v,
                         other => {
                             dbg!(&other);
-                            return Err(ParseSelectError::Other);
+                            return Err(ParseSelectError::Other("Unexpected Value"));
                         }
                     };
 
@@ -168,7 +168,7 @@ impl RaValueExpression {
                         Literal::Str(v) => v,
                         other => {
                             dbg!(other);
-                            return Err(ParseSelectError::Other);
+                            return Err(ParseSelectError::Other("Unexpected Value"));
                         }
                     };
 
@@ -253,7 +253,7 @@ impl RaValueExpression {
 
                     let ra_value = ra_value
                         .enforce_type(DataType::BigInteger, placeholders)
-                        .ok_or_else(|| ParseSelectError::Other)?;
+                        .ok_or_else(|| ParseSelectError::Other("Enforcing Type"))?;
 
                     Ok(Self::Function(RaFunction::SetValue {
                         name: sequence_name.0.to_string(),
@@ -272,7 +272,7 @@ impl RaValueExpression {
 
                     let ra_value = raw_ra_value
                         .enforce_type(DataType::Text, placeholders)
-                        .ok_or_else(|| ParseSelectError::Other)?;
+                        .ok_or_else(|| ParseSelectError::Other("Enforcing Type"))?;
 
                     Ok(Self::Function(RaFunction::Lower(Box::new(ra_value))))
                 }
@@ -322,6 +322,20 @@ impl RaValueExpression {
                         "Parse CurrentTimestamp Function",
                     ))
                 }
+                FunctionCall::CurrentSchemas { implicit } => {
+                    // TODO
+
+                    Err(ParseSelectError::NotImplemented(
+                        "Parse CurrentSchemas Function",
+                    ))
+                }
+                FunctionCall::ArrayPosition { array, target } => {
+                    // TODO
+
+                    Err(ParseSelectError::NotImplemented(
+                        "Parse ArrayPosition Function",
+                    ))
+                }
             },
             ValueExpression::Operator {
                 first,
@@ -335,11 +349,11 @@ impl RaValueExpression {
                     BinaryOperator::Concat => {
                         let ra_first = ra_first
                             .enforce_type(DataType::Text, placeholders)
-                            .ok_or(ParseSelectError::Other)?;
+                            .ok_or(ParseSelectError::Other("Enforcing Type"))?;
 
                         let ra_second = ra_second
                             .enforce_type(DataType::Text, placeholders)
-                            .ok_or(ParseSelectError::Other)?;
+                            .ok_or(ParseSelectError::Other("Enforcing Type"))?;
 
                         Ok(RaValueExpression::BinaryOperation {
                             first: Box::new(ra_first),
@@ -358,11 +372,11 @@ impl RaValueExpression {
 
                         let first_possible_types = ra_first
                             .possible_type(scope)
-                            .map_err(|e| ParseSelectError::Other)?
+                            .map_err(|e| ParseSelectError::Other("Determine Type"))?
                             .compatible(&numeric_types);
                         let second_possible_types = ra_second
                             .possible_type(scope)
-                            .map_err(|e| ParseSelectError::Other)?
+                            .map_err(|e| ParseSelectError::Other("Determine Type"))?
                             .compatible(&numeric_types);
 
                         let resolved_type = first_possible_types
@@ -377,10 +391,10 @@ impl RaValueExpression {
 
                         let ra_first = ra_first
                             .enforce_type(resolved_type.clone(), placeholders)
-                            .ok_or(ParseSelectError::Other)?;
+                            .ok_or(ParseSelectError::Other("Enforcing Type"))?;
                         let ra_second = ra_second
                             .enforce_type(resolved_type.clone(), placeholders)
-                            .ok_or(ParseSelectError::Other)?;
+                            .ok_or(ParseSelectError::Other("Enforcing Type"))?;
 
                         Ok(RaValueExpression::BinaryOperation {
                             first: Box::new(ra_first),
@@ -409,7 +423,7 @@ impl RaValueExpression {
 
                 let base_types = ra_base
                     .possible_type(scope)
-                    .map_err(|e| ParseSelectError::Other)?;
+                    .map_err(|e| ParseSelectError::Other("Getting Possible Types"))?;
                 dbg!(&base_types);
 
                 let compatible_types =
@@ -451,7 +465,7 @@ impl RaValueExpression {
                     } => (attributes, inner),
                     other => {
                         dbg!(&other);
-                        return Err(ParseSelectError::Other);
+                        return Err(ParseSelectError::Other("Parent is not aggregate"));
                     }
                 };
 
@@ -552,9 +566,7 @@ impl RaValueExpression {
                     is_called,
                 } => Ok(types::PossibleTypes::fixed(DataType::BigInteger)),
                 RaFunction::Lower(val) => Ok(types::PossibleTypes::fixed(DataType::Text)),
-                RaFunction::Substr {  .. } => {
-                    Ok(types::PossibleTypes::fixed(DataType::Text))
-                }
+                RaFunction::Substr { .. } => Ok(types::PossibleTypes::fixed(DataType::Text)),
             },
             Self::Renamed { name, value } => value.possible_type(scope),
         }
@@ -605,7 +617,7 @@ impl RaValueExpression {
                     is_called,
                 } => Some(DataType::BigInteger),
                 RaFunction::Lower(_) => Some(DataType::Text),
-                RaFunction::Substr {  .. } => Some(DataType::Text),
+                RaFunction::Substr { .. } => Some(DataType::Text),
             },
             Self::Renamed { name, value } => value.datatype(),
         }

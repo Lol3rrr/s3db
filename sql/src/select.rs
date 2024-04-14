@@ -2,11 +2,7 @@ use nom::{IResult, Parser};
 
 use crate::{common::value_expressions, condition::condition, dialects, CompatibleParser};
 
-use super::{
-    common::{column_reference, ValueExpression},
-    condition::Condition,
-    ColumnReference,
-};
+use super::{common::ValueExpression, condition::Condition};
 
 mod combine;
 use combine::combine;
@@ -16,9 +12,12 @@ mod tableexpr;
 use tableexpr::table_expression;
 pub use tableexpr::{JoinKind, TableExpression};
 
+mod group;
+pub use group::GroupAttribute;
+
 mod order;
 use order::order_by;
-pub use order::{NullOrdering, OrderBy, Ordering};
+pub use order::{NullOrdering, OrderAttribute, OrderBy, Ordering};
 
 /// A single Select Query with all the containing parts
 ///
@@ -33,7 +32,7 @@ pub struct Select<'s> {
     /// A condition to filter out unwanted queries
     pub where_condition: Option<Condition<'s>>,
     pub order_by: Option<Vec<Ordering<'s>>>,
-    pub group_by: Option<Vec<ColumnReference<'s>>>,
+    pub group_by: Option<Vec<GroupAttribute<'s>>>,
     pub having: Option<Condition<'s>>,
     pub limit: Option<SelectLimit>,
     pub for_update: Option<()>,
@@ -58,7 +57,12 @@ impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
                 orders
                     .iter()
                     .map(|order| Ordering {
-                        column: order.column.to_static(),
+                        column: match &order.column {
+                            OrderAttribute::ColumnRef(c) => {
+                                OrderAttribute::ColumnRef(c.to_static())
+                            }
+                            OrderAttribute::ColumnIndex(i) => OrderAttribute::ColumnIndex(*i),
+                        },
                         order: order.order.clone(),
                         nulls: order.nulls.clone(),
                     })
@@ -125,8 +129,8 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
             table,
             where_exists,
             something,
-            order_by,
             group_by,
+            order_by,
             having,
             limit,
             for_update,
@@ -175,26 +179,12 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                 .map(|(_, c, _, s)| (c, Box::new(s))),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((nom::character::complete::multispace1, order_by))
-                    .map(|(_, order)| order),
+                nom::sequence::tuple((nom::character::complete::multispace1, group::parse))
+                    .map(|(_, attributes)| attributes),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((
-                    nom::character::complete::multispace1,
-                    nom::bytes::complete::tag_no_case("GROUP"),
-                    nom::character::complete::multispace1,
-                    nom::bytes::complete::tag_no_case("BY"),
-                    nom::character::complete::multispace1,
-                    nom::multi::separated_list1(
-                        nom::sequence::tuple((
-                            nom::character::complete::multispace0,
-                            nom::bytes::complete::tag(","),
-                            nom::character::complete::multispace0,
-                        )),
-                        column_reference,
-                    ),
-                ))
-                .map(|(_, _, _, _, _, attributes)| attributes),
+                nom::sequence::tuple((nom::character::complete::multispace1, order_by))
+                    .map(|(_, order)| order),
             ),
             nom::combinator::opt(
                 nom::sequence::tuple((
@@ -259,7 +249,10 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
 
 #[cfg(test)]
 mod tests {
-    use crate::{self as sql, AggregateExpression, BinaryOperator, Identifier, Literal, Query};
+    use crate::{
+        self as sql, AggregateExpression, BinaryOperator, ColumnReference, Identifier, Literal,
+        Query,
+    };
 
     use super::*;
 
@@ -327,7 +320,8 @@ mod tests {
                 })],
                 table: Some(TableExpression::Renamed {
                     inner: Box::new(TableExpression::Relation(Identifier("user".into()))),
-                    name: Identifier("u".into())
+                    name: Identifier("u".into()),
+                    column_rename: None,
                 }),
                 where_condition: None,
                 order_by: None,
@@ -530,10 +524,10 @@ mod tests {
                 table: Some(TableExpression::Relation(Identifier("users".into()))),
                 where_condition: None,
                 order_by: Some(vec![Ordering {
-                    column: ColumnReference {
+                    column: OrderAttribute::ColumnRef(ColumnReference {
                         relation: Some("users".into()),
                         column: "age".into(),
-                    },
+                    }),
                     order: OrderBy::Ascending,
                     nulls: NullOrdering::Last
                 }]),
@@ -622,10 +616,10 @@ mod tests {
                 table: Some(TableExpression::Relation("orders".into())),
                 where_condition: None,
                 order_by: None,
-                group_by: Some(vec![ColumnReference {
+                group_by: Some(vec![GroupAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "uid".into(),
-                }]),
+                })]),
                 having: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
