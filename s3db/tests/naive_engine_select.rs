@@ -1052,3 +1052,64 @@ async fn select_with_table_column_rename() {
         res
     );
 }
+
+#[tokio::test]
+async fn lateral_join() {
+    let query_str = "SELECT users.name, v.value FROM users JOIN LATERAL (SELECT (users.value + 5) AS value) AS v ON true";
+    let query = Query::parse(query_str.as_bytes()).unwrap();
+
+    let storage = storage_setup!((
+        "users",
+        vec![
+            ("id".into(), DataType::Serial, Vec::new()),
+            ("name".into(), DataType::Text, Vec::new()),
+            ("value".into(), DataType::Integer, Vec::new()),
+        ],
+        vec![
+            vec![
+                Data::Serial(1),
+                Data::Text("testing".into()),
+                Data::Integer(10)
+            ],
+            vec![
+                Data::Serial(2),
+                Data::Text("other".into()),
+                Data::Integer(20)
+            ],
+            vec![
+                Data::Serial(3),
+                Data::Text("something".into()),
+                Data::Integer(30)
+            ],
+        ]
+    ));
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
+
+    dbg!(&res);
+
+    assert_eq!(
+        ExecuteResult::Select {
+            content: storage::EntireRelation {
+                columns: vec![
+                    ("n".into(), DataType::Text, Vec::new()),
+                    ("value".into(), DataType::Integer, Vec::new())
+                ],
+                parts: vec![storage::PartialRelation {
+                    rows: vec![
+                        storage::Row::new(0, vec![Data::Text("testing".into())]),
+                        storage::Row::new(0, vec![Data::Text("other".into())]),
+                        storage::Row::new(0, vec![Data::Text("something".into())])
+                    ]
+                }]
+            },
+            formats: Vec::new()
+        },
+        res
+    );
+}

@@ -575,7 +575,8 @@ INNER JOIN (
                             })),
                             operator: BinaryOperator::Equal
                         }
-                    ))])
+                    ))]),
+                    lateral: false,
                 }),
                 right: Box::new(TableExpression::Renamed {
                     inner: Box::new(TableExpression::SubQuery(Box::new(Select {
@@ -651,7 +652,8 @@ INNER JOIN (
                         })),
                         operator: BinaryOperator::Equal
                     }
-                ))])
+                ))]),
+                lateral: false
             }),
             where_condition: None,
             having: None,

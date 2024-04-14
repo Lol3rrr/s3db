@@ -226,7 +226,9 @@ pub fn parse_aggregate(
         let select_attributes: Vec<Vec<ProjectionAttribute>> = query
             .values
             .iter()
-            .map(|ve| ProjectionAttribute::parse_internal(scope, ve, placeholders, &mut base))
+            .map(|ve| {
+                ProjectionAttribute::parse_internal(scope, ve, placeholders, &mut base, outer)
+            })
             .collect::<Result<_, _>>()?;
 
         Ok(RaExpression::Projection {

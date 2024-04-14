@@ -76,6 +76,7 @@ pub enum RaExpression {
         right: Box<Self>,
         kind: sql::JoinKind,
         condition: RaCondition,
+        lateral: bool,
     },
     EmptyRelation,
     /// This is very similar to the `Self::Projection` variant, but instead of working on
@@ -219,6 +220,7 @@ impl ProjectionAttribute {
         expr: &ValueExpression<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         table_expression: &mut RaExpression,
+        outer: &mut Vec<RaExpression>,
     ) -> Result<Vec<ProjectionAttribute>, ParseSelectError> {
         if matches!(expr, ValueExpression::All) {
             let columns = table_expression.get_columns();
@@ -270,13 +272,8 @@ impl ProjectionAttribute {
                 .collect());
         }
 
-        let raw_value = RaValueExpression::parse_internal(
-            scope,
-            expr,
-            placeholders,
-            table_expression,
-            &mut Vec::new(),
-        )?;
+        let raw_value =
+            RaValueExpression::parse_internal(scope, expr, placeholders, table_expression, outer)?;
 
         let (name, value): (String, RaValueExpression) = match raw_value {
             RaValueExpression::Attribute { name, ty, a_id } => (
@@ -453,6 +450,8 @@ impl RaExpression {
         table: &TableExpression,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
+        left_side: Option<&RaExpression>,
+        outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
         match table {
             TableExpression::Relation(relation) => {
@@ -521,7 +520,8 @@ impl RaExpression {
                 name,
                 column_rename,
             } => {
-                let inner_result = Self::parse_table_expression(inner, scope, placeholders)?;
+                let inner_result =
+                    Self::parse_table_expression(inner, scope, placeholders, left_side, outer)?;
 
                 match inner.as_ref() {
                     TableExpression::Relation(inner_name) => {
@@ -584,15 +584,28 @@ impl RaExpression {
                 right,
                 kind,
                 condition,
+                lateral,
             } => {
-                let left_ra = Self::parse_table_expression(left, scope, placeholders)?;
-                let right_ra = Self::parse_table_expression(right, scope, placeholders)?;
+                // TODO
+                // If we have a lateral join, we should probably not model this as an actualy join
+                // but rather turn this into a subquery
+
+                let left_ra =
+                    Self::parse_table_expression(left, scope, placeholders, left_side, outer)?;
+                let right_ra = Self::parse_table_expression(
+                    right,
+                    scope,
+                    placeholders,
+                    lateral.then_some(&left_ra),
+                    outer,
+                )?;
 
                 let mut joined = Self::Join {
                     left: Box::new(left_ra),
                     right: Box::new(right_ra),
                     kind: kind.clone(),
                     condition: RaCondition::And(vec![]),
+                    lateral: *lateral,
                 };
 
                 let ra_condition = RaCondition::parse_internal(
@@ -610,13 +623,25 @@ impl RaExpression {
                 Ok(joined)
             }
             TableExpression::SubQuery(query) => {
+                let (outer, added) = match left_side {
+                    Some(tmp) => {
+                        outer.push(tmp.clone());
+                        (outer, true)
+                    }
+                    None => (outer, false),
+                };
+
                 let query = Self::parse_s(
                     query,
                     scope,
                     placeholders,
                     &mut RaExpression::EmptyRelation,
-                    &mut Vec::new(),
+                    outer,
                 )?;
+
+                if added {
+                    outer.pop();
+                }
 
                 Ok(query)
             }
@@ -631,7 +656,9 @@ impl RaExpression {
         outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
         let base_ra = match query.table.as_ref() {
-            Some(table_expr) => Self::parse_table_expression(table_expr, scope, placeholders)?,
+            Some(table_expr) => {
+                Self::parse_table_expression(table_expr, scope, placeholders, None, outer)?
+            }
             None => Self::EmptyRelation,
         };
 
@@ -1213,7 +1240,8 @@ mod tests {
                             },
                             comparison: RaComparisonOperator::Equals
                         }
-                    ))])
+                    ))]),
+                    lateral: false
                 }),
                 attributes: vec![
                     ProjectionAttribute {

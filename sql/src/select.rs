@@ -413,6 +413,7 @@ mod tests {
                                 operator: BinaryOperator::Equal
                             }
                         ))]),
+                        lateral: false,
                     }),
                     right: Box::new(TableExpression::Relation(Identifier("products".into()))),
                     kind: JoinKind::Inner,
@@ -428,7 +429,8 @@ mod tests {
                             })),
                             operator: BinaryOperator::Equal,
                         }
-                    ))])
+                    ))]),
+                    lateral: false,
                 }),
                 where_condition: None,
                 order_by: None,
@@ -477,6 +479,7 @@ mod tests {
                                 operator: BinaryOperator::Equal
                             }
                         ))]),
+                        lateral: false,
                     }),
                     right: Box::new(TableExpression::Relation(Identifier("products".into()))),
                     kind: JoinKind::Inner,
@@ -492,7 +495,8 @@ mod tests {
                             })),
                             operator: BinaryOperator::Equal,
                         }
-                    ))])
+                    ))]),
+                    lateral: false,
                 }),
                 where_condition: None,
                 order_by: None,

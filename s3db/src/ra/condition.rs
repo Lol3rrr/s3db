@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{ra::RaExpression, storage::Schemas};
-use sql::{BinaryOperator, Condition, DataType, FunctionCall, ValueExpression};
+use sql::{BinaryOperator, Condition, DataType, FunctionCall, Literal, ValueExpression};
 
 use super::{
     error_context, AttributeId, ParseSelectError, RaComparisonOperator, RaValueExpression, Scope,
@@ -41,6 +41,9 @@ pub enum RaConditionValue {
     },
     Exists {
         query: Box<RaExpression>,
+    },
+    Constant {
+        value: bool,
     },
 }
 
@@ -256,6 +259,13 @@ impl RaConditionValue {
                     Err(ParseSelectError::NotImplemented(
                         "Parsing unknown Function Call",
                     ))
+                }
+            },
+            ValueExpression::Literal(lit) => match lit {
+                Literal::Bool(v) => Ok(RaConditionValue::Constant { value: *v }),
+                other => {
+                    dbg!(&other);
+                    Err(ParseSelectError::Other("Unexpected Literal"))
                 }
             },
             other => {

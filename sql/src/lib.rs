@@ -469,7 +469,8 @@ mod tests {
                             })),
                             operator: BinaryOperator::Equal
                         }
-                    ))])
+                    ))]),
+                    lateral: false,
                 }),
                 where_condition: None,
                 order_by: None,

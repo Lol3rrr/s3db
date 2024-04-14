@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use futures::{future::LocalBoxFuture, FutureExt};
 
 use crate::{
-    execution::algorithms::{self, joins::Join}, postgres::FormatCode, ra::{self, AttributeId, RaUpdate}, storage::{self, Data, Storage, TableSchema}
+    execution::algorithms::{self, joins::Join}, postgres::FormatCode, ra::{self, AttributeId, RaExpression, RaUpdate}, storage::{self, Data, Storage, TableSchema}
 };
-use sql::{ BinaryOperator, ColumnReference, DataType, Query, TypeModifier, CompatibleParser};
+use sql::{ BinaryOperator,  DataType, Query, TypeModifier, CompatibleParser};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -82,6 +82,10 @@ pub enum EvaulateRaError<SE> {
     Other(&'static str),
 }
 
+struct StackedExpr<'r> {
+    expr: &'r RaExpression,
+}
+
 impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
@@ -102,10 +106,12 @@ where
         't: 'f,
     {
         async move {
-            let mut pending = vec![&expr];
-            let mut expression_stack = Vec::new();
+            let mut pending: Vec<&RaExpression> = vec![&expr];
+            let mut expression_stack: Vec<StackedExpr> = Vec::new();
             while let Some(tmp) = pending.pop() {
-                expression_stack.push(tmp);
+                expression_stack.push(StackedExpr {
+                    expr: tmp,
+                });
                 match &tmp {
                     ra::RaExpression::Renamed { inner, .. } => { 
                         pending.push(inner);
@@ -118,7 +124,7 @@ where
                     ra::RaExpression::Selection { inner, .. } => {
                         pending.push(inner);
                     }
-                    ra::RaExpression::Join { left, right, .. } => {
+                    ra::RaExpression::Join { left, right, lateral, .. } => {
                         pending.push(left);
                         pending.push(right);
                     }
@@ -138,9 +144,10 @@ where
                 };
             }
 
-
             let mut results: Vec<storage::EntireRelation> = Vec::with_capacity(expression_stack.len());
-            for expr in expression_stack.into_iter().rev() {
+            for stacked_expr in expression_stack.into_iter().rev() {
+                let expr = stacked_expr.expr;
+
                 let result = match expr {
                     ra::RaExpression::EmptyRelation => {
                         storage::EntireRelation {
@@ -171,54 +178,55 @@ where
                     ra::RaExpression::Projection { inner, attributes } => {
                         let input = results.pop().unwrap();
 
+                        
+
                         let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
 
-                    assert_eq!(
-                        inner_columns
+                        assert_eq!(
+                            inner_columns
+                                .iter()
+                                .map(|(n, t, _)| (n, t))
+                                .collect::<Vec<_>>(),
+                            input
+                                .columns
+                                .iter()
+                                .map(|(n, t, _)| (n, t))
+                                .collect::<Vec<_>>()
+                        );
+
+                        let columns: Vec<_> = attributes
                             .iter()
-                            .map(|(n, t, _)| (n, t))
-                            .collect::<Vec<_>>(),
-                        input
-                            .columns
-                            .iter()
-                            .map(|(n, t, _)| (n, t))
-                            .collect::<Vec<_>>()
-                    );
+                            .map(|attr| {
+                                (attr.name.clone(), attr.value.datatype().unwrap(), Vec::new())
+                            })
+                            .collect();
 
-                    let columns: Vec<_> = attributes
-                        .iter()
-                        .map(|attr| {
-                            (attr.name.clone(), attr.value.datatype().unwrap(), Vec::new())
-                        })
-                        .collect();
+                        let mut rows = Vec::new();
+                        for row in input.into_rows() {
+                            let mut data = Vec::new();
+                            for attribute in attributes.iter() {
+                                let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, &outer, transaction).await?;
 
-                    let mut rows = Vec::new();
-                    for row in input.into_rows() {
-                        let mut data = Vec::new();
-                        for attribute in attributes.iter() {
-                            let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, outer, transaction).await?;
+                                // TODO
+                                // This is not a good fix
+                                let tmp = match tmp {
+                                    Data::List(mut v) => {
+                                        assert_eq!(1, v.len());
+                                        v.pop().unwrap()
+                                    }
+                                    other => other,
+                                };
 
-                            // TODO
-                            // This is not a good fix
-                            let tmp = match tmp {
-                                Data::List(mut v) => {
-                                    assert_eq!(1, v.len());
-                                    v.pop().unwrap()
-                                }
-                                other => other,
-                            };
+                                data.push(tmp);
+                            }
 
-                            data.push(tmp);
+                            rows.push(storage::Row::new(0, data));
                         }
 
-                        rows.push(storage::Row::new(0, data));
-                    }
-
-                    storage::EntireRelation {
-                        columns,
-                        parts: vec![storage::PartialRelation { rows }],
-                    }
-
+                        storage::EntireRelation {
+                            columns,
+                            parts: vec![storage::PartialRelation { rows }],
+                        }
                     }
                     ra::RaExpression::Selection { inner, filter } => {
                         let input = results.pop().unwrap();
@@ -431,7 +439,7 @@ where
                         }]
                     }
                     }
-                    ra::RaExpression::Join { left, right, kind, condition } => {
+                    ra::RaExpression::Join { left, right, kind, condition, .. } => {
                         tracing::info!("Executing Join");
 
                         let inner_columns = {
@@ -563,6 +571,7 @@ where
     {
         async move {
             match condition {
+                ra::RaConditionValue::Constant { value } => Ok(*value),
                 ra::RaConditionValue::Attribute { name,  a_id, .. } => {
                     let data_result = row.data.iter().zip(columns.iter()).find(|(_, column)| &column.2 == a_id).map(|(d, _)| d);
                     
@@ -718,6 +727,8 @@ where
                     Ok(row.data[column_index].clone())
                 }
                 ra::RaValueExpression::OuterAttribute { a_id, name, .. } => {
+                    dbg!(&a_id, &outer);
+
                     let value = outer.get(a_id).ok_or_else(|| EvaulateRaError::UnknownAttribute { name: name.clone(), id: *a_id })?;
 
                     Ok(value.clone())

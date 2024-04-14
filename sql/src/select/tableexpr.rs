@@ -19,6 +19,7 @@ pub enum TableExpression<'s> {
         right: Box<TableExpression<'s>>,
         kind: JoinKind,
         condition: Condition<'s>,
+        lateral: bool,
     },
     SubQuery(Box<Select<'s>>),
 }
@@ -162,13 +163,9 @@ pub fn table_expression(
             nom::character::complete::multispace1,
         ))(remaining);
 
-        let (remaining, tmp) = match tmp {
-            Ok((rem, other)) => {
-                dbg!("Lateral", other);
-
-                (rem, ())
-            }
-            Err(_) => (remaining, ()),
+        let (remaining, is_lateral) = match tmp {
+            Ok((rem, other)) => (rem, true),
+            Err(_) => (remaining, false),
         };
 
         let (remaining, other_table) = base(remaining)?;
@@ -189,6 +186,7 @@ pub fn table_expression(
                     right: Box::new(other_table),
                     kind: join_kind,
                     condition,
+                    lateral: is_lateral,
                 };
             }
             Err(e) => {
@@ -199,6 +197,7 @@ pub fn table_expression(
                     right: Box::new(other_table),
                     kind: join_kind,
                     condition: Condition::And(vec![]),
+                    lateral: is_lateral,
                 };
             }
         };
@@ -227,11 +226,13 @@ impl<'s> TableExpression<'s> {
                 right,
                 kind,
                 condition,
+                lateral,
             } => TableExpression::Join {
                 left: Box::new(left.to_static()),
                 right: Box::new(right.to_static()),
                 kind: kind.clone(),
                 condition: condition.to_static(),
+                lateral: *lateral,
             },
             Self::SubQuery(inner) => TableExpression::SubQuery(Box::new(inner.to_static())),
         }
@@ -287,7 +288,8 @@ mod tests {
                     combine: None
                 }))),
                 kind: JoinKind::Inner,
-                condition: Condition::And(vec![])
+                condition: Condition::And(vec![]),
+                lateral: false,
             },
             table
         );
@@ -303,6 +305,36 @@ mod tests {
                 inner: Box::new(TableExpression::Relation(Identifier("something".into()))),
                 name: "o".into(),
                 column_rename: Some(vec![Identifier("n".into())])
+            },
+            table
+        );
+    }
+
+    #[test]
+    fn join_on_suquery_lateral() {
+        let query_str = "first INNER JOIN LATERAL (SELECT name FROM second)";
+        let (remaining, table) = table_expression(query_str.as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            TableExpression::Join {
+                left: Box::new(TableExpression::Relation("first".into())),
+                right: Box::new(TableExpression::SubQuery(Box::new(Select {
+                    values: vec![ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "name".into(),
+                    })],
+                    table: Some(TableExpression::Relation("second".into())),
+                    where_condition: None,
+                    order_by: None,
+                    group_by: None,
+                    having: None,
+                    limit: None,
+                    for_update: None,
+                    combine: None
+                }))),
+                kind: JoinKind::Inner,
+                condition: Condition::And(vec![]),
+                lateral: true,
             },
             table
         );
