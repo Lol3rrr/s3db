@@ -827,17 +827,3 @@ fn select_group_by_number() {
         select
     );
 }
-
-#[test]
-fn pg_catalog_pg_class() {
-    let query_str = "SELECT * FROM pg_catalog.pg_class";
-
-    let select = match Query::parse(query_str.as_bytes()) {
-        Ok(Query::Select(s)) => s,
-        other => panic!("{:?}", other),
-    };
-
-    dbg!(select);
-
-    todo!()
-}

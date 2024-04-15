@@ -335,9 +335,9 @@ impl Storage for &InMemoryStorage {
                         .iter()
                         .filter(|row| {
                             if (transaction.active.contains(&row.created)
-                                && row.created != transaction.id)
                                 || row.created > transaction.latest_commit
-                                || transaction.aborted.contains(&row.created)
+                                || transaction.aborted.contains(&row.created))
+                                && row.created != transaction.id
                             {
                                 return false;
                             }
@@ -695,7 +695,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(1, relation.parts.len());
-        assert_eq!(1, relation.parts[0].rows.len());
+        assert_eq!(1, relation.parts[0].rows.len(), "{:?}", relation.parts[0]);
 
         let entry = &relation.parts[0].rows[0];
         assert_eq!(
