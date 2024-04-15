@@ -488,6 +488,7 @@ where
                         let left_result = results.pop().unwrap();
 
                         let left_columns = left.get_columns();
+                        let right_columns = right.get_columns();
 
                         let mut total_result: Option<storage::EntireRelation> = None;
 
@@ -534,7 +535,13 @@ where
                             };
                         }
 
-                        total_result.ok_or_else(|| EvaulateRaError::Other("Returned no result"))?
+                        total_result.unwrap_or_else(|| storage::EntireRelation {
+                            columns: left_columns.into_iter().chain(right_columns.into_iter()).map(|(_, name, ty, id)| {
+                            
+                                (name, ty, Vec::new())
+                            }).collect(),
+                            parts: Vec::new()
+                        })
                     }
                     ra::RaExpression::Limit { inner, limit, offset } => {
                         let input = results.pop().unwrap();
@@ -822,7 +829,7 @@ where
                     let n_outer = {
                         let tmp = outer.clone();
                         // TODO
-                        dbg!(columns, row);
+                        // dbg!(columns, row);
                         tmp
                     };
                     let result = self.evaluate_ra(query.clone(), placeholders, ctes, &n_outer, transaction).await?;
@@ -1535,7 +1542,7 @@ where
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
-                    tracing::info!("Relation: {:#?}", relation);
+                    // tracing::info!("Relation");
 
                     let (ra_update, ra_placeholders) = RaUpdate::parse(update, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
@@ -1910,7 +1917,14 @@ let transaction = ctx.transaction.as_ref().unwrap();
                             Ok(ExecuteResult::Alter)
                         }
                         sql::AlterTable::AddPrimaryKey { table, column } => {
-                            tracing::warn!(?table, ?column, "[TODO] Adding Primary Key");
+                            let mut modifications = storage::ModifyRelation::new();
+
+                            modifications.add_modifier(&column.0, TypeModifier::PrimaryKey);
+
+                            self.storage
+                                .modify_relation(&table.0, modifications, transaction)
+                                .await
+                                .map_err(ExecuteBoundError::StorageError)?;
 
                             Ok(ExecuteResult::Alter)
                         }
@@ -2069,7 +2083,7 @@ impl<'e, S> CopyState for NaiveCopyState<'e, S, S::TransactionGuard> where S: St
         let parts: Vec<_> = raw_str.split('\t').collect();
 
         if parts.len() != self.schema.rows.len() {
-            dbg!(parts, &self.schema.rows);
+            // dbg!(parts, &self.schema.rows);
 
             return Err(());
         }

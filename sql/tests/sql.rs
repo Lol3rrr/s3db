@@ -2,8 +2,8 @@ use pretty_assertions::assert_eq;
 
 use sql::{
     AggregateExpression, BinaryOperator, ColumnReference, Condition, ConflictHandling, Delete,
-    FunctionCall, Identifier, Insert, InsertValues, JoinKind, Literal, NullOrdering,
-    OrderAttribute, OrderBy, Ordering, Query, Select, SelectLimit, TableExpression,
+    FunctionCall, GroupAttribute, Identifier, Insert, InsertValues, JoinKind, Literal,
+    NullOrdering, OrderAttribute, OrderBy, Ordering, Query, Select, SelectLimit, TableExpression,
     ValueExpression,
 };
 
@@ -790,4 +790,54 @@ fn select_aggregate_with_operator() {
         },
         select
     );
+}
+
+#[test]
+fn select_group_by_number() {
+    let query_str = "SELECT MAX(balance), plz FROM users GROUP BY 2";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    assert_eq!(
+        Select {
+            values: vec![
+                ValueExpression::AggregateExpression(AggregateExpression::Max(Box::new(
+                    ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "balance".into()
+                    })
+                ))),
+                ValueExpression::ColumnReference(ColumnReference {
+                    relation: None,
+                    column: "plz".into()
+                })
+            ],
+            table: Some(TableExpression::Relation("users".into())),
+            where_condition: None,
+            order_by: None,
+            group_by: Some(vec![GroupAttribute::ColumnIndex(2)]),
+            having: None,
+            limit: None,
+            for_update: None,
+            combine: None
+        },
+        select
+    );
+}
+
+#[test]
+fn pg_catalog_pg_class() {
+    let query_str = "SELECT * FROM pg_catalog.pg_class";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    dbg!(select);
+
+    todo!()
 }

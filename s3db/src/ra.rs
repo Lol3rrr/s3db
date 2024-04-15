@@ -149,7 +149,7 @@ pub enum RaComparisonOperator {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ParseSelectError {
+pub enum ParseRaError {
     UnknownRelation(String),
     UnknownAttribute {
         attr: ColumnReference<'static>,
@@ -163,8 +163,15 @@ pub enum ParseSelectError {
     IncompatibleTypes {
         mismatching_types: Vec<types::PossibleTypes>,
     },
+    AggregateExpressionOutsideOfAggregate {
+        a_id: AttributeId,
+        name: Option<String>,
+        aggregated_fields: Vec<(String, AttributeId)>,
+    },
     Other(&'static str),
 }
+
+pub type ParseSelectError = ParseRaError;
 
 enum CustomCow<'s, T> {
     Owned(T),
@@ -465,13 +472,7 @@ impl RaExpression {
 
         scope.context = Some(CustomCow::Borrowed(parse_context));
 
-        let s = Self::parse_s(
-            query,
-            &mut scope,
-            &mut placeholders,
-            &mut RaExpression::EmptyRelation,
-            &mut Vec::new(),
-        )?;
+        let s = Self::parse_s(query, &mut scope, &mut placeholders, &mut Vec::new())?;
 
         Ok((s, placeholders))
     }
@@ -671,13 +672,7 @@ impl RaExpression {
                     None => (outer, false),
                 };
 
-                let query = Self::parse_s(
-                    query,
-                    scope,
-                    placeholders,
-                    &mut RaExpression::EmptyRelation,
-                    outer,
-                )?;
+                let query = Self::parse_s(query, scope, placeholders, outer)?;
 
                 if added {
                     outer.pop();
@@ -692,7 +687,6 @@ impl RaExpression {
         query: &Select<'_>,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
-        ra_expr: &mut RaExpression,
         outer: &mut Vec<RaExpression>,
     ) -> Result<Self, ParseSelectError> {
         let base_ra = match query.table.as_ref() {
@@ -726,7 +720,7 @@ impl RaExpression {
 
         match query.combine.as_ref() {
             Some((c, s)) => {
-                let other = Self::parse_s(s, scope, placeholders, ra_expr, outer)?;
+                let other = Self::parse_s(s, scope, placeholders, outer)?;
 
                 match c {
                     Combination::Union => Ok(Self::Chain {

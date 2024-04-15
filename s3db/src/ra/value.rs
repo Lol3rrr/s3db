@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ra::{self, RaExpression};
+use crate::ra::{self, ParseRaError, RaExpression};
 use sql::{BinaryOperator, DataType, FunctionCall, Literal, ValueExpression};
 
 use super::{error_context, types, AttributeId, ParseSelectError, Scope};
@@ -132,7 +132,7 @@ impl RaValueExpression {
             }
             ValueExpression::SubQuery(select) => {
                 outer.push(ra_expr.clone());
-                let s = RaExpression::parse_s(select, scope, placeholders, ra_expr, outer)?;
+                let s = RaExpression::parse_s(select, scope, placeholders, outer)?;
                 outer.pop();
                 Ok(Self::SubQuery { query: s })
             }
@@ -166,16 +166,34 @@ impl RaValueExpression {
                         Literal::Integer(v) => *v as i64,
                         Literal::BigInteger(v) => *v,
                         other => {
-                            dbg!(&other);
-                            return Err(ParseSelectError::Other("Unexpected Value"));
+                            let other_type = other
+                                .datatype()
+                                .expect("The type of literals is always known");
+
+                            return Err(ParseRaError::IncompatibleTypes {
+                                mismatching_types: vec![
+                                    types::PossibleTypes::fixed_with_conversions(
+                                        DataType::BigInteger,
+                                    ),
+                                    types::PossibleTypes::fixed_with_conversions(other_type),
+                                ],
+                            });
                         }
                     };
 
                     let padding = match padding {
                         Literal::Str(v) => v,
                         other => {
-                            dbg!(other);
-                            return Err(ParseSelectError::Other("Unexpected Value"));
+                            let other_type = other
+                                .datatype()
+                                .expect("The type of literals is always known");
+
+                            return Err(ParseRaError::IncompatibleTypes {
+                                mismatching_types: vec![
+                                    types::PossibleTypes::fixed_with_conversions(DataType::Text),
+                                    types::PossibleTypes::fixed_with_conversions(other_type),
+                                ],
+                            });
                         }
                     };
 
@@ -621,7 +639,7 @@ impl RaValueExpression {
             Self::Cast { target, .. } => Some(target.clone()),
             Self::BinaryOperation {
                 first,
-                second,
+                second: _second, // TODO
                 operator,
             } => match operator {
                 BinaryOperator::Concat => Some(DataType::Text),
@@ -633,23 +651,15 @@ impl RaValueExpression {
                 }
             },
             Self::Function(fc) => match fc {
-                RaFunction::LeftPad {
-                    base,
-                    length,
-                    padding,
-                } => Some(DataType::Text),
+                RaFunction::LeftPad { .. } => Some(DataType::Text),
                 RaFunction::Coalesce(tmp) => tmp.first().unwrap().datatype(),
-                RaFunction::SetValue {
-                    name,
-                    value,
-                    is_called,
-                } => Some(DataType::BigInteger),
+                RaFunction::SetValue { .. } => Some(DataType::BigInteger),
                 RaFunction::Lower(_) => Some(DataType::Text),
                 RaFunction::Substr { .. } => Some(DataType::Text),
                 RaFunction::CurrentSchemas { .. } => todo!("Getting Type of CurrentSchemas"),
                 RaFunction::ArrayPosition { .. } => Some(DataType::Integer),
             },
-            Self::Renamed { name, value } => value.datatype(),
+            Self::Renamed { value, .. } => value.datatype(),
         }
     }
 

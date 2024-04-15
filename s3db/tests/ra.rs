@@ -872,3 +872,29 @@ fn select_as_single_value() {
 
     let (select, placeholders) = RaExpression::parse_select(&select, &schemas).unwrap();
 }
+
+#[test]
+fn select_group_by_number() {
+    let query_str = "SELECT COUNT(balance), plz FROM users GROUP BY 2";
+
+    let select = match Query::parse(query_str.as_bytes()) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    let schemas: Schemas = [(
+        "users".to_string(),
+        vec![
+            ("plz".to_string(), DataType::Integer),
+            ("balance".to_string(), DataType::Integer),
+        ],
+    )]
+    .into_iter()
+    .collect();
+
+    let (select, placeholders) = RaExpression::parse_select(&select, &schemas).unwrap();
+
+    dbg!(&select, &placeholders);
+
+    // todo!()
+}

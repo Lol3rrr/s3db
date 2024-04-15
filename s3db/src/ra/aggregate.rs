@@ -206,91 +206,92 @@ impl AggregateExpression {
                     Err(ParseSelectError::NotImplemented("Other AggregateExpression than a Literal or Count(*) for not grouped query"))
                 }
             },
-            AggregationCondition::GroupBy { fields } => match self {
-                AggregateExpression::CountRows => Ok(()),
-                AggregateExpression::Renamed { inner, .. } => inner.check(cond, schemas),
-                AggregateExpression::Count { a_id } => Ok(()),
-                AggregateExpression::Column { name, dtype, a_id } => {
-                    if !fields.iter().any(|(_, id)| a_id == id) {
-                        dbg!(&name, &dtype, &a_id);
-                        Err(ParseSelectError::NotImplemented(
-                            "Not Aggregated Attribute used",
-                        ))
-                    } else {
+            AggregationCondition::GroupBy { fields } => {
+                match self {
+                    AggregateExpression::CountRows => Ok(()),
+                    AggregateExpression::Renamed { inner, .. } => inner.check(cond, schemas),
+                    AggregateExpression::Count { .. } => Ok(()),
+                    AggregateExpression::Column { a_id, name, .. } => {
+                        if !fields.iter().any(|(_, id)| a_id == id) {
+                            Err(ParseSelectError::AggregateExpressionOutsideOfAggregate {
+                                a_id: *a_id,
+                                name: Some(name.clone()),
+                                aggregated_fields: fields.clone(),
+                            })
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    AggregateExpression::Max { inner, dtype } => {
+                        todo!("Max {:?}", (inner, dtype))
+                    }
+                    AggregateExpression::Literal(_) => Ok(()),
+                    AggregateExpression::Expression(expr) => {
+                        let mut pending: Vec<&RaValueExpression> = vec![&expr];
+
+                        while let Some(expr) = pending.pop() {
+                            match expr {
+                                RaValueExpression::Renamed { value, .. } => {
+                                    pending.push(value);
+                                }
+                                RaValueExpression::Literal(_) => {}
+                                RaValueExpression::Attribute { a_id, name, .. } => {
+                                    if !fields.iter().any(|(_, id)| a_id == id) {
+                                        return Err(ParseSelectError::AggregateExpressionOutsideOfAggregate { a_id: *a_id, name: Some(name.clone()), aggregated_fields: fields.clone() });
+                                    }
+                                }
+                                RaValueExpression::Function(func) => match func {
+                                    RaFunction::Coalesce(parts) => {
+                                        pending.extend(parts.iter());
+                                    }
+                                    RaFunction::LeftPad {
+                                        base,
+                                        length,
+                                        padding,
+                                    } => {
+                                        pending.push(base);
+                                    }
+                                    RaFunction::SetValue {
+                                        name,
+                                        value,
+                                        is_called,
+                                    } => {
+                                        pending.push(value);
+                                    }
+                                    RaFunction::Lower(parts) => {
+                                        pending.push(parts);
+                                    }
+                                    RaFunction::Substr {
+                                        str_value,
+                                        start,
+                                        count,
+                                    } => {
+                                        pending.push(str_value);
+                                        pending.push(start);
+                                        if let Some(c) = count {
+                                            pending.push(c);
+                                        }
+                                    }
+                                    RaFunction::CurrentSchemas { implicit } => {
+                                        todo!("CurrentSchemas");
+                                    }
+                                    RaFunction::ArrayPosition { array, target } => {
+                                        todo!("ArrayPosition")
+                                    }
+                                },
+                                other => {
+                                    dbg!(other);
+                                    return Err(ParseSelectError::NotImplemented(
+                                        "Checking different Value Expression",
+                                    ));
+                                }
+                            };
+                        }
+
                         Ok(())
                     }
                 }
-                AggregateExpression::Max { inner, dtype } => {
-                    todo!("Max {:?}", (inner, dtype))
-                }
-                AggregateExpression::Literal(_) => Ok(()),
-                AggregateExpression::Expression(expr) => {
-                    let mut pending: Vec<&RaValueExpression> = vec![&expr];
-
-                    while let Some(expr) = pending.pop() {
-                        match expr {
-                            RaValueExpression::Renamed { value, .. } => {
-                                pending.push(value);
-                            }
-                            RaValueExpression::Literal(_) => {}
-                            RaValueExpression::Attribute { name, ty, a_id } => {
-                                if !fields.iter().any(|(_, id)| a_id == id) {
-                                    return Err(ParseSelectError::NotImplemented(
-                                        "Not Aggregated Attribute used",
-                                    ));
-                                }
-                            }
-                            RaValueExpression::Function(func) => match func {
-                                RaFunction::Coalesce(parts) => {
-                                    pending.extend(parts.iter());
-                                }
-                                RaFunction::LeftPad {
-                                    base,
-                                    length,
-                                    padding,
-                                } => {
-                                    pending.push(base);
-                                }
-                                RaFunction::SetValue {
-                                    name,
-                                    value,
-                                    is_called,
-                                } => {
-                                    pending.push(value);
-                                }
-                                RaFunction::Lower(parts) => {
-                                    pending.push(parts);
-                                }
-                                RaFunction::Substr {
-                                    str_value,
-                                    start,
-                                    count,
-                                } => {
-                                    pending.push(str_value);
-                                    pending.push(start);
-                                    if let Some(c) = count {
-                                        pending.push(c);
-                                    }
-                                }
-                                RaFunction::CurrentSchemas { implicit } => {
-                                    todo!("CurrentSchemas");
-                                }
-                                RaFunction::ArrayPosition { array, target } => {
-                                    todo!("ArrayPosition")
-                                }
-                            },
-                            other => {
-                                dbg!(other);
-                                return Err(ParseSelectError::NotImplemented(
-                                    "Checking different Value Expression",
-                                ));
-                            }
-                        };
-                    }
-
-                    Ok(())
-                }
-            },
+            }
         }
     }
 }

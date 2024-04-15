@@ -37,6 +37,7 @@ struct Table {
     rows: Vec<InternalRow>,
     cid: AtomicU64,
 }
+#[derive(Debug)]
 struct InternalRow {
     data: Row,
     created: u64,
@@ -105,7 +106,18 @@ impl InMemoryStorage {
                                 ("nspname".to_string(), DataType::Name, vec![]),
                                 ("nspowner".to_string(), DataType::Integer, vec![]),
                             ],
-                            rows: Vec::new(),
+                            rows: vec![InternalRow {
+                                data: Row::new(
+                                    0,
+                                    vec![
+                                        Data::Integer(0),
+                                        Data::Name("default".to_string()),
+                                        Data::Integer(0),
+                                    ],
+                                ),
+                                created: 0,
+                                expired: 0,
+                            }],
                             cid: AtomicU64::new(0),
                         },
                     ),
@@ -324,7 +336,7 @@ impl Storage for &InMemoryStorage {
                         .filter(|row| {
                             if (transaction.active.contains(&row.created)
                                 && row.created != transaction.id)
-                                || row.created < transaction.latest_commit
+                                || row.created > transaction.latest_commit
                                 || transaction.aborted.contains(&row.created)
                             {
                                 return false;
@@ -394,6 +406,21 @@ impl Storage for &InMemoryStorage {
                     Data::Boolean(false),
                     Data::Boolean(false),
                     Data::Boolean(false),
+                ],
+            ),
+            created: transaction.id,
+            expired: 0,
+        });
+
+        let pg_class = tables_mut.get_mut("pg_class").unwrap();
+        let pg_class_id = pg_class.cid.fetch_add(1, Ordering::SeqCst);
+        pg_class.rows.push(InternalRow {
+            data: Row::new(
+                pg_class_id,
+                vec![
+                    Data::Integer(pg_class_id as i32),
+                    Data::Name(name.to_string()),
+                    Data::Integer(0),
                 ],
             ),
             created: transaction.id,
@@ -500,6 +527,15 @@ impl Storage for &InMemoryStorage {
 
                     // TODO
                     // Validate/change stored values
+                }
+                RelationModification::AddModifier { column, modifier } => {
+                    let column = table
+                        .columns
+                        .iter_mut()
+                        .find(|(cn, _, _)| cn == &column)
+                        .ok_or(LoadingError::Other("Column does not exist"))?;
+
+                    column.2.push(modifier);
                 }
                 RelationModification::RemoveModifier { column, modifier } => {
                     let column = table

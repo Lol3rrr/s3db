@@ -85,6 +85,14 @@ pub fn parse_aggregate(
             .map(|(_, n, t, i)| (n, t, i))
             .collect::<Vec<_>>();
 
+        let attribute_values: Vec<_> = query
+            .values
+            .iter()
+            .map(|value| {
+                AggregateExpression::parse(value, scope, &previous_columns, placeholders, &mut base)
+            })
+            .collect::<Result<_, _>>()?;
+
         let agg_condition = match query.group_by.as_ref() {
             Some(tmp) => {
                 let mut fields: Vec<_> = tmp
@@ -107,12 +115,26 @@ pub fn parse_aggregate(
                                     .collect(),
                                 context: "Aggregate Condition Parsing".into(),
                             }),
-                        GroupAttribute::ColumnIndex(idx) => previous_columns
-                            .get(*idx)
-                            .map(|(n, _, id)| (n.to_string(), *id))
-                            .ok_or_else(|| {
-                                ParseSelectError::Other("Getting Column By Index for Aggregate")
-                            }),
+                        GroupAttribute::ColumnIndex(idx) => attribute_values
+                            .get(*idx - 1)
+                            .map(|tmp| {
+                                let mut tmp = &tmp.value;
+                                loop {
+                                    match tmp {
+                                        AggregateExpression::Column { name, dtype, a_id } => {
+                                            break (name.clone(), a_id.clone())
+                                        }
+                                        AggregateExpression::Renamed { inner, name } => {
+                                            tmp = &inner;
+                                        }
+                                        other => {
+                                            dbg!(other);
+                                            todo!()
+                                        }
+                                    };
+                                }
+                            })
+                            .ok_or_else(|| ParseSelectError::Other("Getting ColumnIndex Stuff")),
                     })
                     .collect::<Result<_, _>>()?;
 
@@ -166,14 +188,6 @@ pub fn parse_aggregate(
             }
             None => AggregationCondition::Everything,
         };
-
-        let attribute_values: Vec<_> = query
-            .values
-            .iter()
-            .map(|value| {
-                AggregateExpression::parse(value, scope, &previous_columns, placeholders, &mut base)
-            })
-            .collect::<Result<_, _>>()?;
 
         // TODO
         // Check if everything used here is  correct

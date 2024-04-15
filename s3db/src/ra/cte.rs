@@ -68,13 +68,8 @@ impl CTE {
                         c
                     };
 
-                    let base_ra = RaExpression::parse_s(
-                        &base_select,
-                        scope,
-                        placeholders,
-                        &mut RaExpression::EmptyRelation,
-                        &mut Vec::new(),
-                    )?;
+                    let base_ra =
+                        RaExpression::parse_s(&base_select, scope, placeholders, &mut Vec::new())?;
 
                     let mappings: Vec<_> = base_ra
                         .get_columns()
@@ -116,13 +111,8 @@ impl CTE {
                         }
                     };
 
-                    let recursive_ra = RaExpression::parse_s(
-                        s,
-                        scope,
-                        placeholders,
-                        &mut RaExpression::EmptyRelation,
-                        &mut Vec::new(),
-                    )?;
+                    let recursive_ra =
+                        RaExpression::parse_s(s, scope, placeholders, &mut Vec::new())?;
 
                     CTEQuery::Select(recursive_ra)
                 }
@@ -148,13 +138,7 @@ impl CTE {
         } else {
             let query = match &raw.query {
                 Query::Select(s) => {
-                    let s = RaExpression::parse_s(
-                        s,
-                        scope,
-                        placeholders,
-                        &mut RaExpression::EmptyRelation,
-                        &mut Vec::new(),
-                    )?;
+                    let s = RaExpression::parse_s(s, scope, placeholders, &mut Vec::new())?;
 
                     CTEQuery::Select(s)
                 }

@@ -158,12 +158,12 @@ impl RaConditionValue {
                     outer,
                 )?;
 
-                let first_types = ra_first.possible_type(scope).map_err(|e| {
+                let first_types = ra_first.possible_type(scope).map_err(|_| {
                     ParseSelectError::DeterminePossibleTypes {
                         expr: ra_first.clone(),
                     }
                 })?;
-                let second_types = ra_second.possible_type(scope).map_err(|e| {
+                let second_types = ra_second.possible_type(scope).map_err(|_| {
                     ParseSelectError::DeterminePossibleTypes {
                         expr: ra_second.clone(),
                     }
@@ -245,8 +245,7 @@ impl RaConditionValue {
             ValueExpression::FunctionCall(fc) => match fc {
                 FunctionCall::Exists { query } => {
                     outer.push(ra_expr.clone());
-                    let ra_expression =
-                        RaExpression::parse_s(query, scope, placeholders, ra_expr, outer)?;
+                    let ra_expression = RaExpression::parse_s(query, scope, placeholders, outer)?;
                     outer.pop();
 
                     Ok(RaConditionValue::Exists {

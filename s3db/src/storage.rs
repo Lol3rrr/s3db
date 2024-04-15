@@ -46,6 +46,10 @@ pub enum RelationModification {
         name: String,
         ty: DataType,
     },
+    AddModifier {
+        column: String,
+        modifier: TypeModifier,
+    },
     RemoveModifier {
         column: String,
         modifier: TypeModifier,
@@ -175,6 +179,12 @@ impl ModifyRelation {
         });
     }
 
+    pub fn add_modifier(&mut self, column: &str, modifier: TypeModifier) {
+        self.modifications.push(RelationModification::AddModifier {
+            column: column.to_string(),
+            modifier,
+        });
+    }
     pub fn remove_modifier(&mut self, column: &str, modifier: TypeModifier) {
         self.modifications
             .push(RelationModification::RemoveModifier {

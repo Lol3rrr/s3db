@@ -72,7 +72,7 @@ mod tests {
         AttributeId, ProjectionAttribute, RaComparisonOperator, RaCondition, RaConditionValue,
         RaExpression, RaValueExpression,
     };
-    use sql::{ColumnReference, Identifier, Literal, Query};
+    use sql::{Literal, Query};
 
     use super::*;
 
