@@ -128,7 +128,7 @@ where
                         pending.push(left);
                         pending.push(right);
                     }
-                    ra::RaExpression::LateralJoin { left, right, kind, condition } => {
+                    ra::RaExpression::LateralJoin { left, .. } => {
                         // We only push the left side, because we want to evaluate the right side
                         // in a recursive way later
                         pending.push(left);
@@ -165,13 +165,13 @@ where
                     ra::RaExpression::Renamed {  .. } => {
                         results.pop().unwrap()
                     }
-                    ra::RaExpression::BaseRelation { name, columns } => {
+                    ra::RaExpression::BaseRelation { name, .. } => {
                         self.storage
                         .get_entire_relation(&name.0, transaction)
                         .await
                         .map_err(EvaulateRaError::StorageError)?
                     }
-                    ra::RaExpression::CTE { name, columns } => {
+                    ra::RaExpression::CTE { name, .. } => {
                         let cte_value = ctes.get(name).ok_or_else(|| EvaulateRaError::Other("Getting CTE"))?;
 
                         storage::EntireRelation { columns: cte_value.columns.clone(), parts: cte_value.parts.iter().map(|part| {
@@ -536,14 +536,13 @@ where
                         }
 
                         total_result.unwrap_or_else(|| storage::EntireRelation {
-                            columns: left_columns.into_iter().chain(right_columns.into_iter()).map(|(_, name, ty, id)| {
-                            
+                            columns: left_columns.into_iter().chain(right_columns.into_iter()).map(|(_, name, ty, _)| { 
                                 (name, ty, Vec::new())
                             }).collect(),
                             parts: Vec::new()
                         })
                     }
-                    ra::RaExpression::Limit { inner, limit, offset } => {
+                    ra::RaExpression::Limit { limit, offset, .. } => {
                         let input = results.pop().unwrap();
 
                         storage::EntireRelation {
@@ -890,12 +889,6 @@ where
                                 Err(EvaulateRaError::Other("Subtracting"))
                             }
                         },
-                        BinaryOperator::Add => match (first_value, second_value) {
-                            other => {
-                                dbg!(other);
-                                Err(EvaulateRaError::Other("Adding"))
-                            }
-                        }
                         other => {
                             dbg!(&other, first_value, second_value);
 
@@ -1035,7 +1028,7 @@ where
                     let result_columns: Vec<_> = s_columns
                         .into_iter()
                         .zip(columns.iter())
-                        .map(|((_, n, ty, _), name)| (name.clone(), ty, Vec::new()))
+                        .map(|((_, _, ty, _), name)| (name.clone(), ty, Vec::new()))
                         .collect();
 
                     let result = storage::EntireRelation {
@@ -1279,10 +1272,10 @@ where
                         .iter()
                         .map(|(name, ty)| {
                             let value = query.values.get(*name - 1).unwrap();
-                            let tmp = storage::Data::realize(ty, value).map_err(|e| {
+                            let tmp = storage::Data::realize(ty, value).map_err(|(_realize, ty, _)| {
                                 Self::ExecuteBoundError::RealizingValueFromRaw {
                                     value: value.clone(),
-                                    target: (*ty).clone(),
+                                    target: ty.clone(),
                                 }
                             })?;
 
@@ -1354,10 +1347,10 @@ where
                                                     field_type,
                                                     &query.values[*pnumb - 1],
                                                 )
-                                                .map_err(|e| {
+                                                .map_err(|(_realize, ty, _)| {
                                                     ExecuteBoundError::RealizingValueFromRaw {
                                                         value: query.values[*pnumb - 1].to_vec(),
-                                                        target: (*field_type).clone(),
+                                                        target: ty.clone(),
                                                     }
                                                 })
                                             }
@@ -1397,7 +1390,7 @@ where
                                 .await
                                 .map_err(|e| ExecuteBoundError::Other("Executing Query"))?
                             {
-                                ExecuteResult::Select { content, formats } => content,
+                                ExecuteResult::Select { content, .. } => content,
                                 other => {
                                     tracing::error!("Expected Select result but got {:?}", other);
                                     return Err(ExecuteBoundError::Other(
@@ -1551,10 +1544,10 @@ where
                         .iter()
                         .map(|(name, ty)| {
                             let value = query.values.get(*name - 1).unwrap();
-                            let tmp = storage::Data::realize(ty, value).map_err(|e| {
+                            let tmp = storage::Data::realize(ty, value).map_err(|(_realize, ty, _)| {
                                 Self::ExecuteBoundError::RealizingValueFromRaw {
                                     value: value.clone(),
-                                    target: (*ty).clone(),
+                                    target: ty.clone(),
                                 }
                             })?;
 
@@ -1702,10 +1695,10 @@ where
                         .iter()
                         .map(|(name, ty)| {
                             let value = query.values.get(*name - 1).unwrap();
-                            let tmp = storage::Data::realize(ty, value).map_err(|e| {
+                            let tmp = storage::Data::realize(ty, value).map_err(|(_realize, ty, _)| {
                                 Self::ExecuteBoundError::RealizingValueFromRaw {
                                     value: value.clone(),
-                                    target: (*ty).clone(),
+                                    target: ty.clone(),
                                 }
                             })?;
 
@@ -1976,6 +1969,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                 }
                 Query::TruncateTable(trunc_table) => {
                     // TODO
+                    tracing::error!(?trunc_table, "[TODO] Truncating Table is not yet really supported");
 
                     Ok(ExecuteResult::Truncate)
                 }
@@ -2004,7 +1998,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                     Ok(ExecuteResult::Rollback)
                 }
                 Query::WithCTE { cte, query } => {
-let transaction = ctx.transaction.as_ref().unwrap();
+                    let transaction = ctx.transaction.as_ref().unwrap();
 
                     let schemas = self
                         .storage
@@ -2012,7 +2006,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
-                    let (ra_cte, cte_placeholder_types) = ra::parse_ctes(cte, &schemas)
+                    let (ra_cte, _cte_placeholder_types) = ra::parse_ctes(cte, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
 
                     for cte in ra_cte {
@@ -2029,7 +2023,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                     continue;
                 }
                 Query::Vacuum(v) => {
-                    tracing::info!("Vacuum");
+                    tracing::info!(?v, "Vacuum");
 
                     // TODO
 
@@ -2076,8 +2070,6 @@ impl<'e, S> CopyState for NaiveCopyState<'e, S, S::TransactionGuard> where S: St
     }
 
     async fn insert(&mut self, raw_column: &[u8]) -> Result<(), ()> {
-        // TODO
-
         let raw_str = core::str::from_utf8(raw_column).map_err(|e| ())?;
 
         let parts: Vec<_> = raw_str.split('\t').collect();
