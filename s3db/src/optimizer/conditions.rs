@@ -65,7 +65,8 @@ impl Optimize for Conditions {
             RaExpression::Selection {
                 filter: condition, ..
             }
-            | RaExpression::Join { condition, .. } => {
+            | RaExpression::Join { condition, .. }
+            | RaExpression::LateralJoin { condition, .. } => {
                 self.flatten(condition);
             }
         };

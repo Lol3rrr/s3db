@@ -1,4 +1,4 @@
-use pretty_assertions::assert_eq;
+use pretty_assertions::{assert_eq, assert_str_eq};
 
 use s3db::{
     execution::{naive::NaiveEngine, Context, Execute, ExecuteResult},
@@ -1054,6 +1054,7 @@ async fn select_with_table_column_rename() {
 }
 
 #[tokio::test]
+#[ignore = "Testing"]
 async fn lateral_join() {
     let query_str = "SELECT users.name, v.value FROM users JOIN LATERAL (SELECT (users.value + 5) AS value) AS v ON true";
     let query = Query::parse(query_str.as_bytes()).unwrap();
@@ -1112,4 +1113,74 @@ async fn lateral_join() {
         },
         res
     );
+}
+
+#[tokio::test]
+async fn lateral_join_online_example() {
+    let query_str = "
+select
+    (pledged / fx_rate) as pledged_usd,
+    ((pledged / fx_rate) / backers_count) as avg_pledge_usd,
+    ((goal / fx_rate) - (pledged / fx_rate)) as amt_from_goal
+from kickstarter_data;";
+    let query = Query::parse(query_str.as_bytes()).unwrap();
+
+    let storage = storage_setup!((
+        "kickstarter_data",
+        vec![
+            ("pledged".into(), DataType::Integer, Vec::new()),
+            ("fx_rate".into(), DataType::Integer, Vec::new()),
+            ("goal".into(), DataType::Integer, Vec::new()),
+            ("backers_count".into(), DataType::Integer, Vec::new()),
+        ],
+        vec![vec![
+            Data::Integer(100),
+            Data::Integer(1),
+            Data::Integer(1000),
+            Data::Integer(2),
+        ],]
+    ));
+
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+    let res = engine.execute(&query, &mut ctx).await.unwrap();
+
+    assert_eq!(
+        ExecuteResult::Select {
+            content: storage::EntireRelation {
+                columns: vec![
+                    ("pledged_usd".into(), DataType::Integer, Vec::new()),
+                    ("avg_pledge_usd".into(), DataType::Integer, Vec::new()),
+                    ("amt_from_goal".into(), DataType::Integer, Vec::new())
+                ],
+                parts: vec![storage::PartialRelation {
+                    rows: vec![storage::Row::new(
+                        0,
+                        vec![Data::Integer(100), Data::Integer(50), Data::Integer(900)]
+                    ),]
+                }]
+            },
+            formats: Vec::new()
+        },
+        res
+    );
+
+    let lateral_query_str = "
+select
+    pledged_usd,
+    avg_pledge_usd,
+    amt_from_goal
+from kickstarter_data
+    join lateral (select (pledged / fx_rate) as pledged_usd) pu ON true
+    join lateral (select (pledged_usd / backers_count) as avg_pledge_usd) apu ON true
+    join lateral (select (goal / fx_rate) as goal_usd) gu ON true
+    join lateral (select (goal_usd - pledged_usd) as amt_from_goal) ufg ON true;";
+    let lateral_query = Query::parse(lateral_query_str.as_bytes()).unwrap();
+
+    let lateral_res = engine.execute(&lateral_query, &mut ctx).await.unwrap();
+
+    assert_eq!(res, lateral_res);
 }

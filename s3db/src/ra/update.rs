@@ -118,7 +118,6 @@ impl RaUpdate {
                     right: Box::new(other_table),
                     kind: JoinKind::Inner,
                     condition: RaCondition::And(vec![]),
-                    lateral: false,
                 };
 
                 let condition = match query.condition.as_ref() {

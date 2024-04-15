@@ -124,9 +124,14 @@ where
                     ra::RaExpression::Selection { inner, .. } => {
                         pending.push(inner);
                     }
-                    ra::RaExpression::Join { left, right, lateral, .. } => {
+                    ra::RaExpression::Join { left, right,  .. } => {
                         pending.push(left);
                         pending.push(right);
+                    }
+                    ra::RaExpression::LateralJoin { left, right, kind, condition } => {
+                        // We only push the left side, because we want to evaluate the right side
+                        // in a recursive way later
+                        pending.push(left);
                     }
                     ra::RaExpression::Aggregation { inner, .. } => {
                         pending.push(inner);
@@ -470,6 +475,67 @@ where
                             transaction
                         }).await? 
                     }
+                    ra::RaExpression::LateralJoin { left, right, kind, condition } => {
+                        tracing::info!("Executing LateralJoin");
+
+                        let inner_columns = {
+                            let mut tmp = Vec::new();
+                            tmp.extend(left.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
+                            tmp.extend(right.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
+                            tmp
+                        };
+
+                        let left_result = results.pop().unwrap();
+
+                        let left_columns = left.get_columns();
+
+                        let mut total_result: Option<storage::EntireRelation> = None;
+
+                        let left_result_columns=  left_result.columns.clone();
+                        for row in left_result.into_rows() {
+
+                            let mut outer = outer.clone();
+                            outer.extend(left_columns.iter().map(|(_, _, _, id)|*id).zip(row.data.iter().cloned()));
+                            let right_result = self.evaluate_ra(RaExpression::clone(&right), placeholders, ctes, &outer, transaction).await?;
+                           
+                            let result_columns = {
+                            let mut tmp = left_result_columns.clone();
+                            tmp.extend(right_result.columns.clone());
+                            tmp
+                        };
+
+                            let row_result = storage::EntireRelation {
+                                columns:left_result_columns.clone(),
+                                parts: vec![storage::PartialRelation {
+                                    rows: vec![row],
+                                }]
+                            };
+
+
+                            let joined = algorithms::joins::Naive {}.execute(algorithms::joins::JoinArguments {
+                                kind: kind.clone(),
+                                conditon: condition,
+                            }, algorithms::joins::JoinContext {}, result_columns, row_result, right_result,  &NaiveEngineConditionEval {
+                                engine: self,
+                                columns: &inner_columns,
+                                placeholders,
+                                ctes,
+                                outer: &outer,
+                                transaction
+                            }).await?;
+
+                            match total_result.as_mut() {
+                                Some(existing) => {
+                                    existing.parts.extend(joined.parts);
+                                }
+                                None => {
+                                    total_result = Some(joined);
+                                }
+                            };
+                        }
+
+                        total_result.ok_or_else(|| EvaulateRaError::Other("Returned no result"))?
+                    }
                     ra::RaExpression::Limit { inner, limit, offset } => {
                         let input = results.pop().unwrap();
 
@@ -797,11 +863,32 @@ where
                     match operator {
                         BinaryOperator::Add => match (first_value, second_value) {
                             (Data::SmallInt(f), Data::SmallInt(s)) => Ok(Data::SmallInt(f + s)),
+                            (Data::Integer(f), Data::SmallInt(s)) => Ok(Data::Integer(f + s as i32)),
                             other => {
                                 dbg!(other);
                                 Err(EvaulateRaError::Other("Addition"))
                             }
                         },
+                        BinaryOperator::Subtract => match (first_value, second_value) {
+                            (Data::Integer(f), Data::Integer(s)) => Ok(Data::Integer(f - s)),
+                            other => {
+                                dbg!(other);
+                                Err(EvaulateRaError::Other("Subtracting"))
+                            }
+                        },
+                        BinaryOperator::Divide => match (first_value, second_value) {
+                            (Data::Integer(f), Data::Integer(s)) => Ok(Data::Integer(f / s)),
+                            other => {
+                                dbg!(other);
+                                Err(EvaulateRaError::Other("Subtracting"))
+                            }
+                        },
+                        BinaryOperator::Add => match (first_value, second_value) {
+                            other => {
+                                dbg!(other);
+                                Err(EvaulateRaError::Other("Adding"))
+                            }
+                        }
                         other => {
                             dbg!(&other, first_value, second_value);
 
@@ -895,6 +982,16 @@ where
                         dbg!(&str_value, &start_value, &count_value);
 
                         Err(EvaulateRaError::Other("Executing Substr function"))
+                    }
+                    ra::RaFunction::CurrentSchemas { implicit } => {
+                        dbg!(implicit);
+
+                        Err(EvaulateRaError::Other("Executing Current Schemas"))
+                    }
+                    ra::RaFunction::ArrayPosition { array, target } => {
+                        dbg!(&array, &target);
+
+                        Err(EvaulateRaError::Other("Executing ArrayPosition"))
                     }
                 },
                 ra::RaValueExpression::Renamed { name, value } => {

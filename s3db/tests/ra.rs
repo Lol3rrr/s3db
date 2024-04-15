@@ -514,7 +514,6 @@ fn inner_join() {
                         comparison: RaComparisonOperator::Equals
                     }
                 ))]),
-                lateral: false,
             }),
             attributes: vec![
                 ProjectionAttribute {

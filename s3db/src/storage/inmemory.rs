@@ -100,7 +100,34 @@ impl InMemoryStorage {
                     (
                         "pg_namespace".to_string(),
                         Table {
-                            columns: vec![],
+                            columns: vec![
+                                ("oid".to_string(), DataType::Integer, vec![]),
+                                ("nspname".to_string(), DataType::Name, vec![]),
+                                ("nspowner".to_string(), DataType::Integer, vec![]),
+                            ],
+                            rows: Vec::new(),
+                            cid: AtomicU64::new(0),
+                        },
+                    ),
+                    (
+                        "pg_partitioned_table".to_string(),
+                        Table {
+                            columns: vec![
+                                ("partrelid".to_string(), DataType::Integer, vec![]),
+                                ("partstrat".to_string(), DataType::Text, vec![]),
+                                ("partdefid".to_string(), DataType::Integer, vec![]),
+                            ],
+                            rows: Vec::new(),
+                            cid: AtomicU64::new(0),
+                        },
+                    ),
+                    (
+                        "pg_inherits".to_string(),
+                        Table {
+                            columns: vec![
+                                ("inhrelid".to_string(), DataType::Integer, vec![]),
+                                ("inhparent".to_string(), DataType::Integer, vec![]),
+                            ],
                             rows: Vec::new(),
                             cid: AtomicU64::new(0),
                         },

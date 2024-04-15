@@ -58,6 +58,13 @@ pub enum RaFunction {
         start: Box<RaValueExpression>,
         count: Option<Box<RaValueExpression>>,
     },
+    CurrentSchemas {
+        implicit: bool,
+    },
+    ArrayPosition {
+        array: Box<RaValueExpression>,
+        target: Box<RaValueExpression>,
+    },
 }
 
 impl RaValueExpression {
@@ -323,18 +330,23 @@ impl RaValueExpression {
                     ))
                 }
                 FunctionCall::CurrentSchemas { implicit } => {
-                    // TODO
-
-                    Err(ParseSelectError::NotImplemented(
-                        "Parse CurrentSchemas Function",
-                    ))
+                    Ok(Self::Function(RaFunction::CurrentSchemas {
+                        implicit: *implicit,
+                    }))
                 }
                 FunctionCall::ArrayPosition { array, target } => {
-                    // TODO
+                    let array_value =
+                        Self::parse_internal(scope, &array, placeholders, ra_expr, outer)?;
+                    let target_value =
+                        Self::parse_internal(scope, &target, placeholders, ra_expr, outer)?;
 
-                    Err(ParseSelectError::NotImplemented(
-                        "Parse ArrayPosition Function",
-                    ))
+                    // TODO
+                    // Type checking
+
+                    Ok(Self::Function(RaFunction::ArrayPosition {
+                        array: Box::new(array_value),
+                        target: Box::new(target_value),
+                    }))
                 }
             },
             ValueExpression::Operator {
@@ -402,7 +414,16 @@ impl RaValueExpression {
                             operator: operator.clone(),
                         })
                     }
-                    BinaryOperator::Add => {
+                    BinaryOperator::Add | BinaryOperator::Subtract => {
+                        // TODO
+
+                        Ok(RaValueExpression::BinaryOperation {
+                            first: Box::new(ra_first),
+                            second: Box::new(ra_second),
+                            operator: operator.clone(),
+                        })
+                    }
+                    BinaryOperator::Divide => {
                         // TODO
 
                         Ok(RaValueExpression::BinaryOperation {
@@ -567,6 +588,12 @@ impl RaValueExpression {
                 } => Ok(types::PossibleTypes::fixed(DataType::BigInteger)),
                 RaFunction::Lower(val) => Ok(types::PossibleTypes::fixed(DataType::Text)),
                 RaFunction::Substr { .. } => Ok(types::PossibleTypes::fixed(DataType::Text)),
+                RaFunction::CurrentSchemas { implicit } => {
+                    todo!("CurrentSchemas type");
+                }
+                RaFunction::ArrayPosition { array, target } => {
+                    todo!("ArrayPosition");
+                }
             },
             Self::Renamed { name, value } => value.possible_type(scope),
         }
@@ -598,7 +625,8 @@ impl RaValueExpression {
                 operator,
             } => match operator {
                 BinaryOperator::Concat => Some(DataType::Text),
-                BinaryOperator::Add => first.datatype(),
+                BinaryOperator::Add | BinaryOperator::Subtract => first.datatype(),
+                BinaryOperator::Divide => first.datatype(),
                 other => {
                     dbg!(other);
                     None
@@ -618,6 +646,8 @@ impl RaValueExpression {
                 } => Some(DataType::BigInteger),
                 RaFunction::Lower(_) => Some(DataType::Text),
                 RaFunction::Substr { .. } => Some(DataType::Text),
+                RaFunction::CurrentSchemas { .. } => todo!("Getting Type of CurrentSchemas"),
+                RaFunction::ArrayPosition { .. } => Some(DataType::Integer),
             },
             Self::Renamed { name, value } => value.datatype(),
         }

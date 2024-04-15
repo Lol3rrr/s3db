@@ -76,7 +76,12 @@ pub enum RaExpression {
         right: Box<Self>,
         kind: sql::JoinKind,
         condition: RaCondition,
-        lateral: bool,
+    },
+    LateralJoin {
+        left: Box<Self>,
+        right: Box<Self>,
+        kind: sql::JoinKind,
+        condition: RaCondition,
     },
     EmptyRelation,
     /// This is very similar to the `Self::Projection` variant, but instead of working on
@@ -316,6 +321,14 @@ impl RaExpression {
                     right.get_source(attribute)
                 }
             }
+            Self::LateralJoin { left, right, .. } => {
+                let left_tmp = left.get_source(attribute);
+                if left_tmp.is_some() {
+                    left_tmp
+                } else {
+                    right.get_source(attribute)
+                }
+            }
             Self::EmptyRelation => None,
             Self::Aggregation {
                 inner,
@@ -345,6 +358,15 @@ impl RaExpression {
                 .find(|(n, _, _)| n == name)
                 .map(|(_, d, _)| d.clone()),
             Self::Join { left, right, .. } => {
+                if let Some(lc) = left.get_column(name) {
+                    return Some(lc);
+                }
+                if let Some(rc) = right.get_column(name) {
+                    return Some(rc);
+                }
+                None
+            }
+            Self::LateralJoin { left, right, .. } => {
                 if let Some(lc) = left.get_column(name) {
                     return Some(lc);
                 }
@@ -388,6 +410,14 @@ impl RaExpression {
                 .map(|(n, t, id)| (name.0.to_string(), n.clone(), t.clone(), *id))
                 .collect(),
             Self::Join { left, right, .. } => {
+                let mut result = Vec::new();
+
+                result.append(&mut left.get_columns());
+                result.append(&mut right.get_columns());
+
+                result
+            }
+            Self::LateralJoin { left, right, .. } => {
                 let mut result = Vec::new();
 
                 result.append(&mut left.get_columns());
@@ -600,12 +630,20 @@ impl RaExpression {
                     outer,
                 )?;
 
-                let mut joined = Self::Join {
-                    left: Box::new(left_ra),
-                    right: Box::new(right_ra),
-                    kind: kind.clone(),
-                    condition: RaCondition::And(vec![]),
-                    lateral: *lateral,
+                let mut joined = if *lateral {
+                    Self::LateralJoin {
+                        left: Box::new(left_ra),
+                        right: Box::new(right_ra),
+                        kind: kind.clone(),
+                        condition: RaCondition::And(vec![]),
+                    }
+                } else {
+                    Self::Join {
+                        left: Box::new(left_ra),
+                        right: Box::new(right_ra),
+                        kind: kind.clone(),
+                        condition: RaCondition::And(vec![]),
+                    }
                 };
 
                 let ra_condition = RaCondition::parse_internal(
@@ -616,7 +654,9 @@ impl RaExpression {
                     &mut Vec::new(),
                 )?;
 
-                if let Self::Join { condition, .. } = &mut joined {
+                if let Self::Join { condition, .. } | Self::LateralJoin { condition, .. } =
+                    &mut joined
+                {
                     *condition = ra_condition;
                 }
 
@@ -1241,7 +1281,6 @@ mod tests {
                             comparison: RaComparisonOperator::Equals
                         }
                     ))]),
-                    lateral: false
                 }),
                 attributes: vec![
                     ProjectionAttribute {

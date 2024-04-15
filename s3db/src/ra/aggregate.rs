@@ -272,6 +272,12 @@ impl AggregateExpression {
                                         pending.push(c);
                                     }
                                 }
+                                RaFunction::CurrentSchemas { implicit } => {
+                                    todo!("CurrentSchemas");
+                                }
+                                RaFunction::ArrayPosition { array, target } => {
+                                    todo!("ArrayPosition")
+                                }
                             },
                             other => {
                                 dbg!(other);
