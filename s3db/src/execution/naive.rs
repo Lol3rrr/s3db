@@ -1526,7 +1526,7 @@ where
                     })
                 }
                 Query::Update(update) => {
-                    tracing::info!("Update: {:#?}", update);
+                    tracing::debug!("Update: {:#?}", update);
 
                     let transaction = ctx.transaction.as_ref().unwrap();
 
