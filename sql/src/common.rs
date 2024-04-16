@@ -473,28 +473,24 @@ pub fn identifier(i: &[u8]) -> IResult<&[u8], Identifier<'_>, nom::error::Verbos
         nom::combinator::map(
             nom::sequence::tuple((
                 nom::bytes::complete::tag("\""),
-                nom::sequence::tuple((
+                nom::combinator::consumed(nom::sequence::tuple((
                     nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
                     nom::bytes::complete::take_while(|b| {
                         (b as char).is_alphanumeric() || b == b'_'
                     }),
-                ))
-                .map(|(first, second)| {
-                    let tmp = [first, second].concat();
-                    Identifier(String::from_utf8(tmp).unwrap().into())
+                )))
+                .map(|(content, _)| {
+                    Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))
                 }),
                 nom::bytes::complete::tag("\""),
             )),
             |(_, tmp, _)| tmp,
         ),
-        nom::sequence::tuple((
+        nom::combinator::complete(nom::sequence::tuple((
             nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
             nom::bytes::complete::take_while(|b| (b as char).is_alphanumeric() || b == b'_'),
-        ))
-        .map(|(first, second)| {
-            let tmp = [first, second].concat();
-            Identifier(String::from_utf8(tmp).unwrap().into())
-        }),
+        )))
+        .map(|(content, _)| Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))),
     ))(i)
 }
 

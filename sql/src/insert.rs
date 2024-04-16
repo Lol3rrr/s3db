@@ -172,8 +172,6 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
             ),
         ))(i)?;
 
-    dbg!(&on_conflict);
-
     Ok((
         remaining,
         Insert {
