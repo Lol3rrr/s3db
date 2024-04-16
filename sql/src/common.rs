@@ -107,11 +107,7 @@ impl<'s> ValueExpression<'s> {
             Self::List(_) => false,
             Self::SubQuery(_) => false,
             Self::Not(v) => v.is_aggregate(),
-            Self::Case {
-                matched_value,
-                cases,
-                else_case,
-            } => false,
+            Self::Case { .. } => false, // TODO is this actually correct?
         }
     }
 
@@ -435,14 +431,23 @@ pub fn value_expression(
         value_expression(remaining)?
     };
 
-    Ok((
-        remaining,
-        ValueExpression::Operator {
+    let result = match second {
+        ValueExpression::Renamed { inner, name } => ValueExpression::Renamed {
+            inner: Box::new(ValueExpression::Operator {
+                first: Box::new(parsed.to_static()),
+                second: Box::new((*inner).to_static()),
+                operator,
+            }),
+            name,
+        },
+        other => ValueExpression::Operator {
             first: Box::new(parsed.to_static()),
-            second: Box::new(second.to_static()),
+            second: Box::new(other.to_static()),
             operator,
         },
-    ))
+    };
+
+    Ok((remaining, result))
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1044,6 +1049,27 @@ mod tests {
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
             ValueExpression::FunctionCall(FunctionCall::CurrentTimestamp),
+            tmp
+        );
+    }
+
+    #[test]
+    fn longer_renamed_expr() {
+        let (remaining, tmp) = value_expression("(3*4) + 5 AS testing".as_bytes()).unwrap();
+        assert_eq!(&[] as &[u8], remaining);
+        assert_eq!(
+            ValueExpression::Renamed {
+                inner: Box::new(ValueExpression::Operator {
+                    first: Box::new(ValueExpression::Operator {
+                        first: Box::new(ValueExpression::Literal(Literal::SmallInteger(3))),
+                        second: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
+                        operator: BinaryOperator::Multiply,
+                    }),
+                    second: Box::new(ValueExpression::Literal(Literal::SmallInteger(5))),
+                    operator: BinaryOperator::Add
+                }),
+                name: "testing".into()
+            },
             tmp
         );
     }
