@@ -1,2 +1,3 @@
 [workspace]
 members = ["s3db", "sql", "storage"]
+resolver = "2"

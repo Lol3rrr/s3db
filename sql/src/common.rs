@@ -9,9 +9,9 @@ mod literal;
 pub use literal::{literal, Literal};
 
 mod datatype;
-pub use datatype::{data_type, DataType};
+pub use datatype::{DataType};
 
-use crate::{select, CompatibleParser};
+use crate::{select, CompatibleParser, Parser as _Parser};
 
 /// [Reference](https://www.postgresql.org/docs/current/sql-expressions.html)
 #[derive(Debug, PartialEq, Clone)]
@@ -311,7 +311,7 @@ pub fn value_expression(
             |(relation, _, _)| ValueExpression::AllFromRelation { relation },
         ),
         nom::combinator::map(
-            nom::sequence::tuple((column_reference, nom::bytes::complete::tag("::"), data_type)),
+            nom::sequence::tuple((column_reference, nom::bytes::complete::tag("::"), DataType::parse())),
             |(cr, _, ty)| ValueExpression::TypeCast {
                 base: Box::new(ValueExpression::ColumnReference(cr)),
                 target_ty: ty,
@@ -394,7 +394,7 @@ pub fn value_expression(
     ))(remaining);
     let (remaining, (_, _, operator, _)) = match tmp {
         Ok(r) => r,
-        Err(e) => {
+        Err(_) => {
             return Ok((remaining, parsed));
         }
     };

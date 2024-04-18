@@ -20,12 +20,12 @@ impl CompatibleParser<dialects::Postgres> for Vacuum {
 pub fn parse(i: &[u8]) -> IResult<&[u8], Vacuum, nom::error::VerboseError<&[u8]>> {
     let (rem, _) = nom::bytes::complete::tag_no_case("vacuum")(i)?;
 
-    let (rem, analyze) = nom::combinator::opt(nom::sequence::tuple((
+    let (rem, _analyze) = nom::combinator::opt(nom::sequence::tuple((
         nom::character::complete::multispace1,
         nom::bytes::complete::tag_no_case("analyze"),
     )))(rem)?;
 
-    let (rem, table) = nom::combinator::opt(nom::sequence::tuple((
+    let (rem, _table) = nom::combinator::opt(nom::sequence::tuple((
         nom::character::complete::multispace1,
         identifier,
     )))(rem)?;

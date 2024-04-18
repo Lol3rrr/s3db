@@ -18,7 +18,18 @@ pub enum DataType {
     Real,
 }
 
-pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<&[u8]>> {
+impl crate::Parser for DataType {
+    fn parse<'i>() -> impl Fn(&'i[u8]) -> IResult<&'i [u8], DataType, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            // Only for the current implementation
+            #[allow(deprecated)]
+            data_type(i)
+        }
+    }
+}
+
+#[deprecated]
+pub fn data_type<'i>(i: &'i [u8]) -> IResult<&'i [u8], DataType, nom::error::VerboseError<&'i [u8]>> {
     nom::branch::alt((
         nom::bytes::complete::tag_no_case("SERIAL").map(|_| DataType::Serial),
         nom::sequence::tuple((
@@ -86,5 +97,58 @@ impl DataType {
             Self::Timestamp => 1114,
             other => todo!("{:?}", other),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn datatypes() {
+        let (remaining, dtype) = data_type("SERIAL".as_bytes()).unwrap();
+        assert_eq!(
+            &[] as &[u8],
+            remaining,
+            "{:?}",
+            core::str::from_utf8(remaining)
+        );
+        assert_eq!(DataType::Serial, dtype);
+
+        let (remaining, dtype) = data_type("VARCHAR(123)".as_bytes()).unwrap();
+        assert_eq!(
+            &[] as &[u8],
+            remaining,
+            "{:?}",
+            core::str::from_utf8(remaining)
+        );
+        assert_eq!(DataType::VarChar { size: 123 }, dtype);
+
+        let (remaining, dtype) = data_type("TEXT".as_bytes()).unwrap();
+        assert_eq!(
+            &[] as &[u8],
+            remaining,
+            "{:?}",
+            core::str::from_utf8(remaining)
+        );
+        assert_eq!(DataType::Text, dtype);
+
+        let (remaining, dtype) = data_type("BOOL".as_bytes()).unwrap();
+        assert_eq!(
+            &[] as &[u8],
+            remaining,
+            "{:?}",
+            core::str::from_utf8(remaining)
+        );
+        assert_eq!(DataType::Bool, dtype);
+
+        let (remaining, dtype) = data_type("TIMESTAMP".as_bytes()).unwrap();
+        assert_eq!(
+            &[] as &[u8],
+            remaining,
+            "{:?}",
+            core::str::from_utf8(remaining)
+        );
+        assert_eq!(DataType::Timestamp, dtype);
     }
 }

@@ -1,9 +1,9 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser};
+use crate::{dialects, CompatibleParser, Parser as _Parser};
 
 use super::{
-    common::{data_type, identifier},
+    common::{identifier},
     query, DataType, Identifier, Query,
 };
 
@@ -34,7 +34,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&
                             nom::bytes::complete::tag(","),
                             nom::character::complete::multispace0,
                         )),
-                        data_type,
+                        DataType::parse(),
                     ),
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),

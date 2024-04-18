@@ -1,8 +1,8 @@
 use nom::{IResult, Parser};
 
-use crate::{common::identifier, dialects, CompatibleParser, Literal};
+use crate::{common::identifier, dialects, CompatibleParser, Literal, Parser as _Parser};
 
-use super::common::{data_type, literal, type_modifier, DataType, Identifier, TypeModifier};
+use super::common::{literal, type_modifier, DataType, Identifier, TypeModifier};
 
 #[derive(Debug, PartialEq)]
 pub struct CreateTable<'s> {
@@ -248,7 +248,7 @@ fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseE
         nom::sequence::tuple((
             identifier,
             nom::character::complete::multispace1,
-            data_type,
+            DataType::parse(),
             nom::multi::many0(
                 nom::sequence::tuple((nom::character::complete::multispace1, type_modifier))
                     .map(|(_, m)| m),
@@ -388,53 +388,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn datatypes() {
-        let (remaining, dtype) = data_type("SERIAL".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Serial, dtype);
-
-        let (remaining, dtype) = data_type("VARCHAR(123)".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::VarChar { size: 123 }, dtype);
-
-        let (remaining, dtype) = data_type("TEXT".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Text, dtype);
-
-        let (remaining, dtype) = data_type("BOOL".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Bool, dtype);
-
-        let (remaining, dtype) = data_type("TIMESTAMP".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Timestamp, dtype);
-    }
+    
 
     #[test]
     fn type_modifier_test() {

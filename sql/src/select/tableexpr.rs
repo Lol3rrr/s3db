@@ -47,7 +47,7 @@ pub fn table_expression(
             ))
             .map(|(_, _, query, _, _)| TableExpression::SubQuery(Box::new(query))),
             nom::sequence::tuple((identifier, nom::bytes::complete::tag("."), identifier))
-                .map(|(schema, _, name)| TableExpression::Relation(name)),
+                .map(|(_, _, name)| TableExpression::Relation(name)),
             identifier.map(TableExpression::Relation),
         ))(i)?;
 
@@ -164,7 +164,7 @@ pub fn table_expression(
         ))(remaining);
 
         let (remaining, is_lateral) = match tmp {
-            Ok((rem, other)) => (rem, true),
+            Ok((rem, _)) => (rem, true),
             Err(_) => (remaining, false),
         };
 
@@ -189,7 +189,10 @@ pub fn table_expression(
                     lateral: is_lateral,
                 };
             }
-            Err(e) => {
+            Err(_) => {
+                // TODO
+                // Investigate the proper handling
+
                 outer_remaining = remaining;
 
                 table = TableExpression::Join {
