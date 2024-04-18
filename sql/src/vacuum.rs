@@ -1,6 +1,6 @@
 use nom::IResult;
 
-use crate::{common::identifier, dialects, CompatibleParser};
+use crate::{dialects, CompatibleParser, Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct Vacuum {}
@@ -27,7 +27,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Vacuum, nom::error::VerboseError<&[u8]>
 
     let (rem, _table) = nom::combinator::opt(nom::sequence::tuple((
         nom::character::complete::multispace1,
-        identifier,
+        Identifier::parse(),
     )))(rem)?;
 
     Ok((rem, Vacuum {}))

@@ -2,7 +2,7 @@ use nom::{IResult, Parser};
 
 use crate::{select, CompatibleParser, Select, Parser as _};
 
-use super::{value_expression, Identifier, Literal, ValueExpression};
+use super::{Identifier, Literal, ValueExpression};
 
 macro_rules! function_call {
     ($name:literal, $parser:expr, $mapping:expr) => {
@@ -83,7 +83,7 @@ pub fn function_call(
                 nom::bytes::complete::tag("lpad"),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag("("),
-                value_expression,
+                ValueExpression::parse(),
                 nom::bytes::complete::tag(","),
                 nom::character::complete::multispace0,
                 Literal::parse(),
@@ -109,7 +109,7 @@ pub fn function_call(
                         nom::bytes::complete::tag(","),
                         nom::character::complete::multispace0,
                     )),
-                    value_expression,
+                    ValueExpression::parse(),
                 ),
                 nom::bytes::complete::tag(")"),
             )),
@@ -136,7 +136,7 @@ pub fn function_call(
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
                 nom::character::complete::multispace0,
-                value_expression,
+                ValueExpression::parse(),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             )),
@@ -159,7 +159,7 @@ pub fn function_call(
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag("("),
                 nom::character::complete::multispace0,
-                value_expression,
+                ValueExpression::parse(),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             )),
@@ -170,17 +170,17 @@ pub fn function_call(
         function_call!(
             "substr",
             nom::sequence::tuple((
-                value_expression,
+                ValueExpression::parse(),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
                 nom::character::complete::multispace0,
-                value_expression,
+                ValueExpression::parse(),
                 nom::character::complete::multispace0,
                 nom::combinator::opt(
                     nom::sequence::tuple((
                         nom::bytes::complete::tag(","),
                         nom::character::complete::multispace0,
-                        value_expression,
+                        ValueExpression::parse(),
                         nom::character::complete::multispace0,
                     ))
                     .map(|(_, _, v, _)| Box::new(v)),
@@ -200,7 +200,7 @@ pub fn function_call(
         ),
         function_call!(
             "current_schemas",
-            nom::combinator::map_res(value_expression, |val| match val {
+            nom::combinator::map_res(ValueExpression::parse(), |val| match val {
                 ValueExpression::Literal(Literal::Bool(v)) => Ok(v),
                 _ => Err(()),
             }),
@@ -209,11 +209,11 @@ pub fn function_call(
         function_call!(
             "array_position",
             nom::sequence::tuple((
-                value_expression,
+                ValueExpression::parse(),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
                 nom::character::complete::multispace0,
-                value_expression,
+                ValueExpression::parse(),
             )),
             |(array, _, _, _, target)| FunctionCall::ArrayPosition {
                 array: Box::new(array),

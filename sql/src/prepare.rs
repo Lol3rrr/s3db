@@ -1,9 +1,8 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Parser as _Parser};
+use crate::{dialects, CompatibleParser, Parser as _};
 
 use super::{
-    common::{identifier},
     query, DataType, Identifier, Query,
 };
 
@@ -22,7 +21,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&
 
     let (i, tmp) = nom::combinator::map(
         nom::sequence::tuple((
-            identifier,
+            Identifier::parse(),
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,

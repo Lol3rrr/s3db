@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{common::identifier, Parser as _Parser};
+use crate::Parser as _Parser;
 
 use super::{
     common::type_modifier,
@@ -94,6 +94,16 @@ impl<'s> AlterTable<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for AlterTable<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            alter_table(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, table, _)) = nom::sequence::tuple((
         nom::sequence::tuple((
@@ -102,7 +112,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::bytes::complete::tag_no_case("TABLE"),
         )),
         nom::character::complete::multispace1,
-        identifier,
+        Identifier::parse(),
         nom::character::complete::multispace1,
     ))(i)?;
 
@@ -112,7 +122,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("TO"),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
         ))
         .map(|(_, _, _, _, target)| AlterTable::Rename {
             from: table.clone(),
@@ -125,7 +135,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
                 nom::bytes::complete::tag_no_case("COLUMN"),
                 nom::character::complete::multispace1,
             )),
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace1,
             DataType::parse(),
             nom::character::complete::multispace1,
@@ -152,7 +162,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
                     nom::bytes::complete::tag_no_case("COLUMN"),
                 ))),
                 nom::character::complete::multispace1,
-                identifier,
+                Identifier::parse(),
                 nom::character::complete::multispace1,
                 nom::bytes::complete::tag_no_case("TYPE"),
                 nom::character::complete::multispace1,
@@ -173,7 +183,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("COLUMN"),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("DROP"),
             nom::character::complete::multispace1,
@@ -192,11 +202,11 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("COLUMN"),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("TO"),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
         ))
         .map(|(_, _, _, _, from, _, _, _, to)| AlterTable::RenameColumn {
             table: table.clone(),
@@ -208,7 +218,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("COLUMN"),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("SET"),
             nom::character::complete::multispace1,
@@ -232,7 +242,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             nom::bytes::complete::tag("("),
             nom::character::complete::multispace0,
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag(")"),
         ))
@@ -249,47 +259,21 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
 
 #[cfg(test)]
 mod tests {
-    use crate::Literal;
+    use crate::{Literal, macros::parser_parse};
 
     use super::*;
 
     #[test]
     fn alter_table_rename() {
-        let (remaining, alter) =
-            alter_table("ALTER TABLE \"user\" RENAME TO \"user_v1\"".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::Rename {
+        parser_parse!(AlterTable, "ALTER TABLE \"user\" RENAME TO \"user_v1\"", AlterTable::Rename {
                 from: Identifier("user".into()),
                 to: Identifier("user_v1".into())
-            },
-            alter
-        );
+            });
     }
 
     #[test]
     fn alter_add_column() {
-        let (remaining, alter) = alter_table(
-            "alter table \"user\" ADD COLUMN \"help_flags1\" BIGINT NOT NULL DEFAULT 0".as_bytes(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::AddColumn {
+        parser_parse!(AlterTable, "alter table \"user\" ADD COLUMN \"help_flags1\" BIGINT NOT NULL DEFAULT 0", AlterTable::AddColumn {
                 table: Identifier("user".into()),
                 column_name: Identifier("help_flags1".into()),
                 data_type: DataType::BigInteger,
@@ -299,24 +283,12 @@ mod tests {
                         value: Some(Literal::SmallInteger(0))
                     }
                 ]
-            },
-            alter
-        );
+            });
     }
 
     #[test]
     fn alter_column_types() {
-        let (remaining, alter) = alter_table("ALTER TABLE \"user\" ALTER \"login\" TYPE VARCHAR(190), ALTER \"email\" TYPE VARCHAR(190), ALTER \"name\" TYPE VARCHAR(255), ALTER \"password\" TYPE VARCHAR(255), ALTER \"salt\" TYPE VARCHAR(50), ALTER \"rands\" TYPE VARCHAR(50), ALTER \"company\" TYPE VARCHAR(255), ALTER \"theme\" TYPE VARCHAR(255)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::AlterColumnTypes {
+        parser_parse!(AlterTable, "ALTER TABLE \"user\" ALTER \"login\" TYPE VARCHAR(190), ALTER \"email\" TYPE VARCHAR(190), ALTER \"name\" TYPE VARCHAR(255), ALTER \"password\" TYPE VARCHAR(255), ALTER \"salt\" TYPE VARCHAR(50), ALTER \"rands\" TYPE VARCHAR(50), ALTER \"company\" TYPE VARCHAR(255), ALTER \"theme\" TYPE VARCHAR(255)", AlterTable::AlterColumnTypes {
                 table: Identifier("user".into()),
                 columns: vec![
                     (Identifier("login".into()), DataType::VarChar { size: 190 }),
@@ -334,120 +306,50 @@ mod tests {
                     ),
                     (Identifier("theme".into()), DataType::VarChar { size: 255 })
                 ]
-            },
-            alter
-        );
+            });
     }
 
     #[test]
     fn alter_column_drop_not_null() {
-        let (remaining, alter) = alter_table(
-            "ALTER TABLE \"user\" ALTER COLUMN is_service_account DROP NOT NULL".as_bytes(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::AtlerColumnDropNotNull {
+        parser_parse!(AlterTable, "ALTER TABLE \"user\" ALTER COLUMN is_service_account DROP NOT NULL", AlterTable::AtlerColumnDropNotNull {
                 table: Identifier("user".into()),
                 column: Identifier("is_service_account".into())
-            },
-            alter
-        );
+            });
     }
 
     #[test]
     fn alter_column_add_bytea_null() {
-        let query =
-            "alter table \"dashboard_snapshot\" ADD COLUMN \"dashboard_encrypted\" BYTEA NULL";
-        let (remaining, alter) = alter_table(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::AddColumn {
+        parser_parse!(AlterTable, "alter table \"dashboard_snapshot\" ADD COLUMN \"dashboard_encrypted\" BYTEA NULL", AlterTable::AddColumn {
                 table: Identifier("dashboard_snapshot".into()),
                 column_name: Identifier("dashboard_encrypted".into()),
                 data_type: DataType::ByteA,
                 type_modifiers: vec![TypeModifier::Null]
-            },
-            alter
-        );
+            });
     }
 
     #[test]
     fn alter_column_type() {
-        let query = "ALTER TABLE annotation ALTER COLUMN tags TYPE VARCHAR(4096)";
-        let (remaining, alter) = alter_table(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::AlterColumnTypes {
+        parser_parse!(AlterTable, "ALTER TABLE annotation ALTER COLUMN tags TYPE VARCHAR(4096)", AlterTable::AlterColumnTypes {
                 table: Identifier("annotation".into()),
                 columns: vec![(Identifier("tags".into()), DataType::VarChar { size: 4096 })]
-            },
-            alter
-        );
+            });
     }
 
     #[test]
     fn alter_column_rename() {
-        let query = "ALTER TABLE alert_instance RENAME COLUMN def_org_id TO rule_org_id";
-        let (remaining, alter) = alter_table(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::RenameColumn {
+        parser_parse!(AlterTable, "ALTER TABLE alert_instance RENAME COLUMN def_org_id TO rule_org_id", AlterTable::RenameColumn {
                 table: Identifier("alert_instance".into()),
                 from: Identifier("def_org_id".into()),
                 to: Identifier("rule_org_id".into())
-            },
-            alter
-        );
+            });
     }
 
     #[test]
     fn alter_set_default() {
-        let query = "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false";
-        let (remaining, alter) = alter_table(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            AlterTable::SetColumnDefault {
+        parser_parse!(AlterTable, "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false", AlterTable::SetColumnDefault {
                 table: Identifier("alert_rule".into()),
                 column: Identifier("is_paused".into()),
                 value: Literal::Bool(false)
-            },
-            alter
-        );
+            });
     }
 }

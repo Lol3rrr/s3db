@@ -1,8 +1,7 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    common::{column_reference, identifier, value_expression},
-    dialects, CompatibleParser,
+    dialects, CompatibleParser, Parser as _
 };
 
 use super::{common::Identifier, select::select, ColumnReference, Select, ValueExpression};
@@ -99,14 +98,14 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
                 nom::bytes::complete::tag_no_case("INTO"),
             )),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag("("),
             nom::multi::separated_list1(
                 nom::bytes::complete::tag(","),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
-                    identifier,
+                    Identifier::parse(),
                     nom::character::complete::multispace0,
                 ))
                 .map(|(_, ident, _)| ident),
@@ -119,7 +118,7 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
                     nom::character::complete::multispace1,
                     nom::bytes::complete::tag_no_case("RETURNING"),
                     nom::character::complete::multispace1,
-                    identifier,
+                    Identifier::parse(),
                 ))
                 .map(|(_, _, _, id)| id),
             ),
@@ -137,7 +136,7 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
                         nom::bytes::complete::tag(","),
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
-                            identifier,
+                            Identifier::parse(),
                             nom::character::complete::multispace0,
                         ))
                         .map(|(_, ident, _)| ident),
@@ -159,11 +158,11 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
                             nom::character::complete::multispace0,
                         )),
                         nom::sequence::tuple((
-                            column_reference,
+                            ColumnReference::parse(),
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag("="),
                             nom::character::complete::multispace0,
-                            value_expression,
+                            ValueExpression::parse(),
                         ))
                         .map(|(cr, _, _, _, val)| (cr, val)),
                     ),
@@ -207,7 +206,7 @@ fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::Verbo
                             nom::bytes::complete::tag(","),
                             nom::sequence::tuple((
                                 nom::character::complete::multispace0,
-                                value_expression,
+                                ValueExpression::parse(),
                                 nom::character::complete::multispace0,
                             ))
                             .map(|(_, v, _)| v),

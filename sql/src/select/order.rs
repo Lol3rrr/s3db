@@ -1,7 +1,6 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    common::column_reference,
     ColumnReference, Literal,
     Parser as _
 };
@@ -59,7 +58,7 @@ pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::Verbo
             )),
             nom::sequence::tuple((
                 nom::branch::alt((
-                    column_reference.map(OrderAttribute::ColumnRef),
+                    ColumnReference::parse().map(OrderAttribute::ColumnRef),
                     nom::combinator::map_res(Literal::parse(), |lit| match lit {
                         Literal::SmallInteger(v) => Ok(OrderAttribute::ColumnIndex(v as usize)),
                         Literal::Integer(v) => Ok(OrderAttribute::ColumnIndex(v as usize)),

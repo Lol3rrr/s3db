@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{common::identifier, dialects, CompatibleParser};
+use crate::{dialects, CompatibleParser, Parser as _};
 
 use super::{condition::condition, Condition, Identifier};
 
@@ -39,7 +39,7 @@ pub fn delete(i: &[u8]) -> IResult<&[u8], Delete<'_>, nom::error::VerboseError<&
         nom::character::complete::multispace1,
         nom::bytes::complete::tag_no_case("FROM"),
         nom::character::complete::multispace1,
-        identifier,
+        Identifier::parse(),
     ))(i)?;
 
     let (remaining, cond) = nom::combinator::opt(

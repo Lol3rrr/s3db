@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use super::{common::identifier, query, Identifier, Query};
+use crate::{query, Identifier, Query, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct WithCTE<'s> {
@@ -40,7 +40,7 @@ pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>, nom::error::VerboseEr
             nom::character::complete::multispace0,
         )),
         nom::sequence::tuple((
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace1,
             nom::combinator::opt(nom::sequence::delimited(
                 nom::sequence::tuple((
@@ -53,7 +53,7 @@ pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>, nom::error::VerboseEr
                         nom::bytes::complete::tag(","),
                         nom::character::complete::multispace0,
                     )),
-                    identifier,
+                    Identifier::parse(),
                 ),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,

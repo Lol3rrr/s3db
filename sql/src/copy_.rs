@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{common::identifier, dialects, CompatibleParser, Identifier};
+use crate::{dialects, CompatibleParser, Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct Copy_<'s> {
@@ -32,7 +32,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Copy_<'_>, nom::error::VerboseError<&[u
     let (rem, (_, _, name, _, _, _, source)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("copy"),
         nom::character::complete::multispace1,
-        identifier,
+        Identifier::parse(),
         nom::character::complete::multispace1,
         nom::bytes::complete::tag_no_case("from"),
         nom::character::complete::multispace1,

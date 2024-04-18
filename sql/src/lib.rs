@@ -210,7 +210,7 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
                 }),
                 nom::combinator::map(create::create_table, Query::CreateTable),
                 nom::combinator::map(create::create_index, Query::CreateIndex),
-                nom::combinator::map(alter::alter_table, Query::AlterTable),
+                nom::combinator::map(AlterTable::parse(), Query::AlterTable),
                 nom::combinator::map(drop::drop_index, Query::DropIndex),
                 nom::combinator::map(drop::drop_table, Query::DropTable),
                 nom::combinator::map(truncate::parse, Query::TruncateTable),

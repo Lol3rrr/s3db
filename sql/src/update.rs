@@ -1,9 +1,8 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    common::{identifier, value_expression},
     condition::condition,
-    dialects, CompatibleParser,
+    dialects, CompatibleParser, Parser as _
 };
 
 use super::{Condition, Identifier, ValueExpression};
@@ -78,7 +77,7 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
     let (remaining, (_, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("UPDATE"),
         nom::character::complete::multispace1,
-        identifier,
+        Identifier::parse(),
     ))(i)?;
 
     let (remaining, (_, _, _, fields)) = nom::sequence::tuple((
@@ -92,13 +91,13 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
                 nom::character::complete::multispace0,
             )),
             nom::sequence::tuple((
-                identifier,
+                Identifier::parse(),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("="),
                     nom::character::complete::multispace0,
                 )),
-                value_expression,
+                ValueExpression::parse(),
             ))
             .map(|(ident, _, val)| (ident, val)),
         ),
@@ -109,9 +108,9 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("FROM"),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::combinator::opt(nom::combinator::verify(
-                nom::sequence::tuple((nom::character::complete::multispace1, identifier))
+                nom::sequence::tuple((nom::character::complete::multispace1, Identifier::parse()))
                     .map(|(_, name)| name),
                 |ident| !ident.0.as_ref().eq_ignore_ascii_case("WHERE"),
             )),

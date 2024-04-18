@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{common::value_expressions, condition::condition, dialects, CompatibleParser, Parser as _};
+use crate::{condition::condition, dialects, CompatibleParser, Parser as _};
 
 use super::{common::ValueExpression, condition::Condition};
 
@@ -137,7 +137,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
         nom::sequence::tuple((
             nom::combinator::opt(nom::bytes::complete::tag_no_case("distinct")),
             nom::character::complete::multispace0,
-            value_expressions,
+            <Vec<ValueExpression<'_>>>::parse(),
             nom::combinator::opt(nom::combinator::map(
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,

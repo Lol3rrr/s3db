@@ -1,8 +1,6 @@
 use nom::IResult;
 
-use crate::{dialects, CompatibleParser};
-
-use super::{common::identifier, Identifier};
+use crate::{dialects, CompatibleParser, Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct TruncateTable<'s> {
@@ -24,7 +22,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], TruncateTable<'_>, nom::error::VerboseE
                     nom::bytes::complete::tag(","),
                     nom::character::complete::multispace0,
                 )),
-                identifier,
+                Identifier::parse(),
             ),
         )),
         |(_, _, _, tables)| TruncateTable { names: tables },

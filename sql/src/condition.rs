@@ -1,6 +1,7 @@
 use nom::{IResult, Parser};
 
-use super::{common::value_expression, ValueExpression};
+use super::ValueExpression;
+use crate::Parser as _;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Condition<'s> {
@@ -43,7 +44,7 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
             nom::bytes::complete::tag(")"),
         ))
         .map(|(_, _, c, _, _)| c),
-        value_expression.map(|v| Condition::Value(Box::new(v))),
+        ValueExpression::parse().map(|v| Condition::Value(Box::new(v))),
     ))(i)?;
 
     let mut conditions = vec![tmp];
@@ -78,7 +79,7 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
                 nom::bytes::complete::tag(")"),
             ))
             .map(|(_, _, c, _, _)| c),
-            value_expression.map(|v| Condition::Value(Box::new(v))),
+            ValueExpression::parse().map(|v| Condition::Value(Box::new(v))),
         ))(rem)
         {
             Ok(c) => c,

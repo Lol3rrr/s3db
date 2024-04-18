@@ -1,7 +1,7 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    self as sql, common::identifier, select::select, CompatibleParser, Condition, Identifier,
+    self as sql, select::select, CompatibleParser, Condition, Identifier, Parser as _,
 };
 
 use super::Select;
@@ -56,9 +56,9 @@ pub fn table_expression(
                 nom::bytes::complete::tag(")"),
             ))
             .map(|(_, _, query, _, _)| TableExpression::SubQuery(Box::new(query))),
-            nom::sequence::tuple((identifier, nom::bytes::complete::tag("."), identifier))
+            nom::sequence::tuple((Identifier::parse(), nom::bytes::complete::tag("."), Identifier::parse()))
                 .map(|(_, _, name)| TableExpression::Relation(name)),
-            identifier.map(TableExpression::Relation),
+            Identifier::parse().map(TableExpression::Relation),
         ))(i)?;
 
         match nom::branch::alt((
@@ -66,7 +66,7 @@ pub fn table_expression(
                 nom::character::complete::multispace1,
                 nom::bytes::complete::tag_no_case("AS"),
                 nom::character::complete::multispace1,
-                identifier,
+                Identifier::parse(),
                 nom::combinator::opt(nom::sequence::tuple((
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
@@ -77,7 +77,7 @@ pub fn table_expression(
                             nom::bytes::complete::tag(","),
                             nom::character::complete::multispace0,
                         )),
-                        identifier,
+                        Identifier::parse(),
                     ),
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),
@@ -97,7 +97,7 @@ pub fn table_expression(
                     nom::bytes::complete::tag_no_case("ORDER"),
                     nom::bytes::complete::tag_no_case("ON"),
                 )))),
-                identifier,
+                Identifier::parse(),
             ))
             .map(|(_, _, ident)| (ident, None)),
         ))(remaining)

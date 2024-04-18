@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{common::identifier, dialects, CompatibleParser, Literal, Parser as _Parser};
+use crate::{dialects, CompatibleParser, Literal, Parser as _Parser};
 
 use super::common::{type_modifier, DataType, Identifier, TypeModifier};
 
@@ -80,7 +80,7 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
                 nom::bytes::complete::tag_no_case("IF NOT EXISTS"),
             ))),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag("("),
             nom::character::complete::multispace0,
@@ -105,7 +105,7 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
                                 nom::bytes::complete::tag(","),
                                 nom::character::complete::multispace0,
                             )),
-                            identifier,
+                            Identifier::parse(),
                         ),
                         nom::character::complete::multispace0,
                         nom::bytes::complete::tag(")"),
@@ -192,20 +192,20 @@ pub fn create_index(i: &[u8]) -> IResult<&[u8], CreateIndex<'_>, nom::error::Ver
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("INDEX"),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::sequence::tuple((
                 nom::character::complete::multispace1,
                 nom::bytes::complete::tag_no_case("ON"),
                 nom::character::complete::multispace1,
             )),
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag("("),
             nom::multi::separated_list1(
                 nom::bytes::complete::tag(","),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
-                    identifier,
+                    Identifier::parse(),
                     nom::character::complete::multispace0,
                 ))
                 .map(|(_, column, _)| column),
@@ -246,7 +246,7 @@ impl<'s> TableField<'s> {
 fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
-            identifier,
+            Identifier::parse(),
             nom::character::complete::multispace1,
             DataType::parse(),
             nom::multi::many0(

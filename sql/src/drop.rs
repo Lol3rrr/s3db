@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use super::{common::identifier, Identifier};
+use crate::{Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct DropIndex<'s> {
@@ -61,7 +61,7 @@ pub fn drop_index(i: &[u8]) -> IResult<&[u8], DropIndex<'_>, nom::error::Verbose
                 nom::bytes::complete::tag_no_case("EXISTS"),
             ))),
             nom::character::complete::multispace1,
-            identifier,
+            Identifier::parse(),
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace1,
@@ -103,7 +103,7 @@ pub fn drop_table(i: &[u8]) -> IResult<&[u8], DropTable<'_>, nom::error::Verbose
                     nom::bytes::complete::tag(","),
                     nom::character::complete::multispace0,
                 )),
-                identifier,
+                Identifier::parse(),
             ),
             nom::combinator::opt(nom::branch::alt((
                 nom::bytes::complete::tag_no_case("RESTRICT").map(|_| DependentHandling::Restrict),
