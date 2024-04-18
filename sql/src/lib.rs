@@ -237,6 +237,22 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
 }
 
 #[cfg(test)]
+pub(crate) mod macros {
+    macro_rules! parser_parse {
+        ($target_ty:ty, $input:expr, $expected:expr) => {
+            {
+                use crate::Parser as _;
+                let (remaining, result) = <$target_ty>::parse()($input.as_bytes()).unwrap();
+                assert_eq!(&[] as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
+                assert_eq!($expected, result);
+            }
+        };
+    }
+    pub (crate) use parser_parse;
+
+}
+
+#[cfg(test)]
 mod tests {
     use crate::select::{GroupAttribute, OrderAttribute};
 

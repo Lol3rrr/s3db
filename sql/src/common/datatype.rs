@@ -103,24 +103,14 @@ impl DataType {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    macro_rules! parse {
-        ($target_ty:ty, $input:expr, $expected:expr) => {
-            {
-                use crate::Parser as _;
-                let (remaining, result) = <$target_ty>::parse()($input.as_bytes()).unwrap();
-                assert_eq!(&[] as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
-                assert_eq!($expected, result);
-            }
-        };
-    }
+    use crate::macros::parser_parse;
 
     #[test]
     fn datatypes() {
-        parse!(DataType, "SERIAL", DataType::Serial);
-        parse!(DataType, "VARCHAR(123)", DataType::VarChar { size: 123 });
-        parse!(DataType, "TEXT", DataType::Text);
-        parse!(DataType, "BOOL", DataType::Bool);
-        parse!(DataType, "TIMESTAMP", DataType::Timestamp);
+        parser_parse!(DataType, "SERIAL", DataType::Serial);
+        parser_parse!(DataType, "VARCHAR(123)", DataType::VarChar { size: 123 });
+        parser_parse!(DataType, "TEXT", DataType::Text);
+        parser_parse!(DataType, "BOOL", DataType::Bool);
+        parser_parse!(DataType, "TIMESTAMP", DataType::Timestamp);
     }
 }
