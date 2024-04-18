@@ -14,7 +14,10 @@ fn simple_select(c: &mut Criterion) {
         other => unreachable!("{:?}", other),
     };
 
-    c.bench_function("simple_select", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
+    let mut group = c.benchmark_group("ra");
+    group.throughput(criterion::Throughput::Elements(1));
+    group.bench_function("simple_select", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
+    group.finish();
 }
 
 fn select_join(c: &mut Criterion) {
@@ -44,8 +47,11 @@ fn select_join(c: &mut Criterion) {
         other => unreachable!("{:?}", other),
     };
 
-    c.bench_function("select_join", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
+    let mut group = c.benchmark_group("ra");
+    group.throughput(criterion::Throughput::Elements(1));
+    group.bench_function("select_join", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
+    group.finish();
 }
 
-criterion_group!(benches, simple_select);
+criterion_group!(benches, simple_select, select_join);
 criterion_main!(benches);
