@@ -97,6 +97,7 @@ pub enum Query<'s> {
     Vacuum(vacuum::Vacuum),
 }
 
+#[derive(Debug)]
 pub struct ParseQueryError {}
 
 impl<'s> Query<'s> {

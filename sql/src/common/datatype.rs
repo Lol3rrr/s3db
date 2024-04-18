@@ -104,51 +104,23 @@ impl DataType {
 mod tests {
     use super::*;
 
+    macro_rules! parse {
+        ($target_ty:ty, $input:expr, $expected:expr) => {
+            {
+                use crate::Parser as _;
+                let (remaining, result) = <$target_ty>::parse()($input.as_bytes()).unwrap();
+                assert_eq!(&[] as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
+                assert_eq!($expected, result);
+            }
+        };
+    }
+
     #[test]
     fn datatypes() {
-        let (remaining, dtype) = data_type("SERIAL".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Serial, dtype);
-
-        let (remaining, dtype) = data_type("VARCHAR(123)".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::VarChar { size: 123 }, dtype);
-
-        let (remaining, dtype) = data_type("TEXT".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Text, dtype);
-
-        let (remaining, dtype) = data_type("BOOL".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Bool, dtype);
-
-        let (remaining, dtype) = data_type("TIMESTAMP".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(DataType::Timestamp, dtype);
+        parse!(DataType, "SERIAL", DataType::Serial);
+        parse!(DataType, "VARCHAR(123)", DataType::VarChar { size: 123 });
+        parse!(DataType, "TEXT", DataType::Text);
+        parse!(DataType, "BOOL", DataType::Bool);
+        parse!(DataType, "TIMESTAMP", DataType::Timestamp);
     }
 }

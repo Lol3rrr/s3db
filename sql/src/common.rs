@@ -839,6 +839,7 @@ mod tests {
             "{:?}",
             core::str::from_utf8(remaining)
         );
+        assert_eq!(TypeModifier::Collate { collation: "C".into() }, collation);
     }
 
     #[test]

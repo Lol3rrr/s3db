@@ -117,12 +117,12 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
 #[cfg(test)]
 mod tests {
 
-    use pretty_assertions::{assert_eq, assert_str_eq};
+    use pretty_assertions::assert_eq;
 
     use crate::{
         common::{BinaryOperator, Identifier},
         select::{NullOrdering, OrderAttribute, Ordering, SelectLimit},
-        ColumnReference, FunctionCall, Literal, OrderBy, Select, TableExpression,
+        ColumnReference, Literal, OrderBy, Select, TableExpression,
     };
 
     use super::*;
@@ -405,6 +405,8 @@ mod tests {
         let query_str = "(org_id = $2 AND configuration_hash = $3) AND (CTID IN (SELECT CTID FROM \"alert_configuration_history\" ORDER BY \"id\" DESC LIMIT 1))";
 
         let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
+
+        assert_eq!(&[] as &[u8], remaining);
 
         assert_eq!(
             Condition::And(vec![

@@ -96,8 +96,6 @@ pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::Verbo
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
-
     use super::*;
 
     use pretty_assertions::assert_eq;
