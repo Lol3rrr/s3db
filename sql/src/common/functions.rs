@@ -64,6 +64,16 @@ pub enum FunctionCall<'s> {
     },
 }
 
+impl<'i, 's> crate::Parser<'i> for FunctionCall<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i[u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            function_call(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn function_call(
     i: &[u8],
 ) -> IResult<&[u8], FunctionCall<'_>, nom::error::VerboseError<&[u8]>> {

@@ -241,7 +241,7 @@ pub fn value_expression(
     let (remaining, parsed) = nom::branch::alt((
         nom::bytes::complete::tag("*").map(|_| ValueExpression::All),
         nom::bytes::complete::tag_no_case("NULL").map(|_| ValueExpression::Null),
-        functions::function_call.map(ValueExpression::FunctionCall),
+        functions::FunctionCall::parse().map(ValueExpression::FunctionCall),
         aggregate.map(ValueExpression::AggregateExpression),
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("NOT"),
