@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use super::{common::literal, Literal};
+use crate::{Parser as _, Literal};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Configuration {
@@ -20,7 +20,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Configuration, nom::error::VerboseError
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("to"),
             nom::character::complete::multispace1,
-            literal,
+            Literal::parse(),
         ))
         .map(|(_, _, _, _, target)| Configuration::ClientEncoding {
             target: target.to_static(),
@@ -30,7 +30,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Configuration, nom::error::VerboseError
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("TO"),
             nom::character::complete::multispace1,
-            literal,
+            Literal::parse(),
         ))
         .map(|(_, _, _, _, val)| Configuration::ClientMinMessages {
             value: val.to_static(),

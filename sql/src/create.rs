@@ -2,7 +2,7 @@ use nom::{IResult, Parser};
 
 use crate::{common::identifier, dialects, CompatibleParser, Literal, Parser as _Parser};
 
-use super::common::{literal, type_modifier, DataType, Identifier, TypeModifier};
+use super::common::{type_modifier, DataType, Identifier, TypeModifier};
 
 #[derive(Debug, PartialEq)]
 pub struct CreateTable<'s> {
@@ -131,7 +131,7 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
                             nom::branch::alt((nom::sequence::tuple((
                                 nom::bytes::complete::tag("fillfactor"),
                                 nom::bytes::complete::tag("="),
-                                literal,
+                                Literal::parse(),
                             ))
                             .map(|(_, _, val)| {
                                 let value = match val {

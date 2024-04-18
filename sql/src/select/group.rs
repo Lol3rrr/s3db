@@ -1,8 +1,9 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    common::{column_reference, literal},
+    common::{column_reference},
     ColumnReference, Literal,
+    Parser as _
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -36,7 +37,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Vec<GroupAttribute<'_>>, nom::error::Ve
         )),
         nom::branch::alt((
             column_reference.map(GroupAttribute::ColumnRef),
-            nom::combinator::map_res(literal, |lit| match lit {
+            nom::combinator::map_res(Literal::parse(), |lit| match lit {
                 Literal::SmallInteger(v) => Ok(GroupAttribute::ColumnIndex(v as usize)),
                 Literal::Integer(v) => Ok(GroupAttribute::ColumnIndex(v as usize)),
                 Literal::BigInteger(v) => Ok(GroupAttribute::ColumnIndex(v as usize)),

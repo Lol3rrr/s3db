@@ -1,8 +1,8 @@
 use nom::{IResult, Parser};
 
-use crate::{select, CompatibleParser, Select};
+use crate::{select, CompatibleParser, Select, Parser as _};
 
-use super::{literal, value_expression, Identifier, Literal, ValueExpression};
+use super::{value_expression, Identifier, Literal, ValueExpression};
 
 macro_rules! function_call {
     ($name:literal, $parser:expr, $mapping:expr) => {
@@ -76,10 +76,10 @@ pub fn function_call(
                 value_expression,
                 nom::bytes::complete::tag(","),
                 nom::character::complete::multispace0,
-                literal,
+                Literal::parse(),
                 nom::bytes::complete::tag(","),
                 nom::character::complete::multispace0,
-                literal,
+                Literal::parse(),
                 nom::bytes::complete::tag(")"),
             )),
             |(_, _, _, base, _, _, length, _, _, padding, _)| FunctionCall::LPad {
@@ -122,7 +122,7 @@ pub fn function_call(
                 nom::bytes::complete::tag_no_case("setval"),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag("("),
-                literal,
+                Literal::parse(),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
                 nom::character::complete::multispace0,

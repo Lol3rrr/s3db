@@ -41,6 +41,16 @@ impl<'s> Literal<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Literal<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            literal(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn literal(i: &[u8]) -> IResult<&[u8], Literal<'_>, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::sequence::tuple((
@@ -83,32 +93,15 @@ pub fn literal(i: &[u8]) -> IResult<&[u8], Literal<'_>, nom::error::VerboseError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::macros::parser_parse;
 
     #[test]
     fn null_literal() {
-        let (remaining, value) = literal("NULL".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(Literal::Null, value);
+        parser_parse!(Literal, "NULL", Literal::Null);
     }
 
     #[test]
     fn negative_number() {
-        let (remaining, value) = literal("-1".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(Literal::SmallInteger(-1), value);
+        parser_parse!(Literal, "-1", Literal::SmallInteger(-1));
     }
 }

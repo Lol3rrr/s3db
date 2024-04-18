@@ -6,7 +6,7 @@ mod functions;
 pub use functions::FunctionCall;
 
 mod literal;
-pub use literal::{literal, Literal};
+pub use literal::Literal;
 
 mod datatype;
 pub use datatype::{DataType};
@@ -317,7 +317,7 @@ pub fn value_expression(
                 target_ty: ty,
             },
         ),
-        literal.map(ValueExpression::Literal),
+        Literal::parse().map(ValueExpression::Literal),
         nom::combinator::map(column_reference, ValueExpression::ColumnReference),
         nom::sequence::tuple((
             nom::bytes::complete::tag("$"),
@@ -630,7 +630,7 @@ pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier, nom::error::Verbo
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("DEFAULT"),
             nom::character::complete::multispace1,
-            nom::combinator::opt(literal),
+            nom::combinator::opt(Literal::parse()),
         ))
         .map(|(_, _, value)| TypeModifier::DefaultValue {
             value: value.map(|v| v.to_static()),

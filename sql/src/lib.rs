@@ -71,8 +71,8 @@ pub trait CompatibleParser<D> {
     fn parameter_count(&self) -> usize;
 }
 
-pub trait Parser: Sized {
-    fn parse<'i>() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>>;
+pub trait Parser<'i>: Sized {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>>;
 }
 
 #[derive(Debug, PartialEq)]

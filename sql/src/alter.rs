@@ -3,7 +3,7 @@ use nom::{IResult, Parser};
 use crate::{common::identifier, Parser as _Parser};
 
 use super::{
-    common::{literal, type_modifier},
+    common::{ type_modifier},
     DataType, Identifier, Literal, TypeModifier,
 };
 
@@ -214,7 +214,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("DEFAULT"),
             nom::character::complete::multispace1,
-            literal,
+            Literal::parse(),
         ))
         .map(
             |(_, _, _, _, column, _, _, _, _, _, value)| AlterTable::SetColumnDefault {
