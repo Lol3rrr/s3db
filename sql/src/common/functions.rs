@@ -335,18 +335,7 @@ mod tests {
 
     #[test]
     fn set_val_with_subquery() {
-        let (remaining, call) =
-            function_call("setval('org_id_seq', (SELECT max(id) FROM org))".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            FunctionCall::SetValue {
+        parser_parse!(FunctionCall, "setval('org_id_seq', (SELECT max(id) FROM org))", FunctionCall::SetValue {
                 sequence_name: Identifier("org_id_seq".into()),
                 value: Box::new(ValueExpression::SubQuery(Select {
                     values: vec![ValueExpression::AggregateExpression(
@@ -367,81 +356,46 @@ mod tests {
                     combine: None
                 })),
                 is_called: true
-            },
-            call
-        );
+            });
     }
 
     #[test]
     fn lower() {
-        let (remaining, call) = function_call("lower($1)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            FunctionCall::Lower {
-                value: Box::new(ValueExpression::Placeholder(1))
-            },
-            call
-        );
+        parser_parse!(FunctionCall, "lower($1)", FunctionCall::Lower {
+            value: Box::new(ValueExpression::Placeholder(1)),
+        });
     }
 
     #[test]
     fn substr_without_count() {
-        let (remaining, call) = function_call("substr('content', 4)".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            FunctionCall::Substr {
+        parser_parse!(FunctionCall, "substr('content', 4)", FunctionCall::Substr {
                 value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
                 start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
                 count: None
-            },
-            call
-        );
+            });
     }
 
     #[test]
     fn substr_with_count() {
-        let (remaining, call) = function_call("substr('content', 4, 2)".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            FunctionCall::Substr {
+        parser_parse!(FunctionCall, "substr('content', 4, 2)", FunctionCall::Substr {
                 value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
                 start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
                 count: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(2))))
-            },
-            call
-        );
+            });
     }
 
     #[test]
     fn current_schemas() {
-        let (remaining, tmp) = function_call("current_schemas(true)".as_bytes()).unwrap();
-
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(FunctionCall::CurrentSchemas { implicit: true }, tmp);
+        parser_parse!(FunctionCall, "current_schemas(true)", FunctionCall::CurrentSchemas{implicit: true});
     }
 
     #[test]
     fn array_position() {
-        let (remaining, tmp) =
-            function_call("array_position('this is wrong but anyway', 'first')".as_bytes())
-                .unwrap();
-
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            FunctionCall::ArrayPosition {
+        parser_parse!(FunctionCall, "array_position('this is wrong but anyway', 'first')", FunctionCall::ArrayPosition {
                 array: Box::new(ValueExpression::Literal(Literal::Str(
                     "this is wrong but anyway".into()
                 ))),
                 target: Box::new(ValueExpression::Literal(Literal::Str("first".into())))
-            },
-            tmp
-        );
+            });
     }
 }
