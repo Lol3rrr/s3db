@@ -2,17 +2,28 @@ name: Benchmarking
 
 on:
   push:
+    branches: main
 
 jobs:
-  benchmark:
+  benchmark_base_branch:
+    name: Continuous Benchmarking with Bencher
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Install latest nightly
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        override: true
-        components: rustfmt, clippy
-    - name: Run Benchmark
-      run: cargo bench
+      - uses: actions/checkout@v4
+      - uses: bencherdev/bencher@main
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Track base branch benchmarks with Bencher
+        run: |
+          bencher run \
+          --host https://api.bencher.lol3r.com \
+          --project s3db \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch main \
+          --testbed gh-ci-ubuntu-lastest \
+          --adapter rust_criterion \
+          --err \
+          cargo bench
