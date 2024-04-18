@@ -29,7 +29,7 @@ impl crate::Parser for DataType {
 }
 
 #[deprecated]
-pub fn data_type<'i>(i: &'i [u8]) -> IResult<&'i [u8], DataType, nom::error::VerboseError<&'i [u8]>> {
+pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::bytes::complete::tag_no_case("SERIAL").map(|_| DataType::Serial),
         nom::sequence::tuple((

@@ -35,7 +35,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Vec<GroupAttribute<'_>>, nom::error::Ve
             nom::character::complete::multispace0,
         )),
         nom::branch::alt((
-            column_reference.map(|c| GroupAttribute::ColumnRef(c)),
+            column_reference.map(GroupAttribute::ColumnRef),
             nom::combinator::map_res(literal, |lit| match lit {
                 Literal::SmallInteger(v) => Ok(GroupAttribute::ColumnIndex(v as usize)),
                 Literal::Integer(v) => Ok(GroupAttribute::ColumnIndex(v as usize)),

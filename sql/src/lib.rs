@@ -97,34 +97,38 @@ pub enum Query<'s> {
     Vacuum(vacuum::Vacuum),
 }
 
+pub struct ParseQueryError {}
+
 impl<'s> Query<'s> {
-    pub fn parse<'r>(raw: &'r [u8]) -> Result<Self, ()>
+    pub fn parse<'r>(raw: &'r [u8]) -> Result<Self, ParseQueryError>
     where
         'r: 's,
     {
         let (remaining, query) = nom::combinator::complete(query)(raw).map_err(|e| {
             dbg!(&e);
+            ParseQueryError{}
         })?;
 
         if !remaining.is_empty() {
             let _ = dbg!(core::str::from_utf8(remaining));
-            return Err(());
+            return Err(ParseQueryError {});
         }
 
         Ok(query)
     }
 
-    pub fn parse_multiple<'r>(raw: &'r [u8]) -> Result<Vec<Self>, ()>
+    pub fn parse_multiple<'r>(raw: &'r [u8]) -> Result<Vec<Self>, ParseQueryError>
     where
         'r: 's,
     {
         let (remaining, queries) = nom::multi::many1(query)(raw).map_err(|e| {
             dbg!(e);
+            ParseQueryError {}
         })?;
 
         if !remaining.is_empty() {
             let _ = dbg!(core::str::from_utf8(remaining));
-            return Err(());
+            return Err(ParseQueryError {});
         }
 
         Ok(queries)
