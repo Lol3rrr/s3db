@@ -17,7 +17,7 @@ tracing-subscriber = "0.3.18"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-divan = "0.1.14"
+criterion = "0.5.1"
 
 [[bench]]
 name = "parse"

@@ -1,29 +1,9 @@
-use divan::{AllocProfiler, Bencher};
+use criterion::{criterion_main, criterion_group, black_box, Criterion};
 
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
-
-fn main() {
-    divan::main();
+pub fn simple_select(c: &mut Criterion) {
+    let input = "SELECT name FROM users";
+    c.bench_function("simple_select", |b| b.iter(|| black_box(sql::Query::parse(input.as_bytes()))));
 }
 
-#[divan::bench()]
-fn simple_select(bencher: Bencher) {
-    let query = "SELECT name FROM users";
-    bencher.bench(|| divan::black_box(sql::Query::parse(query.as_bytes())));
-}
-
-#[divan::bench()]
-fn select_join(bencher: Bencher) {
-    let query = "SELECT users.name, orders.product FROM users JOIN orders ON users.id = orders.uid";
-    bencher.bench(|| divan::black_box(sql::Query::parse(query.as_bytes())));
-}
-
-#[divan::bench()]
-fn simple_insert(bencher: Bencher) {
-    bencher.bench(|| {
-        divan::black_box(sql::Query::parse(
-            "INSERT INTO users(name) VALUES('testing')".as_bytes(),
-        ))
-    });
-}
+criterion_group!(benches, simple_select);
+criterion_main!(benches);

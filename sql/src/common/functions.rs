@@ -307,24 +307,13 @@ impl<'s> FunctionCall<'s> {
 mod tests {
     use select::TableExpression;
 
-    use crate::{AggregateExpression, ColumnReference};
+    use crate::{AggregateExpression, ColumnReference, macros::parser_parse};
 
     use super::*;
 
     #[test]
     fn coalesce() {
-        let (remaining, call) =
-            function_call("COALESCE(dashboard.updated_by, -1)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            FunctionCall::Coalesce {
+        parser_parse!(FunctionCall, "COALESCE(dashboard.updated_by, -1)", FunctionCall::Coalesce {
                 values: vec![
                     ValueExpression::ColumnReference(ColumnReference {
                         relation: Some(Identifier("dashboard".into())),
@@ -332,30 +321,16 @@ mod tests {
                     }),
                     ValueExpression::Literal(Literal::SmallInteger(-1))
                 ]
-            },
-            call
-        );
+            });
     }
 
     #[test]
     fn set_val_without_is_called() {
-        let (remaining, call) = function_call("setval('id', 123)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            FunctionCall::SetValue {
+        parser_parse!(FunctionCall, "setval('id', 123)", FunctionCall::SetValue {
                 sequence_name: Identifier("id".into()),
                 value: Box::new(ValueExpression::Literal(Literal::SmallInteger(123))),
                 is_called: true
-            },
-            call
-        );
+            });
     }
 
     #[test]

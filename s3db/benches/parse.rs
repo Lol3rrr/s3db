@@ -1,16 +1,8 @@
-use divan::{AllocProfiler, Bencher};
 use s3db::{ra::RaExpression, storage::Schemas};
 use sql::DataType;
+use criterion::{criterion_group, criterion_main, black_box, Criterion};
 
-#[global_allocator]
-static ALLOC: AllocProfiler = AllocProfiler::system();
-
-fn main() {
-    divan::main();
-}
-
-#[divan::bench()]
-fn simple_select(bencher: Bencher) {
+fn simple_select(c: &mut Criterion) {
     let query = "SELECT name FROM users";
 
     let schemas: Schemas = [("users".to_string(), vec![("name".into(), DataType::Text)])]
@@ -22,14 +14,10 @@ fn simple_select(bencher: Bencher) {
         other => unreachable!("{:?}", other),
     };
 
-    bencher.bench(|| {
-        let res = RaExpression::parse_select(&query, &schemas).unwrap();
-        divan::black_box(res)
-    });
+    c.bench_function("simple_select", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
 }
 
-#[divan::bench()]
-fn select_join(bencher: Bencher) {
+fn select_join(c: &mut Criterion) {
     let query = "SELECT users.name, orders.product FROM users JOIN orders ON users.id = orders.uid";
 
     let schemas: Schemas = [
@@ -56,8 +44,8 @@ fn select_join(bencher: Bencher) {
         other => unreachable!("{:?}", other),
     };
 
-    bencher.bench(|| {
-        let res = RaExpression::parse_select(&query, &schemas).unwrap();
-        divan::black_box(res)
-    });
+    c.bench_function("select_join", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
 }
+
+criterion_group!(benches, simple_select);
+criterion_main!(benches);

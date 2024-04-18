@@ -3,7 +3,7 @@ use nom::{IResult, Parser};
 use crate::{common::identifier, Parser as _Parser};
 
 use super::{
-    common::{ type_modifier},
+    common::type_modifier,
     DataType, Identifier, Literal, TypeModifier,
 };
 
