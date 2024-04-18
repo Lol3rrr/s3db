@@ -1,22 +1,19 @@
 use nom::{IResult, Parser};
 
-use crate::{common::value_expressions, condition::condition, dialects, CompatibleParser};
+use crate::{common::value_expressions, condition::condition, dialects, CompatibleParser, Parser as _};
 
 use super::{common::ValueExpression, condition::Condition};
 
 mod combine;
-use combine::combine;
 pub use combine::Combination;
 
 mod tableexpr;
-use tableexpr::table_expression;
 pub use tableexpr::{JoinKind, TableExpression};
 
 mod group;
 pub use group::GroupAttribute;
 
 mod order;
-use order::order_by;
 pub use order::{NullOrdering, OrderAttribute, OrderBy, Ordering};
 
 /// A single Select Query with all the containing parts
@@ -149,7 +146,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                         "FROM",
                         nom::sequence::tuple((
                             nom::character::complete::multispace1,
-                            table_expression,
+                            TableExpression::parse(),
                         )),
                     )),
                 )),
@@ -172,18 +169,18 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
-                    combine,
+                    Combination::parse(),
                     nom::character::complete::multispace1,
                     select,
                 ))
                 .map(|(_, c, _, s)| (c, Box::new(s))),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((nom::character::complete::multispace1, group::parse))
+                nom::sequence::tuple((nom::character::complete::multispace1, <Vec<GroupAttribute<'_>>>::parse()))
                     .map(|(_, attributes)| attributes),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((nom::character::complete::multispace1, order_by))
+                nom::sequence::tuple((nom::character::complete::multispace1, <Vec<Ordering<'_>>>::parse()))
                     .map(|(_, order)| order),
             ),
             nom::combinator::opt(

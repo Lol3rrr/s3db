@@ -7,6 +7,16 @@ pub enum Combination {
     Except,
 }
 
+impl<'i> crate::Parser<'i> for Combination {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            combine(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn combine(i: &[u8]) -> IResult<&[u8], Combination, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::sequence::tuple((
@@ -37,22 +47,16 @@ pub fn combine(i: &[u8]) -> IResult<&[u8], Combination, nom::error::VerboseError
 mod tests {
     use super::*;
 
+    use crate::macros::parser_parse;
+
     #[test]
     fn basic_combine() {
-        let (remaining, test) = combine("UNION".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(Combination::Union, test);
+        parser_parse!(Combination, "UNION", Combination::Union);
 
-        let (remaining, test) = combine("UNION ALL".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(Combination::Union, test);
+        parser_parse!(Combination, "UNION ALL", Combination::Union);
 
-        let (remaining, test) = combine("INTERSECT".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(Combination::Intersection, test);
+        parser_parse!(Combination, "INTERSECT", Combination::Intersection);
 
-        let (remaining, test) = combine("EXCEPT".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(Combination::Except, test);
+        parser_parse!(Combination, "EXCEPT", Combination::Except);
     }
 }

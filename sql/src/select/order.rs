@@ -1,7 +1,7 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    common::{column_reference},
+    common::column_reference,
     ColumnReference, Literal,
     Parser as _
 };
@@ -31,6 +31,16 @@ pub enum NullOrdering {
     Last,
 }
 
+impl<'i, 's> crate::Parser<'i> for Vec<Ordering<'s>> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            order_by(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::VerboseError<&[u8]>> {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("ORDER"),
@@ -100,82 +110,65 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
+    use crate::macros::parser_parse;
+
+    #[test]
+    fn order_by_column() {
+        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something", vec![Ordering {
+                column: OrderAttribute::ColumnRef(ColumnReference {
+                    relation: None,
+                    column: "something".into()
+                }),
+                order: OrderBy::Ascending,
+                nulls: NullOrdering::Last,
+            }]);
+    }
+
+    #[test]
+    fn order_by_column_asc() {
+        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something ASC", vec![Ordering {
+                column: OrderAttribute::ColumnRef(ColumnReference {
+                    relation: None,
+                    column: "something".into()
+                }),
+                order: OrderBy::Ascending,
+                nulls: NullOrdering::Last,
+            }]);
+    }
 
     #[test]
     fn orderings() {
-        let (rem, test) = order_by("ORDER BY something".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], rem);
-        assert_eq!(
-            vec![Ordering {
-                column: OrderAttribute::ColumnRef(ColumnReference {
-                    relation: None,
-                    column: "something".into()
-                }),
-                order: OrderBy::Ascending,
-                nulls: NullOrdering::Last,
-            }],
-            test
-        );
-
-        let (rem, test) = order_by("ORDER BY something ASC".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], rem);
-        assert_eq!(
-            vec![Ordering {
-                column: OrderAttribute::ColumnRef(ColumnReference {
-                    relation: None,
-                    column: "something".into()
-                }),
-                order: OrderBy::Ascending,
-                nulls: NullOrdering::Last,
-            }],
-            test
-        );
-
-        let (rem, test) = order_by("ORDER BY something DESC".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], rem);
-        assert_eq!(
-            vec![Ordering {
+        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something DESC", vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Descending,
                 nulls: NullOrdering::First,
-            }],
-            test
-        );
+            }]);
 
-        let (rem, test) = order_by("ORDER BY something DESC NULLS LAST".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], rem);
-        assert_eq!(
-            vec![Ordering {
+        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something DESC NULLS LAST", vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Descending,
                 nulls: NullOrdering::Last,
-            }],
-            test
-        );
+            }]);
 
-        let (rem, test) = order_by("ORDER BY something ASC NULLS FIRST".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], rem);
-        assert_eq!(
-            vec![Ordering {
+        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something ASC NULLS FIRST", vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::First,
-            }],
-            test
-        );
+            }]);
     }
 
     #[test]
     fn error() {
+        #[allow(deprecated)]
         let test = order_by("ORDER BY ".as_bytes()).unwrap_err();
         assert!(
             matches!(test, nom::Err::Failure(_)),
@@ -186,15 +179,10 @@ mod tests {
 
     #[test]
     fn order_by_index() {
-        let (rem, tmp) = order_by("order by 1".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], rem);
-        assert_eq!(
-            vec![Ordering {
+        parser_parse!(Vec<Ordering<'_>>, "order by 1", vec![Ordering {
                 column: OrderAttribute::ColumnIndex(1),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::Last
-            }],
-            tmp
-        );
+            }]);
     }
 }

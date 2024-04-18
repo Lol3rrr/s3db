@@ -33,6 +33,16 @@ pub enum JoinKind {
     Cross,
 }
 
+impl<'i, 's> crate::Parser<'i> for TableExpression<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            table_expression(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn table_expression(
     i: &[u8],
 ) -> IResult<&[u8], TableExpression, nom::error::VerboseError<&[u8]>> {
@@ -268,13 +278,11 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
+    use crate::macros::parser_parse;
+
     #[test]
     fn join_on_suquery() {
-        let query_str = "first INNER JOIN (SELECT name FROM second)";
-        let (remaining, table) = table_expression(query_str.as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            TableExpression::Join {
+        parser_parse!(TableExpression<'_>, "first INNER JOIN (SELECT name FROM second)", TableExpression::Join {
                 left: Box::new(TableExpression::Relation("first".into())),
                 right: Box::new(TableExpression::SubQuery(Box::new(Select {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
@@ -293,33 +301,21 @@ mod tests {
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![]),
                 lateral: false,
-            },
-            table
-        );
+            }); 
     }
 
     #[test]
     fn rename_with_columns() {
-        let query_str = "something as o(n)";
-        let (remaining, table) = table_expression(query_str.as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            TableExpression::Renamed {
+        parser_parse!(TableExpression<'_>, "something as o(n)", TableExpression::Renamed {
                 inner: Box::new(TableExpression::Relation(Identifier("something".into()))),
                 name: "o".into(),
                 column_rename: Some(vec![Identifier("n".into())])
-            },
-            table
-        );
+            });
     }
 
     #[test]
     fn join_on_suquery_lateral() {
-        let query_str = "first INNER JOIN LATERAL (SELECT name FROM second)";
-        let (remaining, table) = table_expression(query_str.as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            TableExpression::Join {
+        parser_parse!(TableExpression<'_>, "first INNER JOIN LATERAL (SELECT name FROM second)", TableExpression::Join {
                 left: Box::new(TableExpression::Relation("first".into())),
                 right: Box::new(TableExpression::SubQuery(Box::new(Select {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
@@ -338,8 +334,6 @@ mod tests {
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![]),
                 lateral: true,
-            },
-            table
-        );
+            });
     }
 }

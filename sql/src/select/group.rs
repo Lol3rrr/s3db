@@ -1,7 +1,7 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    common::{column_reference},
+    common::column_reference,
     ColumnReference, Literal,
     Parser as _
 };
@@ -21,6 +21,16 @@ impl<'s> GroupAttribute<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Vec<GroupAttribute<'s>> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            parse(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn parse(i: &[u8]) -> IResult<&[u8], Vec<GroupAttribute<'_>>, nom::error::VerboseError<&[u8]>> {
     let (rem, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("GROUP"),
@@ -53,23 +63,18 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Vec<GroupAttribute<'_>>, nom::error::Ve
 mod tests {
     use super::*;
 
+    use crate::macros::parser_parse;
+
     #[test]
     fn single_attribute() {
-        let (remaining, tmp) = parse("group by first".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            vec![GroupAttribute::ColumnRef(ColumnReference {
-                relation: None,
-                column: "first".into()
-            })],
-            tmp
-        );
+        parser_parse!(Vec<GroupAttribute<'_>>, "group by first", vec![GroupAttribute::ColumnRef(ColumnReference {
+            relation: None,
+            column: "first".into()
+        })]);
     }
 
     #[test]
     fn column_index() {
-        let (remaining, tmp) = parse("group by 1".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(vec![GroupAttribute::ColumnIndex(1)], tmp);
+        parser_parse!(Vec<GroupAttribute<'_>>, "group by 1", vec![GroupAttribute::ColumnIndex(1)]);
     }
 }
