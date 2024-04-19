@@ -265,7 +265,7 @@ pub fn select<'i, 'a>(
 mod tests {
     use crate::{
         self as sql,
-        macros::{parser_parse, parser_parse_err},
+        macros::{arena_parser_parse, arena_parser_parse_err},
         AggregateExpression, BinaryOperator, ColumnReference, Identifier, Literal,
     };
 
@@ -275,12 +275,12 @@ mod tests {
 
     #[test]
     fn count_select() {
-        parser_parse!(Select, "select count(*) from pgbench_branches");
+        arena_parser_parse!(Select, "select count(*) from pgbench_branches");
     }
 
     #[test]
     fn select_where_and() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT 1 FROM \"pg_indexes\" WHERE \"tablename\"=$1 AND \"indexname\"=$2"
         );
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn select_with_limit() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT name FROM users LIMIT 1",
             Select {
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn select_with_alias_without_as() {
-        parser_parse!(
+       arena_parser_parse!(
             Select,
             "SELECT u.name FROM user u",
             Select {
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn select_where_not_null() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT COUNT(*) FROM \"api_key\"WHERE service_account_id IS NOT NULL",
             Select {
@@ -356,7 +356,7 @@ mod tests {
                         second: Box::new(ValueExpression::Null),
                         operator: sql::BinaryOperator::IsNot
                     }
-                ))])),
+                ).into())].into())),
                 order_by: None,
                 group_by: None,
                 having: None,
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn select_multiple_inner_joins() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT * FROM customer INNER JOIN orders ON customer.ID=orders.customer INNER JOIN products ON orders.product=products.ID",
             Select {
@@ -395,7 +395,7 @@ mod tests {
                                 )),
                                 operator: BinaryOperator::Equal
                             }
-                        ))]),
+                        ).into())].into()),
                         lateral: false,
                     }),
                     right: Box::new(TableExpression::Relation(Identifier("products".into()))),
@@ -412,7 +412,7 @@ mod tests {
                             })),
                             operator: BinaryOperator::Equal,
                         }
-                    ))]),
+                    ).into())].into()),
                     lateral: false,
                 }),
                 where_condition: None,
@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn select_multiple_joins() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT * FROM customer JOIN orders ON customer.ID=orders.customer JOIN products ON orders.product=products.ID",
             Select {
@@ -454,7 +454,7 @@ mod tests {
                                 )),
                                 operator: BinaryOperator::Equal
                             }
-                        ))]),
+                        ).into())].into()),
                         lateral: false,
                     }),
                     right: Box::new(TableExpression::Relation(Identifier("products".into()))),
@@ -471,7 +471,7 @@ mod tests {
                             })),
                             operator: BinaryOperator::Equal,
                         }
-                    ))]),
+                    ).into())].into()),
                     lateral: false,
                 }),
                 where_condition: None,
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn select_order_by_column_reference() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT name FROM users ORDER BY users.age",
             Select {
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn union_all() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2",
             Select {
@@ -555,7 +555,7 @@ mod tests {
                                 )),
                                 operator: BinaryOperator::Less
                             }
-                        ))])),
+                        ).into())].into())),
                         order_by: None,
                         group_by: None,
                         having: None,
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn having_clause() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT count(*) FROM orders GROUP BY uid HAVING uid > 0",
             Select {
@@ -593,7 +593,7 @@ mod tests {
                         second: Box::new(ValueExpression::Literal(Literal::SmallInteger(0))),
                         operator: BinaryOperator::Greater
                     }
-                ))])),
+                ).into())].into())),
                 limit: None,
                 for_update: None,
                 combine: None,
@@ -603,6 +603,6 @@ mod tests {
 
     #[test]
     fn errors() {
-        parser_parse_err!(Select, "SELECT something FROM");
+        arena_parser_parse_err!(Select, "SELECT something FROM");
     }
 }

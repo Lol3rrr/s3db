@@ -152,7 +152,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        common::FunctionCall, macros::parser_parse, BinaryOperator, ColumnReference, DataType,
+        common::FunctionCall, macros::parser_parse, macros::arena_parser_parse, BinaryOperator, ColumnReference, DataType,
         Literal,
     };
 
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn basic_update() {
-        parser_parse!(
+        arena_parser_parse!(
             Update,
             "UPDATE user SET name = 'changed' WHERE name = 'other'",
             Update {
@@ -178,7 +178,7 @@ mod tests {
                         second: Box::new(ValueExpression::Literal(Literal::Str("other".into()))),
                         operator: BinaryOperator::Equal
                     }
-                ))])),
+                ).into())].into())),
                 from: None,
             }
         );
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn more_complicated() {
-        parser_parse!(
+        arena_parser_parse!(
             Update,
             "UPDATE \"temp_user\" SET created = $1, updated = $2 WHERE created = '0' AND status in ('SignUpStarted', 'InvitePending')",
             Update {
@@ -209,7 +209,7 @@ mod tests {
                         })),
                         second: Box::new(ValueExpression::Literal(Literal::Str("0".into()))),
                         operator: BinaryOperator::Equal
-                    })),
+                    }).into()),
                     Condition::Value(Box::new(ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
@@ -220,8 +220,8 @@ mod tests {
                             ValueExpression::Literal(Literal::Str("InvitePending".into()))
                         ])),
                         operator: BinaryOperator::In
-                    })),
-                ])),
+                    }).into()),
+                ].into())),
                 from: None,
             }
         );
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn update_complex() {
-        parser_parse!(
+        arena_parser_parse!(
             Update,
             "UPDATE dashboard SET uid=lpad('' || id::text,9,'0') WHERE uid IS NULL",
             Update {
@@ -261,7 +261,7 @@ mod tests {
                         second: Box::new(ValueExpression::Null),
                         operator: BinaryOperator::Is
                     }
-                ))])),
+                ).into())].into())),
                 from: None,
             }
         );
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn update_with_from() {
-        parser_parse!(
+        arena_parser_parse!(
             Update,
             "UPDATE dashboard\n\tSET folder_uid = folder.uid\n\tFROM dashboard folder\n\tWHERE dashboard.folder_id = folder.id\n\t  AND dashboard.is_folder = $1",
             Update {
@@ -292,7 +292,7 @@ mod tests {
                             column: Identifier("id".into())
                         })),
                         operator: BinaryOperator::Equal
-                    })),
+                    }).into()),
                     Condition::Value(Box::new(ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: Some(Identifier("dashboard".into())),
@@ -300,8 +300,8 @@ mod tests {
                         })),
                         second: Box::new(ValueExpression::Placeholder(1)),
                         operator: BinaryOperator::Equal
-                    }))
-                ])),
+                    }).into())
+                ].into())),
                 from: Some(UpdateFrom::Renamed {
                     inner: Identifier("dashboard".into()),
                     name: Identifier("folder".into())

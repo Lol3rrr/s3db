@@ -138,7 +138,7 @@ mod tests {
                             second: Box::new(ValueExpression::Placeholder(1)),
                             operator: BinaryOperator::Equal
                         }
-                    ))])),
+                    ).into())].into())),
                     having: None,
                     order_by: None,
                     group_by: None,

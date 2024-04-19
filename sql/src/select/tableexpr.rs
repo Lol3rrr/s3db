@@ -284,12 +284,12 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use crate::macros::parser_parse;
+    use crate::macros::arena_parser_parse;
 
     #[test]
     fn join_on_suquery() {
-        parser_parse!(
-            TableExpression<'_>,
+        arena_parser_parse!(
+            TableExpression,
             "first INNER JOIN (SELECT name FROM second)",
             TableExpression::Join {
                 left: Box::new(TableExpression::Relation("first".into())),
@@ -308,7 +308,7 @@ mod tests {
                     combine: None
                 }))),
                 kind: JoinKind::Inner,
-                condition: Condition::And(vec![]),
+                condition: Condition::And(vec![].into()),
                 lateral: false,
             }
         );
@@ -316,8 +316,8 @@ mod tests {
 
     #[test]
     fn rename_with_columns() {
-        parser_parse!(
-            TableExpression<'_>,
+        arena_parser_parse!(
+            TableExpression,
             "something as o(n)",
             TableExpression::Renamed {
                 inner: Box::new(TableExpression::Relation(Identifier("something".into()))),
@@ -329,8 +329,8 @@ mod tests {
 
     #[test]
     fn join_on_suquery_lateral() {
-        parser_parse!(
-            TableExpression<'_>,
+        arena_parser_parse!(
+            TableExpression,
             "first INNER JOIN LATERAL (SELECT name FROM second)",
             TableExpression::Join {
                 left: Box::new(TableExpression::Relation("first".into())),
@@ -349,7 +349,7 @@ mod tests {
                     combine: None
                 }))),
                 kind: JoinKind::Inner,
-                condition: Condition::And(vec![]),
+                condition: Condition::And(vec![].into()),
                 lateral: true,
             }
         );

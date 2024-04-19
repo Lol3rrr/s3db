@@ -153,7 +153,7 @@ mod tests {
 
     use crate::{
         common::{BinaryOperator, Identifier},
-        macros::parser_parse,
+        macros::arena_parser_parse,
         select::{NullOrdering, OrderAttribute, Ordering, SelectLimit},
         ColumnReference, Literal, OrderBy, Select, TableExpression,
     };
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn new_parser_basic_and() {
-        parser_parse!(
+        arena_parser_parse!(
             Condition,
             "name = 'first' AND id = 132",
             Condition::And(vec![
@@ -173,7 +173,7 @@ mod tests {
                     })),
                     second: Box::new(ValueExpression::Literal(Literal::Str("first".into()))),
                     operator: BinaryOperator::Equal
-                })),
+                }).into()),
                 Condition::Value(Box::new(ValueExpression::Operator {
                     first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
@@ -181,14 +181,14 @@ mod tests {
                     })),
                     second: Box::new(ValueExpression::Literal(Literal::SmallInteger(132))),
                     operator: BinaryOperator::Equal
-                }))
-            ])
+                }).into())
+            ].into())
         );
     }
 
     #[test]
     fn condition_complex() {
-        parser_parse!(
+        arena_parser_parse!(
             Condition,
             "(org_id = $2 AND configuration_hash = $3) AND (CTID IN (SELECT CTID FROM \"alert_configuration_history\" ORDER BY \"id\" DESC LIMIT 1))",
             Condition::And(vec![
@@ -200,7 +200,7 @@ mod tests {
                         })),
                         second: Box::new(ValueExpression::Placeholder(2)),
                         operator: BinaryOperator::Equal
-                    })),
+                    }).into()),
                     Condition::Value(Box::new(ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
@@ -208,8 +208,8 @@ mod tests {
                         })),
                         second: Box::new(ValueExpression::Placeholder(3)),
                         operator: BinaryOperator::Equal
-                    }))
-                ]),
+                    }).into())
+                ].into()),
                 Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -244,35 +244,35 @@ mod tests {
                         })),
                         operator: BinaryOperator::In
                     }
-                ))])
-            ])
+                ).into())].into())
+            ].into())
         );
     }
 
     #[test]
     fn mixed_ands_ors() {
-        parser_parse!(
+        arena_parser_parse!(
             Condition,
             "true AND false OR false OR true AND true",
             Condition::Or(vec![
                 Condition::And(vec![
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true)))),
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(false))))
-                ]),
+                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))).into()),
+                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(false))).into())
+                ].into()),
                 Condition::And(vec![Condition::Value(Box::new(ValueExpression::Literal(
                     Literal::Bool(false)
-                ))),]),
+                )).into()),].into()),
                 Condition::And(vec![
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true)))),
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))))
-                ]),
-            ])
+                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))).into()),
+                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))).into())
+                ].into()),
+            ].into())
         );
     }
 
     #[test]
     fn single() {
-        parser_parse!(
+        arena_parser_parse!(
             Condition,
             "customer.ID=orders.customer INNER",
             Condition::And(vec![Condition::Value(Box::new(
@@ -287,14 +287,14 @@ mod tests {
                     })),
                     operator: BinaryOperator::Equal
                 }
-            ))]),
+            ).into())].into()),
             " INNER".as_bytes()
         );
     }
 
     #[test]
     fn not_field() {
-        parser_parse!(
+        arena_parser_parse!(
             Condition,
             "NOT table.field",
             Condition::And(vec![Condition::Value(Box::new(ValueExpression::Not(
@@ -302,7 +302,7 @@ mod tests {
                     relation: Some("table".into()),
                     column: "field".into()
                 }))
-            )))])
+            )).into())].into())
         );
     }
 }

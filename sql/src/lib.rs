@@ -297,7 +297,7 @@ pub(crate) mod macros {
     macro_rules! arena_parser_parse {
         ($target_ty:ty, $input:expr) => {{
             use crate::ArenaParser as _;
-            let arena = bumpalo::Bump::new();
+            let arena = bumpalo::Bump::new();{
             let (remaining, _) = <$target_ty>::parse_arena(&arena)($input.as_bytes()).unwrap();
             assert_eq!(
                 &[] as &[u8],
@@ -305,6 +305,7 @@ pub(crate) mod macros {
                 "{:?}",
                 core::str::from_utf8(remaining).unwrap()
             );
+            }
         }};
         ($target_ty:ty, $input:expr, $expected:expr) => {
             arena_parser_parse!($target_ty, $input, $expected, &[])
@@ -319,10 +320,20 @@ pub(crate) mod macros {
                 "{:?}",
                 core::str::from_utf8(remaining).unwrap()
             );
-            assert_eq!($expected, result);
+            assert_eq!($expected, result.to_static());
         }};
     }
     pub(crate) use arena_parser_parse;
+
+    macro_rules! arena_parser_parse_err {
+        ($target_ty:ty, $input:expr) => {{
+            use crate::ArenaParser as _;
+            let arena = bumpalo::Bump::new();
+            let _tmp = <$target_ty>::parse_arena(&arena)($input.as_bytes()).unwrap_err();
+        }};
+    }
+    pub(crate) use arena_parser_parse_err;
+
 
     macro_rules! parser_parse {
         ($target_ty:ty, $input:expr) => {{
@@ -572,7 +583,7 @@ mod tests {
                             })),
                             operator: BinaryOperator::Equal
                         }
-                    ))]),
+                    ).into())].into()),
                     lateral: false,
                 }),
                 where_condition: None,

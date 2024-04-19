@@ -334,7 +334,7 @@ pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier, nom::error::Verbo
 mod tests {
     use crate::select::{Select, TableExpression};
 
-    use crate::{macros::parser_parse, Condition};
+    use crate::{macros::parser_parse, macros::arena_parser_parse, Condition};
 
     use super::*;
 
@@ -374,22 +374,21 @@ mod tests {
 
     #[test]
     fn test_expression() {
-        let (_, column) = ValueExpression::parse()("testing".as_bytes()).unwrap();
-        matches!(column, ValueExpression::ColumnReference(_));
+        arena_parser_parse!(
+            ValueExpression,
+            "testing",
+            ValueExpression::ColumnReference(ColumnReference {
+                column: "testing".into(),
+                relation: None,
+            })
+        );
     }
 
     #[test]
     fn value_in_list() {
-        let (remaining, expr) =
-            ValueExpression::parse()("name in ('first', 'second')".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "name in ('first', 'second')",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -400,88 +399,56 @@ mod tests {
                     ValueExpression::Literal(Literal::Str("second".into()))
                 ])),
                 operator: BinaryOperator::In
-            },
-            expr
+            }
         );
     }
 
     #[test]
     fn lpad_expression() {
-        let (remaining, expr) = ValueExpression::parse()("lpad('123', 5, '0')".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "lpad('123', 5, '0')",
             ValueExpression::FunctionCall(FunctionCall::LPad {
                 base: Box::new(ValueExpression::Literal(Literal::Str("123".into()))),
                 length: Literal::SmallInteger(5),
                 padding: Literal::Str("0".into())
-            }),
-            expr
+            })
         );
     }
 
     #[test]
     fn type_cast() {
-        let (remaining, expr) = ValueExpression::parse()("id::text".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "id::text",
             ValueExpression::TypeCast {
                 base: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
                 })),
                 target_ty: DataType::Text
-            },
-            expr
+            }
         );
     }
 
     #[test]
     fn concat_operator() {
-        let (remaining, expr) = ValueExpression::parse()("'first' || 'second'".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "'first' || 'second'",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::Literal(Literal::Str("first".into()))),
                 second: Box::new(ValueExpression::Literal(Literal::Str("second".into()))),
                 operator: BinaryOperator::Concat
-            },
-            expr
+            }
         );
     }
 
     #[test]
     fn greater_operator() {
-        let (remaining, expr) = ValueExpression::parse()("test > 0".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "test > 0",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -489,23 +456,15 @@ mod tests {
                 })),
                 second: Box::new(ValueExpression::Literal(Literal::SmallInteger(0))),
                 operator: BinaryOperator::Greater
-            },
-            expr
+            }
         );
     }
 
     #[test]
     fn operation_in_parenthesis() {
-        let (remaining, expr) = ValueExpression::parse()("(epoch * 1000)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "(epoch * 1000)",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -513,8 +472,7 @@ mod tests {
                 })),
                 second: Box::new(ValueExpression::Literal(Literal::SmallInteger(1000))),
                 operator: BinaryOperator::Multiply
-            },
-            expr
+            }
         );
     }
 
@@ -531,36 +489,23 @@ mod tests {
 
     #[test]
     fn max_aggregate() {
-        let (remaining, max) = ValueExpression::parse()("max(testing)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "max(testing)",
             ValueExpression::AggregateExpression(AggregateExpression::Max(Box::new(
                 ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("testing".into())
                 })
-            ))),
-            max
+            )))
         );
     }
 
     #[test]
     fn exists_with_query() {
-        let (remaining, tmp) = ValueExpression::parse()(
-            "(EXISTS (SELECT 1 FROM alert_rule a WHERE d.uid = a.namespace_uid))".as_bytes(),
-        )
-        .unwrap();
-
-        assert_eq!(&[] as &[u8], remaining);
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "(EXISTS (SELECT 1 FROM alert_rule a WHERE d.uid = a.namespace_uid))",
             ValueExpression::FunctionCall(FunctionCall::Exists {
                 query: Box::new(Select {
                     values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
@@ -581,7 +526,7 @@ mod tests {
                             })),
                             operator: BinaryOperator::Equal
                         }
-                    ))])),
+                    ).into())].into())),
                     order_by: None,
                     group_by: None,
                     having: None,
@@ -589,24 +534,15 @@ mod tests {
                     for_update: None,
                     combine: None
                 })
-            }),
-            tmp
+            })
         );
     }
 
     #[test]
     fn is_not_null_operator() {
-        let (remaining, tmp) =
-            ValueExpression::parse()("service_account_id IS NOT NULL".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "service_account_id IS NOT NULL",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -614,23 +550,15 @@ mod tests {
                 })),
                 second: Box::new(ValueExpression::Null),
                 operator: BinaryOperator::IsNot
-            },
-            tmp
+            }
         );
     }
 
     #[test]
     fn less_than_equal() {
-        let (remaining, tmp) = ValueExpression::parse()("column <= $1".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "column <= $1",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -638,23 +566,15 @@ mod tests {
                 })),
                 second: Box::new(ValueExpression::Placeholder(1)),
                 operator: BinaryOperator::LessEqual,
-            },
-            tmp
+            }
         );
     }
 
     #[test]
     fn operator_inner() {
-        let (remaining, tmp) = ValueExpression::parse()("column = $1 INNER".as_bytes()).unwrap();
-
-        assert_eq!(
-            " INNER".as_bytes(),
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "column = $1 INNER",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -663,16 +583,15 @@ mod tests {
                 second: Box::new(ValueExpression::Placeholder(1)),
                 operator: BinaryOperator::Equal,
             },
-            tmp
+            " INNER".as_bytes()
         );
     }
 
     #[test]
     fn something_in_subquery() {
-        let (remaining, tmp) =
-            ValueExpression::parse()("something IN ( SELECT name FROM users )".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "something IN ( SELECT name FROM users )",
             ValueExpression::Operator {
                 first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -693,19 +612,16 @@ mod tests {
                     combine: None
                 })),
                 operator: BinaryOperator::In,
-            },
-            tmp
+            }
         );
     }
 
     #[test]
     fn case_when_then() {
-        let (remaining, tmp) = ValueExpression::parse()(
-            "CASE field WHEN 'first' THEN 123 WHEN 'second' THEN 234 ELSE 0 END".as_bytes(),
-        )
-        .unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
+
+        arena_parser_parse!(
+            ValueExpression,
+            "CASE field WHEN 'first' THEN 123 WHEN 'second' THEN 234 ELSE 0 END",
             ValueExpression::Case {
                 matched_value: Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -722,26 +638,24 @@ mod tests {
                     )
                 ],
                 else_case: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(0)))),
-            },
-            tmp
+            }
         );
     }
 
     #[test]
     fn current_timestamp() {
-        let (remaining, tmp) = ValueExpression::parse()("CURRENT_TIMESTAMP".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
-            ValueExpression::FunctionCall(FunctionCall::CurrentTimestamp),
-            tmp
+        arena_parser_parse!(
+            ValueExpression,
+            "CURRENT_TIMESTAMP",
+            ValueExpression::FunctionCall(FunctionCall::CurrentTimestamp)
         );
     }
 
     #[test]
     fn longer_renamed_expr() {
-        let (remaining, tmp) = ValueExpression::parse()("(3*4) + 5 AS testing".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
+        arena_parser_parse!(
+            ValueExpression,
+            "(3*4) + 5 AS testing",
             ValueExpression::Renamed {
                 inner: Box::new(ValueExpression::Operator {
                     first: Box::new(ValueExpression::Operator {
@@ -753,8 +667,7 @@ mod tests {
                     operator: BinaryOperator::Add
                 }),
                 name: "testing".into()
-            },
-            tmp
+            }
         );
     }
 }

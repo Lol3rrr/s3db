@@ -4,7 +4,7 @@ use sql::{
     AggregateExpression, BinaryOperator, ColumnReference, Condition, ConflictHandling, Delete,
     FunctionCall, GroupAttribute, Identifier, Insert, InsertValues, JoinKind, Literal,
     NullOrdering, OrderAttribute, OrderBy, Ordering, Query, Select, SelectLimit, TableExpression,
-    ValueExpression,
+    ValueExpression, CompatibleParser
 };
 
 #[test]
@@ -60,7 +60,7 @@ fn insert_with_on_conflict() {
                         second: Box::new(ValueExpression::Literal(Literal::Bool(true))),
                         operator: BinaryOperator::Equal
                     }
-                ))])),
+                ).into())].into())),
                 order_by: None,
                 group_by: None,
                 having: None,
@@ -95,7 +95,7 @@ fn insert_with_on_conflict() {
                 ]
             })
         },
-        insert_query
+        insert_query.to_static()
     );
 }
 
@@ -133,7 +133,7 @@ fn delete_test() {
                                         }
                                     )),
                                     operator: BinaryOperator::Equal
-                                })),
+                                }).into()),
                                 Condition::Value(Box::new(ValueExpression::Operator {
                                     first: Box::new(ValueExpression::ColumnReference(
                                         ColumnReference {
@@ -148,7 +148,7 @@ fn delete_test() {
                                         }
                                     )),
                                     operator: BinaryOperator::Equal
-                                })),
+                                }).into()),
                                 Condition::Value(Box::new(ValueExpression::Operator {
                                     first: Box::new(ValueExpression::ColumnReference(
                                         ColumnReference {
@@ -158,8 +158,8 @@ fn delete_test() {
                                     )),
                                     second: Box::new(ValueExpression::Literal(Literal::Bool(true))),
                                     operator: BinaryOperator::Equal
-                                }))
-                            ])),
+                                }).into())
+                            ].into())),
                             order_by: None,
                             group_by: None,
                             having: None,
@@ -169,9 +169,9 @@ fn delete_test() {
                         })
                     }
                 )))
-            ))])),
+            ).into())].into())),
         },
-        delete_query
+        delete_query.to_static()
     );
 }
 
@@ -284,7 +284,7 @@ fn something() {
                         })),
                         operator: BinaryOperator::Equal
                     }
-                )),]),
+                ).into()),].into()),
                 Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
@@ -298,8 +298,8 @@ fn something() {
                         })),
                         operator: BinaryOperator::Equal
                     }
-                ))])
-            ])])),
+                ).into())].into())
+            ].into())].into())),
             having: None,
             order_by: None,
             group_by: None,
@@ -310,7 +310,7 @@ fn something() {
             for_update: None,
             combine: None,
         },
-        query
+        query.to_static()
     );
 }
 
@@ -339,7 +339,7 @@ fn select_for_update() {
                     second: Box::new(ValueExpression::Placeholder(1)),
                     operator: BinaryOperator::Equal
                 }
-            ))])),
+            ).into())].into())),
             order_by: None,
             group_by: None,
             having: None,
@@ -347,7 +347,7 @@ fn select_for_update() {
             for_update: Some(()),
             combine: None
         },
-        query
+        query.to_static()
     );
 }
 
@@ -415,8 +415,8 @@ fn select_limit_offset() {
                     })),
                     second: Box::new(ValueExpression::Placeholder(1)),
                     operator: BinaryOperator::Equal
-                }))
-            ])])),
+                }).into())
+            ].into())].into())),
             order_by: Some(vec![
                 Ordering {
                     column: OrderAttribute::ColumnRef(ColumnReference {
@@ -444,7 +444,7 @@ fn select_limit_offset() {
             for_update: None,
             combine: None,
         },
-        query
+        query.to_static()
     );
 }
 
@@ -485,7 +485,7 @@ fn select_something() {
                         second: Box::new(ValueExpression::Placeholder(1)),
                         operator: BinaryOperator::Equal
                     }
-                ))]),
+                ).into())].into()),
                 Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -495,8 +495,8 @@ fn select_something() {
                         second: Box::new(ValueExpression::Placeholder(2)),
                         operator: BinaryOperator::Like
                     }
-                ))])
-            ])),
+                ).into())].into())
+            ].into())),
             order_by: None,
             group_by: None,
             having: None,
@@ -504,7 +504,7 @@ fn select_something() {
             for_update: None,
             combine: None
         },
-        query
+        query.to_static()
     );
 }
 
@@ -584,7 +584,7 @@ INNER JOIN (
                             })),
                             operator: BinaryOperator::Equal
                         }
-                    ))]),
+                    ).into())].into()), 
                     lateral: false,
                 }),
                 right: Box::new(TableExpression::Renamed {
@@ -610,7 +610,7 @@ INNER JOIN (
                                     ValueExpression::Placeholder(1)
                                 ])),
                                 operator: BinaryOperator::In
-                            })),
+                            }).into()),
                             Condition::Or(vec![
                                 Condition::And(vec![Condition::Value(Box::new(
                                     ValueExpression::Operator {
@@ -623,7 +623,7 @@ INNER JOIN (
                                         second: Box::new(ValueExpression::Placeholder(2)),
                                         operator: BinaryOperator::Equal,
                                     }
-                                ))]),
+                                ).into())].into()),
                                 Condition::And(vec![Condition::Value(Box::new(
                                     ValueExpression::Operator {
                                         first: Box::new(ValueExpression::ColumnReference(
@@ -635,9 +635,9 @@ INNER JOIN (
                                         second: Box::new(ValueExpression::Placeholder(3)),
                                         operator: BinaryOperator::Equal,
                                     }
-                                ))])
-                            ])
-                        ])),
+                                ).into())].into())
+                            ].into())
+                        ].into())),
                         having: None,
                         order_by: None,
                         group_by: None,
@@ -661,7 +661,7 @@ INNER JOIN (
                         })),
                         operator: BinaryOperator::Equal
                     }
-                ))]),
+                ).into())].into()),
                 lateral: false
             }),
             where_condition: None,
@@ -672,7 +672,7 @@ INNER JOIN (
             for_update: None,
             combine: None,
         },
-        select
+        select.to_static()
     );
 }
 
@@ -707,7 +707,7 @@ fn testing_subquery() {
                     })),
                     second: Box::new(ValueExpression::List(vec![ValueExpression::Placeholder(1)])),
                     operator: BinaryOperator::In,
-                })),
+                }).into()),
                 Condition::Or(vec![
                     Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
@@ -718,7 +718,7 @@ fn testing_subquery() {
                             second: Box::new(ValueExpression::Placeholder(2)),
                             operator: BinaryOperator::Equal,
                         }
-                    ))]),
+                    ).into())].into()),
                     Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
                             first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -728,9 +728,9 @@ fn testing_subquery() {
                             second: Box::new(ValueExpression::Placeholder(3)),
                             operator: BinaryOperator::Equal,
                         }
-                    ))])
-                ])
-            ])),
+                    ).into())].into())
+                ].into())
+            ].into())),
             order_by: None,
             group_by: None,
             having: None,
@@ -738,7 +738,7 @@ fn testing_subquery() {
             for_update: None,
             combine: None,
         },
-        select
+        select.to_static()
     );
 }
 

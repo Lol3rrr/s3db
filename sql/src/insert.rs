@@ -236,7 +236,7 @@ fn insert_values<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [
 
 #[cfg(test)]
 mod tests {
-    use crate::{macros::parser_parse, Literal};
+    use crate::{macros::arena_parser_parse, Literal};
 
     use super::*;
 
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn insert_single_row() {
-        parser_parse!(
+        arena_parser_parse!(
             Insert,
             "INSERT INTO testing (first, second) VALUES ('fval', 'sval')",
             Insert {
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn insert_multiple_rows() {
-        parser_parse!(
+        arena_parser_parse!(
             Insert,
             "INSERT INTO testing (first, second) VALUES ('fval', 'sval'), ('fval2', 'sval2')",
             Insert {
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn insert_with_returning() {
-        parser_parse!(
+        arena_parser_parse!(
             Insert,
             "INSERT INTO \"migration_log\" (\"migration_id\",\"sql\",\"success\",\"error\",\"timestamp\") VALUES ($1, $2, $3, $4, $5) RETURNING \"id\"",
             Insert {
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn insert_with_select_query() {
-        parser_parse!(
+        arena_parser_parse!(
             Insert,
             "INSERT INTO \"user\" (\"name\"\n, \"company\"\n, \"org_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\") SELECT \"name\"\n, \"company\"\n, \"account_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\" FROM \"user_v1\""
         );
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn insert_select_with_function() {
-        parser_parse!(
+        arena_parser_parse!(
             Insert,
             "INSERT INTO dashboard_version\n(\n\tdashboard_id,\n\tversion,\n\tparent_version,\n\trestored_from,\n\tcreated,\n\tcreated_by,\n\tmessage,\n\tdata\n)\nSELECT\n\tdashboard.id,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.updated,\n\tCOALESCE(dashboard.updated_by, -1),\n\t'',\n\tdashboard.data\nFROM dashboard"
         );

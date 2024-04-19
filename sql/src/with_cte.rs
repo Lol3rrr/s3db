@@ -248,8 +248,8 @@ WITH regional_sales AS (
                                             Literal::SmallInteger(2)
                                         )),
                                         operator: BinaryOperator::Less
-                                    })
-                                )])),
+                                    }).into()
+                                )].into())),
                                 order_by: None,
                                 group_by: None,
                                 having: None,

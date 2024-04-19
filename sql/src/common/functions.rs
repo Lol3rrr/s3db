@@ -310,13 +310,13 @@ pub fn function_call<'i, 'a>(
 #[cfg(test)]
 mod tests {
 
-    use crate::{macros::parser_parse, AggregateExpression, ColumnReference, TableExpression};
+    use crate::{macros::arena_parser_parse, AggregateExpression, ColumnReference, TableExpression};
 
     use super::*;
 
     #[test]
     fn coalesce() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "COALESCE(dashboard.updated_by, -1)",
             FunctionCall::Coalesce {
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn set_val_without_is_called() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "setval('id', 123)",
             FunctionCall::SetValue {
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn set_val_with_subquery() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "setval('org_id_seq', (SELECT max(id) FROM org))",
             FunctionCall::SetValue {
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn lower() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "lower($1)",
             FunctionCall::Lower {
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn substr_without_count() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "substr('content', 4)",
             FunctionCall::Substr {
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn substr_with_count() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "substr('content', 4, 2)",
             FunctionCall::Substr {
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn current_schemas() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "current_schemas(true)",
             FunctionCall::CurrentSchemas { implicit: true }
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn array_position() {
-        parser_parse!(
+        arena_parser_parse!(
             FunctionCall,
             "array_position('this is wrong but anyway', 'first')",
             FunctionCall::ArrayPosition {

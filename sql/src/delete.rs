@@ -152,17 +152,9 @@ mod tests {
 
     #[test]
     fn delete_testing() {
-        let query_str = "DELETE from user_auth_token WHERE created_at <= $1 OR rotated_at <= $2";
-        let (remaining, delete) = delete(query_str.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            Delete,
+            "DELETE from user_auth_token WHERE created_at <= $1 OR rotated_at <= $2",
             Delete {
                 table: Identifier("user_auth_token".into()),
                 condition: Some(Condition::Or(vec![
@@ -175,7 +167,7 @@ mod tests {
                             second: Box::new(ValueExpression::Placeholder(1)),
                             operator: BinaryOperator::LessEqual
                         }
-                    ))]),
+                    ).into())].into()),
                     Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
                             first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -185,10 +177,9 @@ mod tests {
                             second: Box::new(ValueExpression::Placeholder(2)),
                             operator: BinaryOperator::LessEqual
                         }
-                    ))])
-                ])),
-            },
-            delete
+                    ).into())].into())
+                ].into())),
+            }
         );
     }
 }
