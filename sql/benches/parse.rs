@@ -6,7 +6,13 @@ pub fn simple_select(c: &mut Criterion) {
     let mut group = c.benchmark_group("sql");
     group.throughput(criterion::Throughput::Elements(1));
     
-    group.bench_function("simple_select", |b| b.iter(|| black_box(sql::Query::parse(input.as_bytes()))));
+    group.bench_function("simple_select", |b| {
+        let mut arena = bumpalo::Bump::new();
+        b.iter(|| {
+            black_box(sql::Query::parse(input.as_bytes(), &arena));
+            arena.reset();
+        })
+    });
     
     for parts in [1usize, 3, 5, 10] {
         let mut columns = "test".to_string();
@@ -15,7 +21,13 @@ pub fn simple_select(c: &mut Criterion) {
         }
         let input = format!("SELECT {} FROM users", columns);
 
-        group.bench_function(criterion::BenchmarkId::new("select_columns", parts), |b| b.iter(|| black_box(sql::Query::parse(input.as_bytes()))));
+        group.bench_function(criterion::BenchmarkId::new("select_columns", parts), |b| {
+            let mut arena = bumpalo::Bump::new();
+            b.iter(|| {
+                black_box(sql::Query::parse(input.as_bytes(), &arena));
+                arena.reset();
+            })
+        });
     }
 
     group.finish();
@@ -31,7 +43,13 @@ pub fn select_conditions(c: &mut Criterion) {
             input.push_str(" AND true");
         }
 
-        group.bench_function(criterion::BenchmarkId::new("and_conditions", parts), |b| b.iter(|| black_box(sql::Query::parse(input.as_bytes()))));
+        group.bench_function(criterion::BenchmarkId::new("and_conditions", parts), |b| {
+            let mut arena = bumpalo::Bump::new();
+            b.iter(|| {
+                black_box(sql::Query::parse(input.as_bytes(), &arena));
+                arena.reset();
+            })
+        });
     }
 
     for parts in [1usize, 3, 5, 10] {
@@ -40,7 +58,14 @@ pub fn select_conditions(c: &mut Criterion) {
             input.push_str(" OR true");
         }
 
-        group.bench_function(criterion::BenchmarkId::new("or_conditions", parts), |b| b.iter(|| black_box(sql::Query::parse(input.as_bytes()))));
+        group.bench_function(criterion::BenchmarkId::new("or_conditions", parts), |b| {
+            let mut arena = bumpalo::Bump::new();
+            b.iter(|| {
+                black_box(sql::Query::parse(input.as_bytes(), &arena));
+                arena.reset();
+            })
+
+        });
     }
 
     group.finish();
