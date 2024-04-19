@@ -1,11 +1,11 @@
 use nom::{IResult, Parser};
 
-use crate::Parser as _Parser;
+use crate::{Parser as _Parser, CompatibleParser};
 
 use super::{DataType, Identifier, Literal, TypeModifier};
 
 #[derive(Debug, PartialEq)]
-pub enum AlterTable<'s> {
+pub enum AlterTable<'s, 'a> {
     Rename {
         from: Identifier<'s>,
         to: Identifier<'s>,
@@ -14,11 +14,11 @@ pub enum AlterTable<'s> {
         table: Identifier<'s>,
         column_name: Identifier<'s>,
         data_type: DataType,
-        type_modifiers: Vec<TypeModifier>,
+        type_modifiers: crate::arenas::Vec<'a, TypeModifier>,
     },
     AlterColumnTypes {
         table: Identifier<'s>,
-        columns: Vec<(Identifier<'s>, DataType)>,
+        columns: crate::arenas::Vec<'a, (Identifier<'s>, DataType)>,
     },
     AtlerColumnDropNotNull {
         table: Identifier<'s>,
@@ -40,8 +40,14 @@ pub enum AlterTable<'s> {
     },
 }
 
-impl<'s> AlterTable<'s> {
-    pub fn to_static(&self) -> AlterTable<'static> {
+impl<'s, 'a> CompatibleParser for AlterTable<'s, 'a> {
+    type StaticVersion = AlterTable<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
         match self {
             Self::Rename { from, to } => AlterTable::Rename {
                 from: from.to_static(),
@@ -56,14 +62,14 @@ impl<'s> AlterTable<'s> {
                 table: table.to_static(),
                 column_name: column_name.to_static(),
                 data_type: data_type.clone(),
-                type_modifiers: type_modifiers.clone(),
+                type_modifiers: type_modifiers.clone_to_heap(),
             },
             Self::AlterColumnTypes { table, columns } => AlterTable::AlterColumnTypes {
                 table: table.to_static(),
-                columns: columns
+                columns: crate::arenas::Vec::Heap(columns
                     .iter()
                     .map(|(cn, ct)| (cn.to_static(), ct.clone()))
-                    .collect(),
+                    .collect::<Vec<_>>()),
             },
             Self::AtlerColumnDropNotNull { table, column } => AlterTable::AtlerColumnDropNotNull {
                 table: table.to_static(),
@@ -91,20 +97,19 @@ impl<'s> AlterTable<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for AlterTable<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for AlterTable<'s, 'a> where 'i: 's {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
-            alter_table(i)
+            alter_table(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn alter_table<'i, 's, 'a>(i: &'i [u8], a: &'a bumpalo::Bump) -> IResult<&'i [u8], AlterTable<'s, 'a>, nom::error::VerboseError<&'i [u8]>> where 'i: 's {
     let (remaining, (_, _, table, _)) = nom::sequence::tuple((
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("ALTER"),
@@ -139,7 +144,8 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             DataType::parse(),
             nom::character::complete::multispace1,
-            nom::multi::separated_list0(
+            crate::nom_util::bump_separated_list0(
+                a,
                 nom::character::complete::multispace1,
                 TypeModifier::parse(),
             ),
@@ -152,7 +158,8 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
                 type_modifiers,
             },
         ),
-        nom::multi::separated_list1(
+        crate::nom_util::bump_separated_list1(
+            a,
             nom::sequence::tuple((
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
@@ -262,13 +269,13 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
 
 #[cfg(test)]
 mod tests {
-    use crate::{macros::parser_parse, Literal};
+    use crate::{macros::arena_parser_parse, Literal};
 
     use super::*;
 
     #[test]
     fn alter_table_rename() {
-        parser_parse!(
+        arena_parser_parse!(
             AlterTable,
             "ALTER TABLE \"user\" RENAME TO \"user_v1\"",
             AlterTable::Rename {
@@ -280,7 +287,7 @@ mod tests {
 
     #[test]
     fn alter_add_column() {
-        parser_parse!(
+        arena_parser_parse!(
             AlterTable,
             "alter table \"user\" ADD COLUMN \"help_flags1\" BIGINT NOT NULL DEFAULT 0",
             AlterTable::AddColumn {
@@ -292,14 +299,14 @@ mod tests {
                     TypeModifier::DefaultValue {
                         value: Some(Literal::SmallInteger(0))
                     }
-                ]
+                ].into()
             }
         );
     }
 
     #[test]
     fn alter_column_types() {
-        parser_parse!(AlterTable, "ALTER TABLE \"user\" ALTER \"login\" TYPE VARCHAR(190), ALTER \"email\" TYPE VARCHAR(190), ALTER \"name\" TYPE VARCHAR(255), ALTER \"password\" TYPE VARCHAR(255), ALTER \"salt\" TYPE VARCHAR(50), ALTER \"rands\" TYPE VARCHAR(50), ALTER \"company\" TYPE VARCHAR(255), ALTER \"theme\" TYPE VARCHAR(255)", AlterTable::AlterColumnTypes {
+        arena_parser_parse!(AlterTable, "ALTER TABLE \"user\" ALTER \"login\" TYPE VARCHAR(190), ALTER \"email\" TYPE VARCHAR(190), ALTER \"name\" TYPE VARCHAR(255), ALTER \"password\" TYPE VARCHAR(255), ALTER \"salt\" TYPE VARCHAR(50), ALTER \"rands\" TYPE VARCHAR(50), ALTER \"company\" TYPE VARCHAR(255), ALTER \"theme\" TYPE VARCHAR(255)", AlterTable::AlterColumnTypes {
                 table: Identifier("user".into()),
                 columns: vec![
                     (Identifier("login".into()), DataType::VarChar { size: 190 }),
@@ -316,13 +323,13 @@ mod tests {
                         DataType::VarChar { size: 255 }
                     ),
                     (Identifier("theme".into()), DataType::VarChar { size: 255 })
-                ]
+                ].into()
             });
     }
 
     #[test]
     fn alter_column_drop_not_null() {
-        parser_parse!(
+        arena_parser_parse!(
             AlterTable,
             "ALTER TABLE \"user\" ALTER COLUMN is_service_account DROP NOT NULL",
             AlterTable::AtlerColumnDropNotNull {
@@ -334,33 +341,33 @@ mod tests {
 
     #[test]
     fn alter_column_add_bytea_null() {
-        parser_parse!(
+        arena_parser_parse!(
             AlterTable,
             "alter table \"dashboard_snapshot\" ADD COLUMN \"dashboard_encrypted\" BYTEA NULL",
             AlterTable::AddColumn {
                 table: Identifier("dashboard_snapshot".into()),
                 column_name: Identifier("dashboard_encrypted".into()),
                 data_type: DataType::ByteA,
-                type_modifiers: vec![TypeModifier::Null]
+                type_modifiers: vec![TypeModifier::Null].into()
             }
         );
     }
 
     #[test]
     fn alter_column_type() {
-        parser_parse!(
+        arena_parser_parse!(
             AlterTable,
             "ALTER TABLE annotation ALTER COLUMN tags TYPE VARCHAR(4096)",
             AlterTable::AlterColumnTypes {
                 table: Identifier("annotation".into()),
-                columns: vec![(Identifier("tags".into()), DataType::VarChar { size: 4096 })]
+                columns: vec![(Identifier("tags".into()), DataType::VarChar { size: 4096 })].into()
             }
         );
     }
 
     #[test]
     fn alter_column_rename() {
-        parser_parse!(
+        arena_parser_parse!(
             AlterTable,
             "ALTER TABLE alert_instance RENAME COLUMN def_org_id TO rule_org_id",
             AlterTable::RenameColumn {
@@ -373,7 +380,7 @@ mod tests {
 
     #[test]
     fn alter_set_default() {
-        parser_parse!(
+        arena_parser_parse!(
             AlterTable,
             "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false",
             AlterTable::SetColumnDefault {

@@ -48,6 +48,11 @@ impl<'a, T> From<bumpalo::collections::Vec<'a, T>> for Vec<'a, T> {
         Self::Arena(value)
     }
 }
+impl<'a, T> From<std::vec::Vec<T>> for Vec<'a, T> {
+    fn from(value: std::vec::Vec<T>) -> Self {
+        Self::Heap(value)
+    }
+}
 
 impl<'a, T> core::ops::Deref for Vec<'a, T> {
     type Target = [T];

@@ -1853,7 +1853,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                             modifications.add_column(
                                 &column_name.0,
                                 data_type.clone(),
-                                type_modifiers.clone(),
+                                type_modifiers.to_vec(),
                             );
 
                             self.storage
@@ -1868,7 +1868,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
 
                             let mut modifications = storage::ModifyRelation::new();
 
-                            for column in columns {
+                            for column in columns.iter() {
                                 tracing::info!("Column: {:?}", column);
 
                                 modifications.change_type(&column.0 .0, column.1.clone());
