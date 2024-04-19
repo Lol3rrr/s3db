@@ -5,6 +5,7 @@ use s3db::{
     storage::Schemas,
 };
 use sql::{DataType, Query};
+use bumpalo::Bump;
 
 /// Returns an iterator to generate the Grafana Schema for testing
 fn grafana_schema() -> impl Iterator<Item = (String, Vec<(String, DataType)>)> {
@@ -69,6 +70,7 @@ fn grafana_schema() -> impl Iterator<Item = (String, Vec<(String, DataType)>)> {
 
 #[test]
 fn grafana_query_1() {
+    let arena = Bump::new();
     let query_str = "SELECT
         dashboard.id, dashboard.uid, dashboard.title, dashboard.slug, dashboard_tag.term, dashboard.is_folder, dashboard.folder_id, folder.uid AS folder_uid,\n\t\t\n\t\t\tfolder.slug AS folder_slug,\n\t\t\tfolder.title AS folder_title
         FROM (
@@ -83,7 +85,7 @@ fn grafana_query_1() {
         LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id\n
         ORDER BY dashboard.title ASC NULLS FIRST";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -97,6 +99,7 @@ fn grafana_query_1() {
 
 #[test]
 fn grafana_query_2() {
+    let arena = Bump::new();
     let query_str = "SELECT
     dashboard.id,dashboard.uid,dashboard.title,dashboard.slug,dashboard_tag.term,dashboard.is_folder,dashboard.folder_id,folder.uid AS folder_uid,folder.slug AS folder_slug,\n\t\t\tfolder.title AS folder_title
     FROM (
@@ -150,7 +153,7 @@ fn grafana_query_2() {
     LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id\n
     ORDER BY dashboard.title ASC NULLS FIRST";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -215,9 +218,10 @@ fn grafana_query_2() {
 
 #[test]
 fn grafana_query_4() {
+    let arena = Bump::new();
     let query_str = "SELECT p.* FROM permission as p INNER JOIN role r on r.id = p.role_id WHERE r.id = $1 AND p.scope = $2";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -242,6 +246,7 @@ fn grafana_query_4() {
 
 #[test]
 fn grafana_query_5() {
+    let arena = Bump::new();
     let query_str = "SELECT
     dashboard.id,
     dashboard.uid,
@@ -283,7 +288,7 @@ LEFT OUTER JOIN dashboard AS folder ON folder.id = dashboard.folder_id
 LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id
 ORDER BY dashboard.title ASC NULLS FIRST";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -299,9 +304,10 @@ ORDER BY dashboard.title ASC NULLS FIRST";
 
 #[test]
 fn grafana_update_from_1() {
+    let arena = Bump::new();
     let query_str = "UPDATE dashboard\n\tSET folder_uid = folder.uid\n\tFROM dashboard folder\n\tWHERE dashboard.folder_id = folder.id\n\t  AND dashboard.is_folder = $1";
 
-    let update = match Query::parse(query_str.as_bytes()) {
+    let update = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Update(u)) => u,
         other => panic!("{:?}", other),
     };
@@ -317,9 +323,10 @@ fn grafana_update_from_1() {
 
 #[test]
 fn specific() {
+    let arena = Bump::new();
     let query_str = "SELECT substr(name, 2) FROM users GROUP BY name";
 
-    let query = match Query::parse(query_str.as_bytes()) {
+    let query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -341,10 +348,11 @@ fn specific() {
 #[test]
 #[ignore = "Fixing some other time"]
 fn delete_with_correlated_subquery() {
+    let arena = Bump::new();
     let query_str =
         "DELETE FROM users WHERE NOT EXISTS (SELECT 1 FROM roles WHERE roles.id = users.role)";
 
-    let query = match Query::parse(query_str.as_bytes()) {
+    let query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Delete(d)) => d,
         other => panic!("{:?}", other),
     };

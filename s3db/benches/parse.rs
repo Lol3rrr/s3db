@@ -9,7 +9,8 @@ fn simple_select(c: &mut Criterion) {
         .into_iter()
         .collect();
 
-    let query = match sql::Query::parse(query.as_bytes()).unwrap() {
+    let arena = bumpalo::Bump::new();
+    let query = match sql::Query::parse(query.as_bytes(), &arena).unwrap() {
         sql::Query::Select(s) => s,
         other => unreachable!("{:?}", other),
     };
@@ -42,7 +43,8 @@ fn select_join(c: &mut Criterion) {
     .into_iter()
     .collect();
 
-    let query = match sql::Query::parse(query.as_bytes()).unwrap() {
+    let arena = bumpalo::Bump::new();
+    let query = match sql::Query::parse(query.as_bytes(), &arena).unwrap() {
         sql::Query::Select(s) => s,
         other => unreachable!("{:?}", other),
     };

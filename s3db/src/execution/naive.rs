@@ -41,15 +41,15 @@ impl<S> algorithms::joins::EvaluateConditions<S::LoadingError> for NaiveEngineCo
 }
 
 #[derive(Debug)]
-pub struct NaivePrepared {
-    query: Query<'static>,
+pub struct NaivePrepared<'a> {
+    query: Query<'static, 'a>,
     expected_parameters: Vec<DataType>,
     columns: Vec<(String, DataType)>,
 }
 
 #[derive(Debug)]
-pub struct NaiveBound {
-    query: Query<'static>,
+pub struct NaiveBound<'a> {
+    query: Query<'static, 'a>,
     expected_parameters: Vec<DataType>,
     values: Vec<Vec<u8>>,
     result_columns: Vec<FormatCode>,
@@ -1111,17 +1111,17 @@ impl<S> Execute<S::TransactionGuard> for NaiveEngine<S>
 where
     S: crate::storage::Storage,
 {
-    type Prepared = NaivePrepared;
+    type Prepared<'a> = NaivePrepared<'a>;
     type PrepareError = PrepareError<S::LoadingError>;
     type ExecuteBoundError = ExecuteBoundError<S::LoadingError>;
 
     type CopyState<'e> = NaiveCopyState<'e, S, S::TransactionGuard> where S: 'e, S::TransactionGuard: 'e;
 
-    async fn prepare<'q>(
+    async fn prepare<'q, 'a>(
         &self,
-        query: &sql::Query<'q>,
+        query: &sql::Query<'q, 'a>,
         _ctx: &mut Context<S::TransactionGuard>,
-    ) -> Result<Self::Prepared, Self::PrepareError> {
+    ) -> Result<Self::Prepared<'a>, Self::PrepareError> {
         let (expected, columns) = match query {
             Query::Select(s) => {
                 let schemas = self
@@ -1130,7 +1130,7 @@ where
                     .await
                     .map_err(PrepareError::LoadingSchemas)?;
 
-                let (ra_expression, expected_types) = ra::RaExpression::parse_select(s, &schemas)
+                let (ra_expression, expected_types) = ra::RaExpression::parse_select(&s, &schemas)
                     .map_err(PrepareError::ParsingSelect)?;
 
                 let parameters: Vec<_> = {
@@ -1209,9 +1209,9 @@ where
     }
 
     #[tracing::instrument(skip(self, query, ctx))]
-    async fn execute_bound(
+    async fn execute_bound<'a>(
         &self,
-        query: &<Self::Prepared as PreparedStatement>::Bound,
+        query: &<Self::Prepared<'a> as PreparedStatement<'a>>::Bound,
         ctx: &mut Context<S::TransactionGuard>,
     ) -> Result<ExecuteResult, Self::ExecuteBoundError> {
         tracing::debug!("Executing Bound Query");
@@ -1247,7 +1247,7 @@ where
 
                     let (ra_expression, placeholder_types) =
                         match crate::ra::RaExpression::parse_select_with_context(
-                            select,
+                            &select,
                             &schemas,
                             &parse_context,
                         ) {
@@ -1537,7 +1537,7 @@ where
 
                     // tracing::info!("Relation");
 
-                    let (ra_update, ra_placeholders) = RaUpdate::parse(update, &schemas)
+                    let (ra_update, ra_placeholders) = RaUpdate::parse(&update, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
 
                     let placeholder_values: HashMap<_, _> = ra_placeholders
@@ -1682,7 +1682,7 @@ where
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
-                    let (ra_delete, placeholders) = ra::RaDelete::parse(delete, &schemas)
+                    let (ra_delete, placeholders) = ra::RaDelete::parse(&delete, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
 
                     let relation = self
@@ -1770,14 +1770,14 @@ where
                         return Ok(ExecuteResult::Create);
                     }
 
-                    let fields: Vec<_> = create
+                    let fields: std::vec::Vec<_> = create
                         .fields
                         .iter()
                         .map(|tfield| {
                             (
                                 tfield.ident.0.to_string(),
                                 tfield.datatype.clone(),
-                                tfield.modifiers.clone(),
+                                tfield.modifiers.iter().map(|m| m.clone()).collect::<Vec<_>>(),
                             )
                         })
                         .collect();
@@ -2006,7 +2006,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
-                    let (ra_cte, _cte_placeholder_types) = ra::parse_ctes(cte, &schemas)
+                    let (ra_cte, _cte_placeholder_types) = ra::parse_ctes(&cte, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
 
                     for cte in ra_cte {
@@ -2019,7 +2019,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                         cte_queries.insert(cte.name.clone(), cte_result);
                     }
 
-                    to_process = Some(query);
+                    to_process = Some(&query);
                     continue;
                 }
                 Query::Vacuum(v) => {
@@ -2038,8 +2038,8 @@ let transaction = ctx.transaction.as_ref().unwrap();
     }
 }
 
-impl PreparedStatement for NaivePrepared {
-    type Bound = NaiveBound;
+impl<'a> PreparedStatement<'a> for NaivePrepared<'a> {
+    type Bound = NaiveBound<'a>;
     type BindError = ();
 
     fn bind(
@@ -2100,8 +2100,11 @@ mod tests {
 
     use super::*;
 
+    use bumpalo::Bump;
+
     #[tokio::test]
     async fn execute_delete_with_subquery() {
+        let arena = Bump::new();
         let query = "DELETE FROM dashboard_acl WHERE dashboard_id NOT IN (SELECT id FROM dashboard) AND dashboard_id != -1";
 
         let storage = {
@@ -2147,7 +2150,7 @@ mod tests {
         };
         let engine = NaiveEngine::new(storage);
 
-        let query = Query::parse(query.as_bytes()).unwrap();
+        let query = Query::parse(query.as_bytes(), &arena).unwrap();
         
         let mut ctx = Context::new();
         ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
@@ -2158,9 +2161,10 @@ mod tests {
 
     #[tokio::test]
     async fn using_is_true() {
+        let arena = Bump::new();
         let query_str = "SELECT name FROM user WHERE active IS TRUE";
 
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let storage = {
             let storage = InMemoryStorage::new();

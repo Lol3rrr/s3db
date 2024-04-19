@@ -93,7 +93,7 @@ pub trait Storage {
     fn create_relation(
         &self,
         name: &str,
-        fields: Vec<(String, DataType, Vec<TypeModifier>)>,
+        fields: std::vec::Vec<(String, DataType, Vec<TypeModifier>)>,
         transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 

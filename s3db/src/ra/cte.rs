@@ -31,7 +31,7 @@ pub enum CTEQuery {
 }
 
 pub fn parse_ctes(
-    raw: &WithCTEs<'_>,
+    raw: &WithCTEs<'_, '_>,
     schemas: &Schemas,
 ) -> Result<(Vec<CTE>, HashMap<usize, DataType>), ParseSelectError> {
     let mut scope = Scope::new(schemas);
@@ -48,7 +48,7 @@ pub fn parse_ctes(
 
 impl CTE {
     fn parse_internal(
-        raw: &WithCTE<'_>,
+        raw: &WithCTE<'_, '_>,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         recursive: bool,

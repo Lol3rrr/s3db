@@ -52,7 +52,7 @@ pub enum ExecuteError<PE, BE, EE> {
 }
 
 pub trait Execute<T> {
-    type Prepared: PreparedStatement;
+    type Prepared<'a>: PreparedStatement<'a>;
     type PrepareError: Debug;
     type ExecuteBoundError: Debug;
 
@@ -61,15 +61,15 @@ pub trait Execute<T> {
         Self: 'e,
         T: 'e;
 
-    fn prepare<'q>(
+    fn prepare<'q, 'a>(
         &self,
-        query: &sql::Query<'q>,
+        query: &sql::Query<'q, 'a>,
         ctx: &mut Context<T>,
-    ) -> impl Future<Output = Result<Self::Prepared, Self::PrepareError>>;
+    ) -> impl Future<Output = Result<Self::Prepared<'a>, Self::PrepareError>>;
 
-    fn execute_bound(
+    fn execute_bound<'a>(
         &self,
-        query: &<Self::Prepared as PreparedStatement>::Bound,
+        query: &<Self::Prepared<'a> as PreparedStatement<'a>>::Bound,
         ctx: &mut Context<T>,
     ) -> impl Future<Output = Result<ExecuteResult, Self::ExecuteBoundError>>;
 
@@ -82,16 +82,16 @@ pub trait Execute<T> {
         's: 'e,
         'c: 'e;
 
-    fn execute<'q>(
+    fn execute<'q, 'a>(
         &self,
-        query: &sql::Query<'q>,
+        query: &sql::Query<'q, 'a>,
         ctx: &mut Context<T>,
     ) -> impl Future<
         Output = Result<
             ExecuteResult,
             ExecuteError<
                 Self::PrepareError,
-                <Self::Prepared as PreparedStatement>::BindError,
+                <Self::Prepared<'a> as PreparedStatement<'a>>::BindError,
                 Self::ExecuteBoundError,
             >,
         >,
@@ -115,7 +115,7 @@ pub trait Execute<T> {
     }
 }
 
-pub trait PreparedStatement {
+pub trait PreparedStatement<'a> {
     type Bound;
     type BindError: Debug;
 

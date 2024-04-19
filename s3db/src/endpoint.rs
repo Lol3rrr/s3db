@@ -10,7 +10,6 @@ use crate::execution;
 
 pub trait Endpoint<E, T>
 where
-    E: execution::Execute<T> + 'static,
     T: 'static,
 {
     fn run<'s, 'f>(&'s self, engine: E) -> LocalBoxFuture<'f, Result<(), Box<dyn Debug>>>
@@ -56,6 +55,12 @@ pub mod postgres {
     pub enum RunError {
         Bind(tokio::io::Error),
         LocalAddr(tokio::io::Error),
+    }
+
+    pub trait EngineWrapper {
+        type Engine;
+
+        fn get(&self) -> Self::Engine;
     }
 
     impl<A, E, T> Endpoint<E, T> for PostgresEndpoint<A>
@@ -106,7 +111,7 @@ pub mod postgres {
         addr: std::net::SocketAddr,
         engine: Rc<E>,
     ) where
-        E: execution::Execute<T>,
+        E: execution::Execute<T> + 'static,
     {
         let startmsg = match postgres::StartMessage::parse(&mut connection).await {
             Ok(sm) => sm,
@@ -158,10 +163,13 @@ pub mod postgres {
 
         let mut ctx = execution::Context::new();
 
+        let mut arena = bumpalo::Bump::new();
+
         let mut prepared_statements = HashMap::new();
         let mut bound_statements =
-            HashMap::<String, <E::Prepared as execution::PreparedStatement>::Bound>::new();
+            HashMap::<String, <E::Prepared<'_> as execution::PreparedStatement>::Bound>::new();
 
+        
         loop {
             tracing::trace!("Waiting for message");
 
@@ -185,7 +193,7 @@ pub mod postgres {
 
                     tracing::info!("Handling Raw-Query: {:?}", query);
 
-                    let queries = match sql::Query::parse_multiple(query.as_bytes()) {
+                    let queries = match sql::Query::parse_multiple(query.as_bytes(), &arena) {
                         Ok(q) => q,
                         Err(e) => {
                             tracing::error!("Parsing Query: {:?}", e);
@@ -388,7 +396,7 @@ pub mod postgres {
 
                     tracing::info!("Query: {:?}", query);
 
-                    let query = match sql::Query::parse(query.as_bytes()) {
+                    let query = match sql::Query::parse(query.as_bytes(), &arena) {
                         Ok(q) => q,
                         Err(e) => {
                             tracing::error!("Parsing Query: {:?}", e);
@@ -625,5 +633,7 @@ pub mod postgres {
                 }
             };
         }
+
+        drop(prepared_statements);
     }
 }

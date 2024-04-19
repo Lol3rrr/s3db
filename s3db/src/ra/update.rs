@@ -230,14 +230,16 @@ mod tests {
 
     use crate::ra::{RaComparisonOperator, RaConditionValue};
     use sql::{BinaryOperator, Literal, Query};
+    use bumpalo::Bump;
 
     use super::*;
 
     #[test]
     fn expressions() {
+        let arena = Bump::new();
         let query_str = "UPDATE annotation SET epoch = (epoch*1000) where epoch < 9999999999";
 
-        let update_query = match Query::parse(query_str.as_bytes()) {
+        let update_query = match Query::parse(query_str.as_bytes(), &arena) {
             Ok(Query::Update(u)) => u,
             other => panic!("{:?}", other),
         };
@@ -299,9 +301,10 @@ mod tests {
     #[test]
     #[ignore = "Should work but dont yet know the correct return data"]
     fn update_from() {
+        let arena = Bump::new();
         let query_str = "UPDATE orders SET completed = deliveries.delivered FROM deliveries WHERE orders.id = deliveries.order_id";
 
-        let update_query = match Query::parse(query_str.as_bytes()) {
+        let update_query = match Query::parse(query_str.as_bytes(), &arena) {
             Ok(Query::Update(u)) => u,
             other => panic!("{:?}", other),
         };
