@@ -47,8 +47,8 @@ pub fn parse_ctes(
 }
 
 impl CTE {
-    fn parse_internal(
-        raw: &WithCTE<'_, '_>,
+    fn parse_internal<'i, 'a>(
+        raw: &WithCTE<'i, 'a>,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         recursive: bool,
@@ -63,7 +63,8 @@ impl CTE {
                     }
 
                     let base_select = {
-                        let mut c = s.clone();
+                        use sql::CompatibleParser;
+                        let mut c = s.to_static();
                         c.combine = None;
                         c
                     };

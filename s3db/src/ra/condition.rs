@@ -49,7 +49,7 @@ pub enum RaConditionValue {
 
 impl RaCondition {
     pub fn parse(
-        condition: &Condition<'_>,
+        condition: &Condition<'_, '_>,
         schemas: &Schemas,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
         let mut scope = Scope::new(schemas);
@@ -69,7 +69,7 @@ impl RaCondition {
 
     pub(super) fn parse_internal(
         scope: &mut Scope<'_>,
-        condition: &Condition<'_>,
+        condition: &Condition<'_, '_>,
         placeholders: &mut HashMap<usize, DataType>,
         ra_expr: &mut RaExpression,
         outer: &mut Vec<RaExpression>,
@@ -101,7 +101,7 @@ impl RaCondition {
 impl RaConditionValue {
     fn parse_internal(
         scope: &mut Scope<'_>,
-        condition: &ValueExpression<'_>,
+        condition: &ValueExpression<'_, '_>,
         placeholders: &mut HashMap<usize, DataType>,
         ra_expr: &mut RaExpression,
         outer: &mut Vec<RaExpression>,

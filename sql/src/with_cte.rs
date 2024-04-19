@@ -15,7 +15,7 @@ pub struct WithCTEs<'s, 'a> {
     pub recursive: bool,
 }
 
-impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for WithCTEs<'s, 'a> where 'i: 's {
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for WithCTEs<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -51,12 +51,10 @@ impl<'s, 'a> CompatibleParser for WithCTEs<'s, 'a> {
     }
 }
 
-pub fn with_ctes<'i, 's, 'a>(
+pub fn with_ctes<'i, 'a>(
     i: &'i [u8],
     arena: &'a bumpalo::Bump,
-) -> IResult<&'i [u8], WithCTEs<'s, 'a>, nom::error::VerboseError<&'i [u8]>>
-where
-    'i: 's,
+) -> IResult<&'i [u8], WithCTEs<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
 {
     let (remaining, (_, _, _, recursive)) = nom::sequence::tuple((
         nom::character::complete::multispace0,

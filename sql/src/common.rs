@@ -14,7 +14,7 @@ pub use datatype::DataType;
 mod value;
 pub use value::ValueExpression;
 
-use crate::Parser as _Parser;
+use crate::{Parser as _Parser, ArenaParser, CompatibleParser};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOperator {
@@ -169,15 +169,47 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum AggregateExpression {
-    Count(Box<ValueExpression<'static>>),
-    Sum(Box<ValueExpression<'static>>),
-    AnyValue(Box<ValueExpression<'static>>),
-    Max(Box<ValueExpression<'static>>),
+    Count(Box<ValueExpression<'static, 'static>>),
+    Sum(Box<ValueExpression<'static, 'static>>),
+    AnyValue(Box<ValueExpression<'static, 'static>>),
+    Max(Box<ValueExpression<'static, 'static>>),
 }
 
-fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression, nom::error::VerboseError<&[u8]>> {
+impl CompatibleParser for AggregateExpression {
+    type StaticVersion = AggregateExpression;
+
+    fn to_static(&self) -> Self::StaticVersion {
+        match self {
+            Self::Count(c) => AggregateExpression::Count(Box::new(c.to_static())),
+            Self::Sum(s) => AggregateExpression::Sum(Box::new(s.to_static())),
+            Self::AnyValue(v) => AggregateExpression::AnyValue(Box::new(v.to_static())),
+            Self::Max(m) => AggregateExpression::Max(Box::new(m.to_static()))
+        }
+    }
+
+    fn parameter_count(&self) -> usize {
+        match self {
+            Self::Count(c) => c.parameter_count(),
+            Self::Sum(s) => s.parameter_count(),
+            Self::AnyValue(v) => v.parameter_count(),
+            Self::Max(m) => m.parameter_count(),
+        }
+    }
+}
+
+impl<'i, 'a> ArenaParser<'i, 'a> for AggregateExpression {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            aggregate(i, a)
+        }
+    }
+}
+
+fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], AggregateExpression, nom::error::VerboseError<&'i [u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::delimited(
@@ -189,7 +221,7 @@ fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression, nom::error::Verbos
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                 )),
-                ValueExpression::parse(),
+                ValueExpression::parse_arena(arena),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),
@@ -204,7 +236,7 @@ fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression, nom::error::Verbos
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                 )),
-                ValueExpression::parse(),
+                ValueExpression::parse_arena(arena),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),
@@ -219,7 +251,7 @@ fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression, nom::error::Verbos
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                 )),
-                ValueExpression::parse(),
+                ValueExpression::parse_arena(arena),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),
@@ -234,7 +266,7 @@ fn aggregate(i: &[u8]) -> IResult<&[u8], AggregateExpression, nom::error::Verbos
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                 )),
-                ValueExpression::parse(),
+                ValueExpression::parse_arena(arena),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),

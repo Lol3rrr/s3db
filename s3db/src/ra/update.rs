@@ -27,7 +27,7 @@ pub struct UpdateFields {
 
 impl RaUpdate {
     pub fn parse(
-        query: &Update<'_>,
+        query: &Update<'_, '_>,
         schemas: &Schemas,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
         let mut scope = Scope::new(schemas);

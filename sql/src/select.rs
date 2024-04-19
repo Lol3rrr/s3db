@@ -20,20 +20,20 @@ pub use order::{NullOrdering, OrderAttribute, OrderBy, Ordering};
 ///
 /// # References:
 /// * [Postgres Docs](https://www.postgresql.org/docs/16/sql-select.html)
-#[derive(Debug, PartialEq, Clone)]
-pub struct Select<'s> {
+#[derive(Debug, PartialEq)]
+pub struct Select<'s, 'a> {
     /// The Values that will be returned by the Query for each Row
-    pub values: Vec<ValueExpression<'s>>,
+    pub values: Vec<ValueExpression<'s, 'a>>,
     /// The base table expression to select values from
-    pub table: Option<TableExpression<'s>>,
+    pub table: Option<TableExpression<'s, 'a>>,
     /// A condition to filter out unwanted queries
-    pub where_condition: Option<Condition<'s>>,
+    pub where_condition: Option<Condition<'s, 'a>>,
     pub order_by: Option<Vec<Ordering<'s>>>,
     pub group_by: Option<Vec<GroupAttribute<'s>>>,
-    pub having: Option<Condition<'s>>,
+    pub having: Option<Condition<'s, 'a>>,
     pub limit: Option<SelectLimit>,
     pub for_update: Option<()>,
-    pub combine: Option<(Combination, Box<Select<'s>>)>,
+    pub combine: Option<(Combination, Box<Select<'s, 'a>>)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -42,8 +42,8 @@ pub struct SelectLimit {
     pub offset: Option<usize>,
 }
 
-impl<'s> CompatibleParser for Select<'s> {
-    type StaticVersion = Select<'static>;
+impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
+    type StaticVersion = Select<'static, 'static>;
 
     fn to_static(&self) -> Self::StaticVersion {
         Select {
@@ -83,19 +83,19 @@ impl<'s> CompatibleParser for Select<'s> {
         let value_max = self
             .values
             .iter()
-            .map(|v| v.max_parameter())
+            .map(|v| v.parameter_count())
             .max()
             .unwrap_or(0);
-        let table_max = self.table.as_ref().map(|t| t.max_parameter()).unwrap_or(0);
+        let table_max = self.table.as_ref().map(|t| t.parameter_count()).unwrap_or(0);
         let where_max = self
             .where_condition
             .as_ref()
-            .map(|c| c.max_parameter())
+            .map(|c| c.parameter_count())
             .unwrap_or(0);
         let comb_max = self
             .combine
             .as_ref()
-            .map(|(_, s)| s.max_parameter())
+            .map(|(_, s)| s.parameter_count())
             .unwrap_or(0);
 
         [value_max, table_max, where_max, comb_max]
@@ -105,27 +105,7 @@ impl<'s> CompatibleParser for Select<'s> {
     }
 }
 
-impl<'s> Select<'s> {
-    pub fn max_parameter(&self) -> usize {
-        Self::parameter_count(self)
-    }
-}
-
-impl<'i, 's> crate::Parser<'i> for Select<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            #[allow(deprecated)]
-            select(i, &bumpalo::Bump::new())
-        }
-    }
-}
-
-impl<'i, 'a, 's> crate::ArenaParser<'i, 'a> for Select<'s>
-where
-    'i: 's,
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for Select<'i, 'a>
 {
     fn parse_arena(
         a: &'a bumpalo::Bump,
@@ -138,12 +118,10 @@ where
 }
 
 #[deprecated]
-pub fn select<'i, 's, 'a>(
+pub fn select<'i, 'a>(
     i: &'i [u8],
     a: &'a bumpalo::Bump,
-) -> IResult<&'i [u8], Select<'s>, nom::error::VerboseError<&'i [u8]>>
-where
-    'i: 's,
+) -> IResult<&'i [u8], Select<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
 {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("SELECT"),
@@ -170,7 +148,7 @@ where
         nom::sequence::tuple((
             nom::combinator::opt(nom::bytes::complete::tag_no_case("distinct")),
             nom::character::complete::multispace0,
-            <Vec<ValueExpression<'_>>>::parse(),
+            <Vec<ValueExpression<'i, 'a>>>::parse_arena(a),
             nom::combinator::opt(nom::combinator::map(
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
@@ -179,7 +157,7 @@ where
                         "FROM",
                         nom::sequence::tuple((
                             nom::character::complete::multispace1,
-                            TableExpression::parse(),
+                            TableExpression::parse_arena(a),
                         )),
                     )),
                 )),
@@ -193,7 +171,7 @@ where
                         "where condition",
                         nom::combinator::cut(nom::sequence::tuple((
                             nom::combinator::opt(nom::character::complete::multispace1),
-                            Condition::parse(),
+                            Condition::parse_arena(a),
                         ))),
                     ),
                 ))
@@ -227,7 +205,7 @@ where
                     nom::character::complete::multispace1,
                     nom::bytes::complete::tag_no_case("HAVING"),
                     nom::character::complete::multispace1,
-                    Condition::parse(),
+                    Condition::parse_arena(a),
                 ))
                 .map(|(_, _, _, cond)| cond),
             ),

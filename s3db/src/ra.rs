@@ -229,7 +229,7 @@ impl<'s> Scope<'s> {
 impl ProjectionAttribute {
     fn parse_internal(
         scope: &mut Scope<'_>,
-        expr: &ValueExpression<'_>,
+        expr: &ValueExpression<'_, '_>,
         placeholders: &mut HashMap<usize, DataType>,
         table_expression: &mut RaExpression,
         outer: &mut Vec<RaExpression>,
@@ -455,14 +455,14 @@ impl RaExpression {
     }
 
     pub fn parse_select(
-        query: &Select<'_>,
+        query: &Select<'_, '_>,
         schemas: &Schemas,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
         Self::parse_select_with_context(query, schemas, &ParsingContext::new())
     }
 
     pub fn parse_select_with_context(
-        query: &Select<'_>,
+        query: &Select<'_, '_>,
         schemas: &Schemas,
         parse_context: &ParsingContext,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
@@ -684,7 +684,7 @@ impl RaExpression {
     }
 
     fn parse_s(
-        query: &Select<'_>,
+        query: &Select<'_, '_>,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         outer: &mut Vec<RaExpression>,

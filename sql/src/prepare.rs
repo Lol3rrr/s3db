@@ -11,9 +11,7 @@ pub struct Prepare<'s, 'a> {
     pub query: Box<Query<'s, 'a>>,
 }
 
-impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for Prepare<'s, 'a>
-where
-    'i: 's,
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for Prepare<'i, 'a>
 {
     fn parse_arena(
         a: &'a bumpalo::Bump,
@@ -42,12 +40,10 @@ impl<'s, 'a> CompatibleParser for Prepare<'s, 'a> {
 }
 
 #[deprecated]
-pub fn parse<'i, 's, 'a>(
+pub fn parse<'i, 'a>(
     i: &'i [u8],
     arena: &'a bumpalo::Bump,
-) -> IResult<&'i [u8], Prepare<'s, 'a>, nom::error::VerboseError<&'s [u8]>>
-where
-    'i: 's,
+) -> IResult<&'i [u8], Prepare<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
 {
     let (i, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("PREPARE"),

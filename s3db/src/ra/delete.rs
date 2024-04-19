@@ -13,7 +13,7 @@ pub struct RaDelete {
 
 impl RaDelete {
     pub fn parse(
-        query: &Delete<'_>,
+        query: &Delete<'_, '_>,
         schemas: &Schemas,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
         let mut scope = Scope::new(schemas);

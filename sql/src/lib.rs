@@ -92,11 +92,11 @@ pub enum Query<'s, 'a> {
         query: Box<Self>,
     },
     Prepare(prepare::Prepare<'s, 'a>),
-    Select(select::Select<'s>),
-    Insert(insert::Insert<'s>),
-    Update(update::Update<'s>),
+    Select(select::Select<'s, 'a>),
+    Insert(insert::Insert<'s, 'a>),
+    Update(update::Update<'s, 'a>),
     Copy_(copy_::Copy_<'s>),
-    Delete(delete::Delete<'s>),
+    Delete(delete::Delete<'s, 'a>),
     CreateTable(create::CreateTable<'s, 'a>),
     CreateIndex(create::CreateIndex<'s>),
     AlterTable(alter::AlterTable<'s, 'a>),
@@ -113,9 +113,7 @@ pub enum Query<'s, 'a> {
 #[derive(Debug)]
 pub struct ParseQueryError {}
 
-impl<'i, 's, 'a> ArenaParser<'i, 'a> for Query<'s, 'a>
-where
-    'i: 's,
+impl<'i, 'a> ArenaParser<'i, 'a> for Query<'i, 'a>
 {
     fn parse_arena(
         a: &'a bumpalo::Bump,
@@ -133,9 +131,9 @@ impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
                 core::cmp::max(cte.parameter_count(), query.parameter_count())
             }
             Self::Prepare(p) => p.params.len(),
-            Self::Select(s) => s.max_parameter(),
-            Self::Insert(i) => i.max_parameter(),
-            Self::Update(u) => u.max_parameter(),
+            Self::Select(s) => s.parameter_count(),
+            Self::Insert(i) => i.parameter_count(),
+            Self::Update(u) => u.parameter_count(),
             Self::Copy_(c) => c.parameter_count(),
             Self::Delete(d) => d.max_parameter(),
             Self::CreateTable(_) => 0,
@@ -179,7 +177,7 @@ impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
     }
 }
 
-impl<'i, 's, 'a> ArenaParser<'i, 'a> for Vec<Query<'s, 'a>> where 'i: 's {
+impl<'i, 'a> ArenaParser<'i, 'a> for Vec<Query<'i, 'a>> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -256,11 +254,11 @@ fn query<'i, 'a>(
         nom::sequence::tuple((
             nom::character::complete::multispace0,
             nom::branch::alt((
-                nom::combinator::map(Select::parse(), Query::Select),
-                nom::combinator::map(Insert::parse(), Query::Insert),
-                nom::combinator::map(Update::parse(), Query::Update),
+                nom::combinator::map(Select::parse_arena(arena), Query::Select),
+                nom::combinator::map(Insert::parse_arena(arena), Query::Insert),
+                nom::combinator::map(Update::parse_arena(arena), Query::Update),
                 nom::combinator::map(Copy_::parse(), Query::Copy_),
-                nom::combinator::map(Delete::parse(), Query::Delete),
+                nom::combinator::map(Delete::parse_arena(arena), Query::Delete),
                 nom::combinator::map(BeginTransaction::parse(), |iso| {
                     Query::BeginTransaction(iso.isolation)
                 }),

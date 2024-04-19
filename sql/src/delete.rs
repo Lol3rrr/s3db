@@ -1,17 +1,17 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _};
+use crate::{CompatibleParser, Parser as _, ArenaParser};
 
 use super::{Condition, Identifier};
 
 #[derive(Debug, PartialEq)]
-pub struct Delete<'s> {
+pub struct Delete<'s, 'a> {
     pub table: Identifier<'s>,
-    pub condition: Option<Condition<'s>>,
+    pub condition: Option<Condition<'s, 'a>>,
 }
 
-impl<'s> CompatibleParser for Delete<'s> {
-    type StaticVersion = Delete<'static>;
+impl<'s, 'a> CompatibleParser for Delete<'s, 'a> {
+    type StaticVersion = Delete<'static, 'static>;
 
     fn to_static(&self) -> Self::StaticVersion {
         Delete {
@@ -27,22 +27,23 @@ impl<'s> CompatibleParser for Delete<'s> {
             .unwrap_or(0)
     }
 }
-impl<'s> Delete<'s> {
+impl<'s, 'a> Delete<'s, 'a> {
     pub fn max_parameter(&self) -> usize {
         Self::parameter_count(self)
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Delete<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| delete(i)
+impl<'i, 'a> ArenaParser<'i, 'a> for Delete<'i, 'a> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            delete(i, a)
+        }
     }
 }
 
-pub fn delete(i: &[u8]) -> IResult<&[u8], Delete<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn delete<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], Delete<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, (_, _, _, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("DELETE"),
         nom::character::complete::multispace1,
@@ -56,7 +57,7 @@ pub fn delete(i: &[u8]) -> IResult<&[u8], Delete<'_>, nom::error::VerboseError<&
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("WHERE"),
             nom::character::complete::multispace1,
-            Condition::parse(),
+            Condition::parse_arena(arena),
         ))
         .map(|(_, _, _, cond)| cond),
     )(remaining)?;
@@ -75,48 +76,31 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        BinaryOperator, ColumnReference, Literal, Select, TableExpression, ValueExpression,
+        BinaryOperator, ColumnReference, Literal, Select, TableExpression, ValueExpression, macros::arena_parser_parse
     };
 
     use super::*;
 
     #[test]
     fn delete_no_condition() {
-        let query = "DELETE FROM dashboard_tag";
-        let (remaining, delete) = delete(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            Delete,
+            "DELETE FROM dashboard_tag",
             Delete {
                 table: Identifier("dashboard_tag".into()),
                 condition: None,
-            },
-            delete
+            }
         );
     }
 
     #[test]
     fn delete_basic_condition() {
-        let query = "DELETE FROM dashboard_tag WHERE name = 'something'";
-        let (remaining, delete) = delete(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            Delete,
+            "DELETE FROM dashboard_tag WHERE name = 'something'",
             Delete {
                 table: Identifier("dashboard_tag".into()),
-                condition: Some(Condition::And(vec![Condition::Value(Box::new(
+                condition: Some(Condition::And(vec![Condition::Value(crate::arenas::Boxed::Heap(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
@@ -127,26 +111,16 @@ mod tests {
                         ))),
                         operator: BinaryOperator::Equal
                     }
-                ))]))
-            },
-            delete
+                )))].into()))
+            }
         );
     }
 
     #[test]
     fn delete_with_subquery() {
-        let query =
-            "DELETE FROM dashboard_tag WHERE dashboard_id NOT IN (SELECT id FROM dashboard)";
-        let (remaining, delete) = delete(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            Delete,
+            "DELETE FROM dashboard_tag WHERE dashboard_id NOT IN (SELECT id FROM dashboard)",
             Delete {
                 table: Identifier("dashboard_tag".into()),
                 condition: Some(Condition::And(vec![Condition::Value(Box::new(
@@ -171,9 +145,8 @@ mod tests {
                         })),
                         operator: BinaryOperator::NotIn
                     }
-                ))])),
-            },
-            delete
+                ).into())].into())),
+            }
         );
     }
 

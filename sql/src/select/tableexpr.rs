@@ -1,25 +1,25 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Condition, Identifier, Parser as _};
+use crate::{CompatibleParser, Condition, Identifier, Parser as _, ArenaParser};
 
 use super::Select;
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum TableExpression<'s> {
+#[derive(Debug, PartialEq)]
+pub enum TableExpression<'s, 'a> {
     Relation(Identifier<'s>),
     Renamed {
-        inner: Box<TableExpression<'s>>,
+        inner: Box<TableExpression<'s, 'a>>,
         name: Identifier<'s>,
         column_rename: Option<Vec<Identifier<'s>>>,
     },
     Join {
-        left: Box<TableExpression<'s>>,
-        right: Box<TableExpression<'s>>,
+        left: Box<TableExpression<'s, 'a>>,
+        right: Box<TableExpression<'s, 'a>>,
         kind: JoinKind,
-        condition: Condition<'s>,
+        condition: Condition<'s, 'a>,
         lateral: bool,
     },
-    SubQuery(Box<Select<'s>>),
+    SubQuery(Box<Select<'s, 'a>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -31,28 +31,80 @@ pub enum JoinKind {
     Cross,
 }
 
-impl<'i, 's> crate::Parser<'i> for TableExpression<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 'a> CompatibleParser for TableExpression<'i, 'a> {
+    type StaticVersion = TableExpression<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        match self {
+            Self::Relation(_) => 0,
+            Self::Renamed { inner, .. } => inner.parameter_count(),
+            Self::Join {
+                left,
+                right,
+                condition,
+                ..
+            } => core::iter::once(left.parameter_count())
+                .chain(core::iter::once(right.parameter_count()))
+                .chain(core::iter::once(condition.parameter_count()))
+                .max()
+                .unwrap_or(0),
+            Self::SubQuery(sq) => sq.parameter_count(),
+        }
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        match self {
+            Self::Relation(r) => TableExpression::Relation(r.to_static()),
+            Self::Renamed {
+                inner,
+                name,
+                column_rename,
+            } => TableExpression::Renamed {
+                inner: Box::new(inner.to_static()),
+                name: name.to_static(),
+                column_rename: column_rename
+                    .as_ref()
+                    .map(|c| c.iter().map(|c| c.to_static()).collect()),
+            },
+            Self::Join {
+                left,
+                right,
+                kind,
+                condition,
+                lateral,
+            } => TableExpression::Join {
+                left: Box::new(left.to_static()),
+                right: Box::new(right.to_static()),
+                kind: kind.clone(),
+                condition: condition.to_static(),
+                lateral: *lateral,
+            },
+            Self::SubQuery(inner) => TableExpression::SubQuery(Box::new(inner.to_static())),
+        }
+    }
+}
+
+impl<'i, 'a> ArenaParser<'i, 'a> for TableExpression<'i, 'a> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
-            #[allow(deprecated)]
-            table_expression(i)
+            table_expression(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn table_expression(
-    i: &[u8],
-) -> IResult<&[u8], TableExpression, nom::error::VerboseError<&[u8]>> {
-    fn base(i: &[u8]) -> IResult<&[u8], TableExpression, nom::error::VerboseError<&[u8]>> {
+pub fn table_expression<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump
+) -> IResult<&'i [u8], TableExpression<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+    fn base<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], TableExpression<'i, 'a>, nom::error::VerboseError<&'i[u8]>> {
         let (remaining, table) = nom::branch::alt((
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),
                 nom::character::complete::multispace0,
-                Select::parse(),
+                Select::parse_arena(arena),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             ))
@@ -119,7 +171,7 @@ pub fn table_expression(
         }
     }
 
-    let (remaining, table) = base(i)?;
+    let (remaining, table) = base(i, arena)?;
 
     let mut outer_remaining = remaining;
     let mut table = table;
@@ -183,7 +235,7 @@ pub fn table_expression(
             Err(_) => (remaining, false),
         };
 
-        let (remaining, other_table) = base(remaining)?;
+        let (remaining, other_table) = base(remaining, arena)?;
 
         let on_condition: IResult<_, _> = nom::sequence::tuple((
             nom::character::complete::multispace1,
@@ -193,7 +245,7 @@ pub fn table_expression(
 
         match on_condition {
             Ok((remaining, _)) => {
-                let (remaining, condition) = Condition::parse()(remaining)?;
+                let (remaining, condition) = Condition::parse_arena(arena)(remaining)?;
 
                 outer_remaining = remaining;
                 table = TableExpression::Join {
@@ -214,7 +266,7 @@ pub fn table_expression(
                     left: Box::new(table),
                     right: Box::new(other_table),
                     kind: join_kind,
-                    condition: Condition::And(vec![]),
+                    condition: Condition::And(vec![].into()),
                     lateral: is_lateral,
                 };
             }
@@ -222,57 +274,6 @@ pub fn table_expression(
     }
 
     Ok((outer_remaining, table))
-}
-
-impl<'s> TableExpression<'s> {
-    pub fn to_static(&self) -> TableExpression<'static> {
-        match self {
-            Self::Relation(r) => TableExpression::Relation(r.to_static()),
-            Self::Renamed {
-                inner,
-                name,
-                column_rename,
-            } => TableExpression::Renamed {
-                inner: Box::new(inner.to_static()),
-                name: name.to_static(),
-                column_rename: column_rename
-                    .as_ref()
-                    .map(|c| c.iter().map(|c| c.to_static()).collect()),
-            },
-            Self::Join {
-                left,
-                right,
-                kind,
-                condition,
-                lateral,
-            } => TableExpression::Join {
-                left: Box::new(left.to_static()),
-                right: Box::new(right.to_static()),
-                kind: kind.clone(),
-                condition: condition.to_static(),
-                lateral: *lateral,
-            },
-            Self::SubQuery(inner) => TableExpression::SubQuery(Box::new(inner.to_static())),
-        }
-    }
-
-    pub fn max_parameter(&self) -> usize {
-        match self {
-            Self::Relation(_) => 0,
-            Self::Renamed { inner, .. } => inner.max_parameter(),
-            Self::Join {
-                left,
-                right,
-                condition,
-                ..
-            } => core::iter::once(left.max_parameter())
-                .chain(core::iter::once(right.max_parameter()))
-                .chain(core::iter::once(condition.max_parameter()))
-                .max()
-                .unwrap_or(0),
-            Self::SubQuery(sq) => sq.max_parameter(),
-        }
-    }
 }
 
 #[cfg(test)]

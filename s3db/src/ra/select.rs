@@ -9,7 +9,7 @@ use super::{
 
 pub fn parse_condition(
     mut base: RaExpression,
-    condition: &Option<Condition<'_>>,
+    condition: &Option<Condition<'_, '_>>,
     scope: &mut Scope<'_>,
     placeholders: &mut HashMap<usize, DataType>,
     outer: &mut Vec<RaExpression>,
@@ -73,7 +73,7 @@ pub fn parse_order(
 
 pub fn parse_aggregate(
     mut base: RaExpression,
-    query: &Select<'_>,
+    query: &Select<'_, '_>,
     scope: &mut Scope<'_>,
     placeholders: &mut HashMap<usize, DataType>,
     outer: &mut Vec<RaExpression>,

@@ -1,58 +1,26 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _};
+use crate::{CompatibleParser, Parser as _, ArenaParser};
 
 use super::{common::Identifier, ColumnReference, Select, ValueExpression};
 
 #[derive(Debug, PartialEq)]
-pub struct Insert<'s> {
+pub struct Insert<'s, 'a> {
     pub table: Identifier<'s>,
     pub fields: Vec<Identifier<'s>>,
-    pub values: InsertValues<'s>,
+    pub values: InsertValues<'s, 'a>,
     pub returning: Option<Identifier<'s>>,
-    pub on_conflict: Option<ConflictHandling<'s>>,
+    pub on_conflict: Option<ConflictHandling<'s, 'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ConflictHandling<'s> {
+pub struct ConflictHandling<'s, 'a> {
     pub attributes: Vec<Identifier<'s>>,
-    pub update: Vec<(ColumnReference<'s>, ValueExpression<'s>)>,
+    pub update: Vec<(ColumnReference<'s>, ValueExpression<'s, 'a>)>,
 }
 
-impl<'s> CompatibleParser for Insert<'s> {
-    type StaticVersion = Insert<'static>;
-
-    fn to_static(&self) -> Self::StaticVersion {
-        Insert {
-            table: self.table.to_static(),
-            fields: self.fields.iter().map(|f| f.to_static()).collect(),
-            values: self.values.to_static(),
-            returning: self.returning.as_ref().map(|r| r.to_static()),
-            on_conflict: self.on_conflict.as_ref().map(|c| c.to_static()),
-        }
-    }
-
-    fn parameter_count(&self) -> usize {
-        match &self.values {
-            InsertValues::Values(values) => values
-                .iter()
-                .flat_map(|r| r.iter())
-                .map(|v| v.max_parameter())
-                .max()
-                .unwrap_or(0),
-            InsertValues::Select(s) => s.max_parameter(),
-        }
-    }
-}
-
-impl<'s> Insert<'s> {
-    pub fn max_parameter(&self) -> usize {
-        Self::parameter_count(self)
-    }
-}
-
-impl<'s> ConflictHandling<'s> {
-    pub fn to_static(&self) -> ConflictHandling<'static> {
+impl<'s,'a> ConflictHandling<'s, 'a> {
+    pub fn to_static(&self) -> ConflictHandling<'static, 'static> {
         ConflictHandling {
             attributes: self
                 .attributes
@@ -69,13 +37,15 @@ impl<'s> ConflictHandling<'s> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum InsertValues<'s> {
-    Values(Vec<Vec<ValueExpression<'s>>>),
-    Select(Select<'s>),
+pub enum InsertValues<'s, 'a> {
+    Values(Vec<Vec<ValueExpression<'s, 'a>>>),
+    Select(Select<'s, 'a>),
 }
 
-impl<'s> InsertValues<'s> {
-    pub fn to_static(&self) -> InsertValues<'static> {
+impl<'i, 'a> CompatibleParser for InsertValues<'i, 'a> {
+    type StaticVersion = InsertValues<'static, 'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         match self {
             Self::Values(vs) => InsertValues::Values(
                 vs.iter()
@@ -85,22 +55,53 @@ impl<'s> InsertValues<'s> {
             Self::Select(s) => InsertValues::Select(s.to_static()),
         }
     }
+
+    fn parameter_count(&self) -> usize {
+        match self {
+            Self::Values(parts) => parts.iter().flat_map(|i| i.iter()).map(|v| v.parameter_count()).max().unwrap_or(0),
+            Self::Select(s) => s.parameter_count(),
+        }
+    }
 }
 
-impl<'i, 's> crate::Parser<'i> for Insert<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 'a> CompatibleParser for Insert<'i, 'a> {
+    type StaticVersion = Insert<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        match &self.values {
+            InsertValues::Values(values) => values
+                .iter()
+                .flat_map(|r| r.iter())
+                .map(|v| v.parameter_count())
+                .max()
+                .unwrap_or(0),
+            InsertValues::Select(s) => s.parameter_count(),
+        }
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        Insert {
+            table: self.table.to_static(),
+            fields: self.fields.iter().map(|f| f.to_static()).collect(),
+            values: self.values.to_static(),
+            returning: self.returning.as_ref().map(|r| r.to_static()),
+            on_conflict: self.on_conflict.as_ref().map(|c| c.to_static()),
+        }
+    }
+}
+
+impl<'i, 'a> ArenaParser<'i, 'a> for Insert<'i, 'a> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
-            #[allow(deprecated)]
-            insert(i)
+            insert(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn insert<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], Insert<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, (_, _, ident, _, _, fields, _, _, values, returning, on_conflict)) =
         nom::sequence::tuple((
             nom::sequence::tuple((
@@ -123,7 +124,7 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
             ),
             nom::bytes::complete::tag(")"),
             nom::character::complete::multispace1,
-            nom::branch::alt((insert_values,)),
+            nom::branch::alt((|i| insert_values(i, arena),)),
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace1,
@@ -173,7 +174,7 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag("="),
                             nom::character::complete::multispace0,
-                            ValueExpression::parse(),
+                            ValueExpression::parse_arena(arena),
                         ))
                         .map(|(cr, _, _, _, val)| (cr, val)),
                     ),
@@ -197,7 +198,7 @@ pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&
     ))
 }
 
-fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::VerboseError<&[u8]>> {
+fn insert_values<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], InsertValues<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::tuple((
@@ -217,7 +218,7 @@ fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::Verbo
                             nom::bytes::complete::tag(","),
                             nom::sequence::tuple((
                                 nom::character::complete::multispace0,
-                                ValueExpression::parse(),
+                                ValueExpression::parse_arena(arena),
                                 nom::character::complete::multispace0,
                             ))
                             .map(|(_, v, _)| v),
@@ -229,7 +230,7 @@ fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::Verbo
             )),
             |(_, values)| InsertValues::Values(values),
         ),
-        nom::combinator::map(Select::parse(), InsertValues::Select),
+        nom::combinator::map(Select::parse_arena(arena), InsertValues::Select),
     ))(i)
 }
 

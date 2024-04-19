@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _, Select};
+use crate::{CompatibleParser, Parser as _, Select, ArenaParser};
 
 use super::{Identifier, Literal, ValueExpression};
 
@@ -28,206 +28,75 @@ macro_rules! function_call {
     };
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum FunctionCall<'s> {
+#[derive(Debug, PartialEq)]
+pub enum FunctionCall<'s, 'a> {
     LPad {
-        base: Box<ValueExpression<'s>>,
+        base: Box<ValueExpression<'s, 'a>>,
         length: Literal<'s>,
         padding: Literal<'s>,
     },
     Coalesce {
-        values: Vec<ValueExpression<'s>>,
+        values: Vec<ValueExpression<'s, 'a>>,
     },
     Exists {
-        query: Box<Select<'s>>,
+        query: Box<Select<'s, 'a>>,
     },
     SetValue {
         sequence_name: Identifier<'s>,
-        value: Box<ValueExpression<'s>>,
+        value: Box<ValueExpression<'s, 'a>>,
         is_called: bool,
     },
     Lower {
-        value: Box<ValueExpression<'s>>,
+        value: Box<ValueExpression<'s, 'a>>,
     },
     Substr {
-        value: Box<ValueExpression<'s>>,
-        start: Box<ValueExpression<'s>>,
-        count: Option<Box<ValueExpression<'s>>>,
+        value: Box<ValueExpression<'s, 'a>>,
+        start: Box<ValueExpression<'s, 'a>>,
+        count: Option<Box<ValueExpression<'s, 'a>>>,
     },
     CurrentTimestamp,
     CurrentSchemas {
         implicit: bool,
     },
     ArrayPosition {
-        array: Box<ValueExpression<'s>>,
-        target: Box<ValueExpression<'s>>,
+        array: Box<ValueExpression<'s, 'a>>,
+        target: Box<ValueExpression<'s, 'a>>,
     },
 }
 
-impl<'i, 's> crate::Parser<'i> for FunctionCall<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            #[allow(deprecated)]
-            function_call(i)
+impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
+    type StaticVersion = FunctionCall<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        match self {
+            Self::LPad { base, .. } => base.parameter_count(),
+            Self::Coalesce { values } => {
+                values.iter().map(|v| v.parameter_count()).max().unwrap_or(0)
+            }
+            Self::Exists { query } => query.parameter_count(),
+            Self::SetValue { .. } => 0,
+            Self::Lower { value } => value.parameter_count(),
+            Self::Substr {
+                value,
+                start,
+                count,
+            } => [
+                value.parameter_count(),
+                start.parameter_count(),
+                count.as_ref().map(|c| c.parameter_count()).unwrap_or(0),
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0),
+            Self::CurrentTimestamp => 0,
+            Self::CurrentSchemas { .. } => 0,
+            Self::ArrayPosition { array, target } => {
+                core::cmp::max(array.parameter_count(), target.parameter_count())
+            }
         }
     }
-}
 
-#[deprecated]
-pub fn function_call(
-    i: &[u8],
-) -> IResult<&[u8], FunctionCall<'_>, nom::error::VerboseError<&[u8]>> {
-    nom::branch::alt((
-        nom::combinator::map(
-            nom::sequence::tuple((
-                nom::bytes::complete::tag("lpad"),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag("("),
-                ValueExpression::parse(),
-                nom::bytes::complete::tag(","),
-                nom::character::complete::multispace0,
-                Literal::parse(),
-                nom::bytes::complete::tag(","),
-                nom::character::complete::multispace0,
-                Literal::parse(),
-                nom::bytes::complete::tag(")"),
-            )),
-            |(_, _, _, base, _, _, length, _, _, padding, _)| FunctionCall::LPad {
-                base: Box::new(base),
-                length,
-                padding,
-            },
-        ),
-        nom::combinator::map(
-            nom::sequence::tuple((
-                nom::bytes::complete::tag("COALESCE"),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag("("),
-                nom::multi::separated_list1(
-                    nom::sequence::tuple((
-                        nom::character::complete::multispace0,
-                        nom::bytes::complete::tag(","),
-                        nom::character::complete::multispace0,
-                    )),
-                    ValueExpression::parse(),
-                ),
-                nom::bytes::complete::tag(")"),
-            )),
-            |(_, _, _, values, _)| FunctionCall::Coalesce { values },
-        ),
-        nom::combinator::map(
-            nom::sequence::tuple((
-                nom::bytes::complete::tag_no_case("exists"),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag("("),
-                Select::parse(),
-                nom::bytes::complete::tag(")"),
-            )),
-            |(_, _, _, query, _)| FunctionCall::Exists {
-                query: Box::new(query),
-            },
-        ),
-        nom::combinator::map(
-            nom::sequence::tuple((
-                nom::bytes::complete::tag_no_case("setval"),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag("("),
-                Literal::parse(),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag(","),
-                nom::character::complete::multispace0,
-                ValueExpression::parse(),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag(")"),
-            )),
-            |(_, _, _, name_lit, _, _, _, value, _, _)| {
-                let name = match name_lit {
-                    Literal::Str(name) => name,
-                    other => todo!("{:?}", other),
-                };
-
-                FunctionCall::SetValue {
-                    sequence_name: Identifier(name),
-                    value: Box::new(value),
-                    is_called: true,
-                }
-            },
-        ),
-        nom::combinator::map(
-            nom::sequence::tuple((
-                nom::bytes::complete::tag_no_case("lower"),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag("("),
-                nom::character::complete::multispace0,
-                ValueExpression::parse(),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag(")"),
-            )),
-            |(_, _, _, _, val, _, _)| FunctionCall::Lower {
-                value: Box::new(val),
-            },
-        ),
-        function_call!(
-            "substr",
-            nom::sequence::tuple((
-                ValueExpression::parse(),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag(","),
-                nom::character::complete::multispace0,
-                ValueExpression::parse(),
-                nom::character::complete::multispace0,
-                nom::combinator::opt(
-                    nom::sequence::tuple((
-                        nom::bytes::complete::tag(","),
-                        nom::character::complete::multispace0,
-                        ValueExpression::parse(),
-                        nom::character::complete::multispace0,
-                    ))
-                    .map(|(_, _, v, _)| Box::new(v)),
-                )
-            )),
-            |(content, _, _, _, start, _, count)| {
-                FunctionCall::Substr {
-                    value: Box::new(content),
-                    start: Box::new(start),
-                    count,
-                }
-            }
-        ),
-        nom::combinator::map(
-            nom::bytes::complete::tag_no_case("CURRENT_TIMESTAMP"),
-            |_| FunctionCall::CurrentTimestamp,
-        ),
-        function_call!(
-            "current_schemas",
-            nom::combinator::map_res(ValueExpression::parse(), |val| match val {
-                ValueExpression::Literal(Literal::Bool(v)) => Ok(v),
-                _ => Err(()),
-            }),
-            |val| { FunctionCall::CurrentSchemas { implicit: val } }
-        ),
-        function_call!(
-            "array_position",
-            nom::sequence::tuple((
-                ValueExpression::parse(),
-                nom::character::complete::multispace0,
-                nom::bytes::complete::tag(","),
-                nom::character::complete::multispace0,
-                ValueExpression::parse(),
-            )),
-            |(array, _, _, _, target)| FunctionCall::ArrayPosition {
-                array: Box::new(array),
-                target: Box::new(target)
-            }
-        ),
-    ))(i)
-}
-
-impl<'s> FunctionCall<'s> {
-    pub fn to_static(&self) -> FunctionCall<'static> {
+    fn to_static(&self) -> Self::StaticVersion {
         match self {
             Self::LPad {
                 base,
@@ -275,35 +144,167 @@ impl<'s> FunctionCall<'s> {
             },
         }
     }
+}
 
-    pub fn max_parameter(&self) -> usize {
-        match self {
-            Self::LPad { base, .. } => base.max_parameter(),
-            Self::Coalesce { values } => {
-                values.iter().map(|v| v.max_parameter()).max().unwrap_or(0)
-            }
-            Self::Exists { query } => query.max_parameter(),
-            Self::SetValue { .. } => 0,
-            Self::Lower { value } => value.max_parameter(),
-            Self::Substr {
-                value,
-                start,
-                count,
-            } => [
-                value.max_parameter(),
-                start.max_parameter(),
-                count.as_ref().map(|c| c.max_parameter()).unwrap_or(0),
-            ]
-            .into_iter()
-            .max()
-            .unwrap_or(0),
-            Self::CurrentTimestamp => 0,
-            Self::CurrentSchemas { .. } => 0,
-            Self::ArrayPosition { array, target } => {
-                core::cmp::max(array.max_parameter(), target.max_parameter())
-            }
+impl<'i, 'a> ArenaParser<'i, 'a> for FunctionCall<'i, 'a> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            function_call(i, a)
         }
     }
+}
+
+#[deprecated]
+pub fn function_call<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], FunctionCall<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+    nom::branch::alt((
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::bytes::complete::tag("lpad"),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag("("),
+                ValueExpression::parse_arena(arena),
+                nom::bytes::complete::tag(","),
+                nom::character::complete::multispace0,
+                Literal::parse(),
+                nom::bytes::complete::tag(","),
+                nom::character::complete::multispace0,
+                Literal::parse(),
+                nom::bytes::complete::tag(")"),
+            )),
+            |(_, _, _, base, _, _, length, _, _, padding, _)| FunctionCall::LPad {
+                base: Box::new(base),
+                length,
+                padding,
+            },
+        ),
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::bytes::complete::tag("COALESCE"),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag("("),
+                nom::multi::separated_list1(
+                    nom::sequence::tuple((
+                        nom::character::complete::multispace0,
+                        nom::bytes::complete::tag(","),
+                        nom::character::complete::multispace0,
+                    )),
+                    ValueExpression::parse_arena(arena),
+                ),
+                nom::bytes::complete::tag(")"),
+            )),
+            |(_, _, _, values, _)| FunctionCall::Coalesce { values },
+        ),
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::bytes::complete::tag_no_case("exists"),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag("("),
+                Select::parse_arena(arena),
+                nom::bytes::complete::tag(")"),
+            )),
+            |(_, _, _, query, _)| FunctionCall::Exists {
+                query: Box::new(query),
+            },
+        ),
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::bytes::complete::tag_no_case("setval"),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag("("),
+                Literal::parse(),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag(","),
+                nom::character::complete::multispace0,
+                ValueExpression::parse_arena(arena),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag(")"),
+            )),
+            |(_, _, _, name_lit, _, _, _, value, _, _)| {
+                let name = match name_lit {
+                    Literal::Str(name) => name,
+                    other => todo!("{:?}", other),
+                };
+
+                FunctionCall::SetValue {
+                    sequence_name: Identifier(name),
+                    value: Box::new(value),
+                    is_called: true,
+                }
+            },
+        ),
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::bytes::complete::tag_no_case("lower"),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag("("),
+                nom::character::complete::multispace0,
+                ValueExpression::parse_arena(arena),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag(")"),
+            )),
+            |(_, _, _, _, val, _, _)| FunctionCall::Lower {
+                value: Box::new(val),
+            },
+        ),
+        function_call!(
+            "substr",
+            nom::sequence::tuple((
+                ValueExpression::parse_arena(arena),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag(","),
+                nom::character::complete::multispace0,
+                ValueExpression::parse_arena(arena),
+                nom::character::complete::multispace0,
+                nom::combinator::opt(
+                    nom::sequence::tuple((
+                        nom::bytes::complete::tag(","),
+                        nom::character::complete::multispace0,
+                        ValueExpression::parse_arena(arena),
+                        nom::character::complete::multispace0,
+                    ))
+                    .map(|(_, _, v, _)| Box::new(v)),
+                )
+            )),
+            |(content, _, _, _, start, _, count)| {
+                FunctionCall::Substr {
+                    value: Box::new(content),
+                    start: Box::new(start),
+                    count,
+                }
+            }
+        ),
+        nom::combinator::map(
+            nom::bytes::complete::tag_no_case("CURRENT_TIMESTAMP"),
+            |_| FunctionCall::CurrentTimestamp,
+        ),
+        function_call!(
+            "current_schemas",
+            nom::combinator::map_res(ValueExpression::parse_arena(arena), |val| match val {
+                ValueExpression::Literal(Literal::Bool(v)) => Ok(v),
+                _ => Err(()),
+            }),
+            |val| { FunctionCall::CurrentSchemas { implicit: val } }
+        ),
+        function_call!(
+            "array_position",
+            nom::sequence::tuple((
+                ValueExpression::parse_arena(arena),
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag(","),
+                nom::character::complete::multispace0,
+                ValueExpression::parse_arena(arena),
+            )),
+            |(array, _, _, _, target)| FunctionCall::ArrayPosition {
+                array: Box::new(array),
+                target: Box::new(target)
+            }
+        ),
+    ))(i)
 }
 
 #[cfg(test)]

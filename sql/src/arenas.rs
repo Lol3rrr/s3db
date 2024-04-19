@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub enum Boxed<'a, T> {
     Arena(bumpalo::boxed::Box<'a, T>),
     Heap(Box<T>),
@@ -15,6 +16,31 @@ impl<'a, T> Boxed<'a, T> {
             },
             Self::Heap(heaped) => Boxed::Heap(heaped),
         }
+    }
+}
+
+impl<T> From<std::boxed::Box<T>> for Boxed<'static, T> {
+    fn from(value: std::boxed::Box<T>) -> Self {
+        Self::Heap(value)
+    }
+}
+
+impl<'a, T> core::ops::Deref for Boxed<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Arena(v) => v,
+            Self::Heap(v) => v,
+        }
+    }
+}
+
+impl<'a, 'b, X, Y> PartialEq<Boxed<'b, Y>> for Boxed<'a, X> where X: PartialEq<Y> {
+    fn eq(&self, other: &Boxed<'b, Y>) -> bool {
+        let first: &X = self;
+        let second: &Y = other;
+        first == second
     }
 }
 

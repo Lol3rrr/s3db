@@ -1,47 +1,57 @@
 use nom::{IResult, Parser};
 
 use super::ValueExpression;
-use crate::Parser as _;
+use crate::{Parser as _, ArenaParser, CompatibleParser};
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Condition<'s> {
-    And(Vec<Condition<'s>>),
-    Or(Vec<Condition<'s>>),
-    Value(Box<ValueExpression<'s>>),
+#[derive(Debug, PartialEq)]
+pub enum Condition<'s, 'a> {
+    And(crate::arenas::Vec<'a, Condition<'s, 'a>>),
+    Or(crate::arenas::Vec<'a, Condition<'s, 'a>>),
+    Value(crate::arenas::Boxed<'a, ValueExpression<'s, 'a>>),
 }
 
-impl<'s> Condition<'s> {
-    pub fn to_static(&self) -> Condition<'static> {
-        match self {
-            Self::And(parts) => Condition::And(parts.iter().map(|p| p.to_static()).collect()),
-            Self::Or(parts) => Condition::Or(parts.iter().map(|p| p.to_static()).collect()),
-            Self::Value(v) => Condition::Value(Box::new(v.to_static())),
-        }
-    }
-
+impl<'s, 'a> Condition<'s, 'a> {
     pub fn max_parameter(&self) -> usize {
+        self.parameter_count()
+    }
+}
+
+impl<'s, 'a> CompatibleParser for Condition<'s, 'a> {
+    type StaticVersion = Condition<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
         match self {
             Self::And(p) => p.iter().map(|p| p.max_parameter()).max().unwrap_or(0),
             Self::Or(p) => p.iter().map(|p| p.max_parameter()).max().unwrap_or(0),
-            Self::Value(v) => v.max_parameter(),
+            Self::Value(v) => v.parameter_count(),
+        }
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        match self {
+            Self::And(parts) => Condition::And(crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())),
+            Self::Or(parts) => Condition::Or(crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())),
+            Self::Value(v) => Condition::Value({
+                let tmp: &ValueExpression<'s, 'a> = v;
+                let tmps: ValueExpression<'static, 'static> = tmp.to_static();
+                crate::arenas::Boxed::Heap(Box::new(tmps))
+            }),
         }
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Condition<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 'a> ArenaParser<'i, 'a> for Condition<'i, 'a>  {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
-            #[allow(deprecated)]
-            condition(i)
+            condition(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn condition<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], Condition<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     #[derive(Debug, PartialEq)]
     enum Connector {
         And,
@@ -52,12 +62,12 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
         nom::sequence::tuple((
             nom::bytes::complete::tag("("),
             nom::character::complete::multispace0,
-            condition,
+            Condition::parse_arena(arena),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag(")"),
         ))
         .map(|(_, _, c, _, _)| c),
-        ValueExpression::parse().map(|v| Condition::Value(Box::new(v))),
+        ValueExpression::parse_arena(arena).map(|v| Condition::Value(crate::arenas::Boxed::arena(arena, v))),
     ))(i)?;
 
     let mut conditions = vec![tmp];
@@ -87,12 +97,12 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),
                 nom::character::complete::multispace0,
-                condition,
+                Condition::parse_arena(arena),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             ))
             .map(|(_, _, c, _, _)| c),
-            ValueExpression::parse().map(|v| Condition::Value(Box::new(v))),
+            ValueExpression::parse_arena(arena).map(|v| Condition::Value(crate::arenas::Boxed::arena(arena, v))),
         ))(rem)
         {
             Ok(c) => c,
@@ -111,18 +121,26 @@ pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseE
         .filter(|(_, con)| con == &Connector::Or)
         .map(|(i, _)| i + 1);
 
-    let mut and_conditions = Vec::new();
+    let mut and_conditions = bumpalo::collections::Vec::new_in(arena);
     let mut prev_index = 0;
-    for end_index in or_indices.chain(core::iter::once(conditions.len())) {
-        let parts = &conditions[prev_index..end_index];
-        and_conditions.push(Condition::And(parts.to_vec()));
+
+    let conditions_length = conditions.len();
+    let mut condition_iter = conditions.into_iter();
+    for end_index in or_indices.chain(core::iter::once(conditions_length)) {
+        let length = end_index - prev_index;
+
+        and_conditions.push(Condition::And({
+            let mut tmp = bumpalo::collections::Vec::with_capacity_in(length, arena);
+            tmp.extend((&mut condition_iter).take(length));
+            crate::arenas::Vec::Arena(tmp)
+        }));
         prev_index = end_index;
     }
 
     let result = if and_conditions.len() == 1 {
         and_conditions.remove(0)
     } else {
-        Condition::Or(and_conditions)
+        Condition::Or(crate::arenas::Vec::Arena(and_conditions))
     };
 
     Ok((remaining, result))
@@ -141,243 +159,6 @@ mod tests {
     };
 
     use super::*;
-
-    /*
-    #[test]
-    fn single_condition() {
-        let (remaining, equals_condition) =
-            nom::combinator::complete(or_condition)("first = second".as_bytes()).unwrap();
-        assert!(
-            remaining.is_empty(),
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            OrCondition {
-                conditions: vec![AndCondition {
-                    conditions: vec![ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier(Cow::Borrowed("first")),
-                        })),
-                        second: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier(Cow::Borrowed("second")),
-                        })),
-                        operator: BinaryOperator::Equal
-                    }]
-                }]
-            },
-            equals_condition
-        );
-    }
-
-    #[test]
-    fn single_condition_no_spaces() {
-        let (remaining, equals_condition) =
-            nom::combinator::complete(or_condition)("first=second".as_bytes()).unwrap();
-        assert!(
-            remaining.is_empty(),
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            OrCondition {
-                conditions: vec![AndCondition {
-                    conditions: vec![ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier(Cow::Borrowed("first")),
-                        })),
-                        second: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier(Cow::Borrowed("second")),
-                        })),
-                        operator: BinaryOperator::Equal
-                    }]
-                }]
-            },
-            equals_condition
-        );
-    }
-
-    #[test]
-    fn multiple_condition() {
-        let (remaining, equals_condition) =
-            or_condition("first = second AND second = third".as_bytes())
-                .map_err(|e| {
-                    // TODO
-                    e.map_input(|d| core::str::from_utf8(d).unwrap())
-                })
-                .unwrap();
-        assert!(
-            remaining.is_empty(),
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            OrCondition {
-                conditions: vec![AndCondition {
-                    conditions: vec![
-                        ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: Identifier(Cow::Borrowed("first")),
-                            })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: Identifier(Cow::Borrowed("second")),
-                            })),
-                            operator: BinaryOperator::Equal
-                        },
-                        ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: Identifier(Cow::Borrowed("second")),
-                            })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: Identifier(Cow::Borrowed("third")),
-                            })),
-                            operator: BinaryOperator::Equal
-                        }
-                    ]
-                }]
-            },
-            equals_condition
-        );
-    }
-
-    #[test]
-    fn exists() {
-        let (remaining, condition) =
-            or_condition("EXISTS (SELECT name FROM users)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            OrCondition {
-                conditions: vec![AndCondition {
-                    conditions: vec![ValueExpression::FunctionCall(FunctionCall::Exists {
-                        query: Box::new(Select {
-                            values: vec![ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: Identifier("name".into())
-                            })],
-                            table: Some(TableExpression::Relation(Identifier("users".into()))),
-                            where_condition: None,
-                            order_by: None,
-                            group_by: None,
-                            limit: None,
-                            for_update: None,
-                        })
-                    })]
-                }]
-            },
-            condition
-        );
-    }
-
-    #[test]
-    fn or_conditions() {
-        let (remaining, condition) =
-            or_condition("LOWER(email)=LOWER($1) OR LOWER(login)=LOWER($2)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-    }
-
-    #[test]
-    fn or_ands() {
-        let (remaining, paren_condition) =
-            or_condition("((namespace = $1) AND (\"key\" LIKE $2))".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        let (remaining, condition) =
-            or_condition("(namespace = $1) AND (\"key\" LIKE $2)".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            OrCondition {
-                conditions: vec![AndCondition {
-                    conditions: vec![
-                        ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: Identifier("namespace".into())
-                            })),
-                            second: Box::new(ValueExpression::Placeholder(1)),
-                            operator: BinaryOperator::Equal
-                        },
-                        ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: Identifier("key".into())
-                            })),
-                            second: Box::new(ValueExpression::Placeholder(2)),
-                            operator: BinaryOperator::Like
-                        }
-                    ]
-                }]
-            },
-            condition
-        );
-
-        assert_eq!(paren_condition, condition);
-    }
-
-    #[test]
-    fn attribute_is_not_null() {
-        let (remaining, condition) =
-            or_condition("service_account_id IS NOT NULL".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            OrCondition {
-                conditions: vec![AndCondition {
-                    conditions: vec![ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier("service_account_id".into())
-                        })),
-                        second: Box::new(ValueExpression::Null),
-                        operator: BinaryOperator::IsNot
-                    }]
-                }]
-            },
-            condition
-        );
-    }
-    */
 
     #[test]
     fn new_parser_basic_and() {

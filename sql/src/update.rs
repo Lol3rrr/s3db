@@ -1,14 +1,14 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _};
+use crate::{CompatibleParser, Parser as _, ArenaParser};
 
 use super::{Condition, Identifier, ValueExpression};
 
 #[derive(Debug, PartialEq)]
-pub struct Update<'s> {
+pub struct Update<'s, 'a> {
     pub table: Identifier<'s>,
-    pub fields: Vec<(Identifier<'s>, ValueExpression<'s>)>,
-    pub condition: Option<Condition<'s>>,
+    pub fields: Vec<(Identifier<'s>, ValueExpression<'s, 'a>)>,
+    pub condition: Option<Condition<'s, 'a>>,
     pub from: Option<UpdateFrom<'s>>,
 }
 
@@ -21,8 +21,8 @@ pub enum UpdateFrom<'s> {
     },
 }
 
-impl<'s> CompatibleParser for Update<'s> {
-    type StaticVersion = Update<'static>;
+impl<'s, 'a> CompatibleParser for Update<'s, 'a> {
+    type StaticVersion = Update<'static, 'static>;
 
     fn to_static(&self) -> Self::StaticVersion {
         Update {
@@ -41,7 +41,7 @@ impl<'s> CompatibleParser for Update<'s> {
         core::cmp::max(
             self.fields
                 .iter()
-                .map(|(_, expr)| expr.max_parameter())
+                .map(|(_, expr)| expr.parameter_count())
                 .max()
                 .unwrap_or(0),
             self.condition
@@ -49,12 +49,6 @@ impl<'s> CompatibleParser for Update<'s> {
                 .map(|c| c.max_parameter())
                 .unwrap_or(0),
         )
-    }
-}
-
-impl<'s> Update<'s> {
-    pub fn max_parameter(&self) -> usize {
-        Self::parameter_count(self)
     }
 }
 
@@ -70,20 +64,18 @@ impl<'s> UpdateFrom<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Update<'s>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 'a> ArenaParser<'i, 'a> for Update<'i, 'a> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
-            #[allow(deprecated)]
-            update(i)
+            update(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn update<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], Update<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, (_, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("UPDATE"),
         nom::character::complete::multispace1,
@@ -107,7 +99,7 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
                     nom::bytes::complete::tag("="),
                     nom::character::complete::multispace0,
                 )),
-                ValueExpression::parse(),
+                ValueExpression::parse_arena(arena),
             ))
             .map(|(ident, _, val)| (ident, val)),
         ),
@@ -133,7 +125,7 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("WHERE"),
             nom::character::complete::multispace1,
-            Condition::parse(),
+            Condition::parse_arena(arena),
         ))
         .map(|(_, _, _, cond)| cond),
     )(remaining)?;

@@ -70,7 +70,7 @@ pub enum RaFunction {
 impl RaValueExpression {
     pub(super) fn parse_internal(
         scope: &mut Scope<'_>,
-        expr: &ValueExpression<'_>,
+        expr: &ValueExpression<'_, '_>,
         placeholders: &mut HashMap<usize, DataType>,
         ra_expr: &mut RaExpression,
         outer: &mut Vec<RaExpression>,
@@ -515,7 +515,10 @@ impl RaValueExpression {
                     .collect::<Vec<_>>();
 
                 let ra_agg = ra::AggregateExpression::parse(
-                    &ValueExpression::AggregateExpression(agg_exp.clone()),
+                    &ValueExpression::AggregateExpression({
+                        use sql::CompatibleParser;
+                        agg_exp.to_static()
+                    }),
                     scope,
                     &previous_columns,
                     placeholders,
