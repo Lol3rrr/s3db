@@ -1,4 +1,5 @@
 //! [Reference](https://www.postgresql.org/docs/16/sql.html)
+#![deny(clippy::todo)]
 
 use nom::IResult;
 

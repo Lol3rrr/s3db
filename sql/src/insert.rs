@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Parser as _};
+use crate::{CompatibleParser, Parser as _};
 
 use super::{common::Identifier, ColumnReference, Select, ValueExpression};
 

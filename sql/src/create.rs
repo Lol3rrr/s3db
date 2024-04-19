@@ -74,7 +74,10 @@ where
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| create_table(i, a)
+        move |i| {
+            #[allow(deprecated)]
+            create_table(i, a)
+        }
     }
 }
 

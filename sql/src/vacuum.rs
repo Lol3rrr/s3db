@@ -1,6 +1,6 @@
 use nom::IResult;
 
-use crate::{dialects, CompatibleParser, Identifier, Parser as _};
+use crate::{CompatibleParser, Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct Vacuum {}

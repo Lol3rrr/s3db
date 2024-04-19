@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, ArenaParser as _, CompatibleParser, Parser as _};
+use crate::{ArenaParser as _, CompatibleParser, Parser as _};
 
 use super::{common::ValueExpression, condition::Condition};
 
