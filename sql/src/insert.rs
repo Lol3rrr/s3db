@@ -19,7 +19,7 @@ pub struct ConflictHandling<'s> {
     pub update: Vec<(ColumnReference<'s>, ValueExpression<'s>)>,
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Insert<'s> {
+impl<'s> CompatibleParser for Insert<'s> {
     type StaticVersion = Insert<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {

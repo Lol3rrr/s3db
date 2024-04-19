@@ -21,7 +21,7 @@ pub enum UpdateFrom<'s> {
     },
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Update<'s> {
+impl<'s> CompatibleParser for Update<'s> {
     type StaticVersion = Update<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {

@@ -42,7 +42,7 @@ pub struct SelectLimit {
     pub offset: Option<usize>,
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
+impl<'s> CompatibleParser for Select<'s> {
     type StaticVersion = Select<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {

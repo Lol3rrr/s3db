@@ -2,6 +2,8 @@
 
 use nom::IResult;
 
+pub mod arenas;
+
 mod common;
 pub use common::{
     AggregateExpression, BinaryOperator, ColumnReference, DataType, FunctionCall, Identifier,
@@ -65,7 +67,7 @@ pub mod dialects {
 }
 
 /// Should be implemented by parser to indicate that it is compatible with the given dialect `D`
-pub trait CompatibleParser<D> {
+pub trait CompatibleParser {
     type StaticVersion: 'static;
 
     fn to_static(&self) -> Self::StaticVersion;
@@ -77,7 +79,7 @@ pub trait Parser<'i>: Sized {
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>>;
 }
 
-pub trait ArenaParser<'i, 'a>: Sized {
+pub trait ArenaParser<'i, 'a>: Sized + CompatibleParser {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>>;
@@ -122,6 +124,18 @@ where
     }
 }
 
+impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
+    type StaticVersion = Query<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        todo!()
+    }
+}
+
 impl<'i, 's, 'a> ArenaParser<'i, 'a> for Vec<Query<'s, 'a>> where 'i: 's {
     fn parse_arena(
         a: &'a bumpalo::Bump,
@@ -129,6 +143,18 @@ impl<'i, 's, 'a> ArenaParser<'i, 'a> for Vec<Query<'s, 'a>> where 'i: 's {
         move |i| {
             nom::multi::many1(move |i| query(i, a))(i)
         }
+    }
+}
+
+impl<'s, 'a> CompatibleParser for Vec<Query<'s, 'a>> {
+    type StaticVersion = Vec<Query<'static, 'static>>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        todo!()
     }
 }
 
@@ -176,7 +202,7 @@ impl<'s, 'a> Query<'s, 'a> {
         Ok(queries)
     }
 
-    pub fn to_static(&self) -> Query<'static, 'a> {
+    pub fn to_static(&self) -> Query<'static, 'static> {
         match self {
             Self::WithCTE { cte, query } => Query::WithCTE {
                 cte: cte.to_static(),

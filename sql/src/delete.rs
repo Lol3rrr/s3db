@@ -10,7 +10,7 @@ pub struct Delete<'s> {
     pub condition: Option<Condition<'s>>,
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Delete<'s> {
+impl<'s> CompatibleParser for Delete<'s> {
     type StaticVersion = Delete<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {

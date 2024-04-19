@@ -13,7 +13,7 @@ pub enum CopyInputSource {
     Stdin,
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Copy_<'s> {
+impl<'s> CompatibleParser for Copy_<'s> {
     type StaticVersion = Copy_<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {

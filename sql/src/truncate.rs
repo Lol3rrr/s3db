@@ -42,7 +42,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], TruncateTable<'_>, nom::error::VerboseE
     )(i)
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for TruncateTable<'s> {
+impl<'s> CompatibleParser for TruncateTable<'s> {
     type StaticVersion = TruncateTable<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {

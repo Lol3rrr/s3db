@@ -6,8 +6,6 @@ use std::fmt::Debug;
 
 use futures::future::LocalBoxFuture;
 
-use crate::execution;
-
 pub trait Endpoint<E, T>
 where
     T: 'static,
@@ -166,11 +164,12 @@ pub mod postgres {
         let mut arena = bumpalo::Bump::new();
 
         let mut prepared_statements = HashMap::new();
-        let mut bound_statements =
-            HashMap::<String, <E::Prepared<'_> as execution::PreparedStatement>::Bound>::new();
+        let mut bound_statements = HashMap::new();
 
         
         loop {
+            arena.reset();
+
             tracing::trace!("Waiting for message");
 
             let msg = match postgres::Message::parse(&mut connection).await {

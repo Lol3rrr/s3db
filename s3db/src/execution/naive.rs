@@ -41,15 +41,15 @@ impl<S> algorithms::joins::EvaluateConditions<S::LoadingError> for NaiveEngineCo
 }
 
 #[derive(Debug)]
-pub struct NaivePrepared<'a> {
-    query: Query<'static, 'a>,
+pub struct NaivePrepared {
+    query: Query<'static, 'static>,
     expected_parameters: Vec<DataType>,
     columns: Vec<(String, DataType)>,
 }
 
 #[derive(Debug)]
-pub struct NaiveBound<'a> {
-    query: Query<'static, 'a>,
+pub struct NaiveBound {
+    query: Query<'static, 'static>,
     expected_parameters: Vec<DataType>,
     values: Vec<Vec<u8>>,
     result_columns: Vec<FormatCode>,
@@ -1111,7 +1111,7 @@ impl<S> Execute<S::TransactionGuard> for NaiveEngine<S>
 where
     S: crate::storage::Storage,
 {
-    type Prepared<'a> = NaivePrepared<'a>;
+    type Prepared = NaivePrepared;
     type PrepareError = PrepareError<S::LoadingError>;
     type ExecuteBoundError = ExecuteBoundError<S::LoadingError>;
 
@@ -1121,7 +1121,7 @@ where
         &self,
         query: &sql::Query<'q, 'a>,
         _ctx: &mut Context<S::TransactionGuard>,
-    ) -> Result<Self::Prepared<'a>, Self::PrepareError> {
+    ) -> Result<Self::Prepared, Self::PrepareError> {
         let (expected, columns) = match query {
             Query::Select(s) => {
                 let schemas = self
@@ -1209,9 +1209,9 @@ where
     }
 
     #[tracing::instrument(skip(self, query, ctx))]
-    async fn execute_bound<'a>(
+    async fn execute_bound(
         &self,
-        query: &<Self::Prepared<'a> as PreparedStatement<'a>>::Bound,
+        query: &<Self::Prepared as PreparedStatement>::Bound,
         ctx: &mut Context<S::TransactionGuard>,
     ) -> Result<ExecuteResult, Self::ExecuteBoundError> {
         tracing::debug!("Executing Bound Query");
@@ -2038,8 +2038,8 @@ let transaction = ctx.transaction.as_ref().unwrap();
     }
 }
 
-impl<'a> PreparedStatement<'a> for NaivePrepared<'a> {
-    type Bound = NaiveBound<'a>;
+impl PreparedStatement for NaivePrepared {
+    type Bound = NaiveBound;
     type BindError = ();
 
     fn bind(

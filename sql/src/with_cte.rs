@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{query, Identifier, Parser as _, Query};
+use crate::{query, Identifier, Parser as _, Query, CompatibleParser};
 
 #[derive(Debug, PartialEq)]
 pub struct WithCTE<'s, 'a> {
@@ -29,6 +29,18 @@ impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for WithCTEs<'s, 'a> where 'i: 's {
         move |i| {
             with_ctes(i, a)
         }
+    }
+}
+
+impl<'s, 'a> CompatibleParser for WithCTEs<'s, 'a> {
+    type StaticVersion = WithCTEs<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        todo!()
     }
 }
 
@@ -102,7 +114,7 @@ where
 }
 
 impl<'s, 'a> WithCTEs<'s, 'a> {
-    pub fn to_static(&self) -> WithCTEs<'static, 'a> {
+    pub fn to_static(&self) -> WithCTEs<'static, 'static> {
         WithCTEs {
             parts: self
                 .parts

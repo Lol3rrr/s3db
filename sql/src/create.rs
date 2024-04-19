@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, ArenaParser as _, CompatibleParser, Literal, Parser as _Parser};
+use crate::{ArenaParser as _, CompatibleParser, Literal, Parser as _Parser};
 
 use super::common::{DataType, Identifier, TypeModifier};
 
@@ -27,7 +27,7 @@ pub enum WithOptions {
 }
 
 impl<'s, 'a> CreateTable<'s, 'a> {
-    pub fn to_static(&self) -> CreateTable<'static, 'a> {
+    pub fn to_static(&self) -> CreateTable<'static, 'static> {
         CreateTable {
             identifier: self.identifier.to_static(),
             fields: self.fields.iter().map(|f| f.to_static()).collect(),
@@ -45,7 +45,7 @@ impl<'s, 'a> CreateTable<'s, 'a> {
     }
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for CreateIndex<'s> {
+impl<'s> CompatibleParser for CreateIndex<'s> {
     type StaticVersion = CreateIndex<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {
@@ -75,6 +75,18 @@ where
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| create_table(i, a)
+    }
+}
+
+impl<'s, 'a> CompatibleParser for CreateTable<'s, 'a> {
+    type StaticVersion = CreateTable<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        todo!()
     }
 }
 
@@ -259,15 +271,15 @@ pub fn create_index(i: &[u8]) -> IResult<&[u8], CreateIndex<'_>, nom::error::Ver
 pub struct TableField<'s, 'a> {
     pub ident: Identifier<'s>,
     pub datatype: DataType,
-    pub modifiers: bumpalo::collections::Vec<'a, TypeModifier>,
+    pub modifiers: crate::arenas::Vec<'a, TypeModifier>,
 }
 
 impl<'s, 'a> TableField<'s, 'a> {
-    pub fn to_static(&self) -> TableField<'static, 'a> {
+    pub fn to_static(&self) -> TableField<'static, 'static> {
         TableField {
             ident: self.ident.to_static(),
             datatype: self.datatype.clone(),
-            modifiers: self.modifiers.clone(),
+            modifiers: self.modifiers.clone_to_heap(),
         }
     }
 }
@@ -279,6 +291,17 @@ where
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| create_field(i, a)
+    }
+}
+
+impl<'s, 'a> CompatibleParser for TableField<'s, 'a> {
+    type StaticVersion = TableField<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+    fn to_static(&self) -> Self::StaticVersion {
+        todo!()
     }
 }
 
@@ -329,32 +352,32 @@ mod tests {
                     TableField {
                         ident: "id".into(),
                         datatype: DataType::Serial,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::PrimaryKey, TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::PrimaryKey, TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "migration_id".into(),
                         datatype: DataType::VarChar { size: 255 },
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "sql".into(),
                         datatype: DataType::Text,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "success".into(),
                         datatype: DataType::Bool,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "error".into(),
                         datatype: DataType::Text,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "timestamp".into(),
                         datatype: DataType::Timestamp,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     }
                 ],
                 primary_key: None,
@@ -403,7 +426,7 @@ mod tests {
             TableField {
                 ident: "id".into(),
                 datatype: DataType::Serial,
-                modifiers: bumpalo::vec![in &arena; TypeModifier::PrimaryKey]
+                modifiers: bumpalo::vec![in &arena; TypeModifier::PrimaryKey].into()
             }
         );
     }
@@ -426,37 +449,37 @@ mod tests {
                     TableField {
                         ident: "def_org_id".into(),
                         datatype: DataType::BigInteger,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "def_uid".into(),
                         datatype: DataType::VarChar {size: 40 },
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull, TypeModifier::DefaultValue { value: Some(Literal::SmallInteger(0)) }],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull, TypeModifier::DefaultValue { value: Some(Literal::SmallInteger(0)) }].into(),
                     },
                     TableField {
                         ident: "labels".into(),
                         datatype: DataType::Text,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "labels_hash".into(),
                         datatype: DataType::VarChar{size: 190},
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "current_state".into(),
                         datatype: DataType::VarChar{size: 190},
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "current_state_since".into(),
                         datatype: DataType::BigInteger,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                     TableField {
                         ident: "last_eval_time".into(),
                         datatype: DataType::BigInteger,
-                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull].into(),
                     },
                 ],
                 identifier: "alert_instance".into(),
@@ -479,7 +502,7 @@ mod tests {
                 fields: vec![TableField {
                     ident: "name".into(),
                     datatype: DataType::Integer,
-                    modifiers: bumpalo::vec![in &arena; ]
+                    modifiers: bumpalo::vec![in &arena; ].into()
                 }],
                 if_not_exists: false,
                 primary_key: None,

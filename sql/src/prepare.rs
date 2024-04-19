@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::Parser as _;
+use crate::{Parser as _, CompatibleParser};
 
 use super::{query, DataType, Identifier, Query};
 
@@ -19,6 +19,18 @@ where
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| parse(i, a)
+    }
+}
+
+impl<'s, 'a> CompatibleParser for Prepare<'s, 'a> {
+    type StaticVersion = Prepare<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        todo!()
     }
 }
 
@@ -72,7 +84,7 @@ where
 }
 
 impl<'s, 'a> Prepare<'s, 'a> {
-    pub fn to_static(&self) -> Prepare<'static, 'a> {
+    pub fn to_static(&self) -> Prepare<'static, 'static> {
         Prepare {
             name: self.name.to_static(),
             params: self.params.clone(),
