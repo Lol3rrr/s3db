@@ -15,13 +15,6 @@ pub struct WithCTEs<'s, 'a> {
     pub recursive: bool,
 }
 
-impl<'s, 'a> WithCTEs<'s, 'a> {
-    pub fn parameter_count(&self) -> usize {
-        // TODO
-        0
-    }
-}
-
 impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for WithCTEs<'s, 'a> where 'i: 's {
     fn parse_arena(
         a: &'a bumpalo::Bump,
@@ -40,7 +33,21 @@ impl<'s, 'a> CompatibleParser for WithCTEs<'s, 'a> {
     }
 
     fn to_static(&self) -> Self::StaticVersion {
-        todo!()
+        WithCTEs {
+            parts: self
+                .parts
+                .iter()
+                .map(|p| WithCTE {
+                    name: p.name.to_static(),
+                    query: p.query.to_static(),
+                    columns: p
+                        .columns
+                        .as_ref()
+                        .map(|cs| cs.iter().map(|c| c.to_static()).collect()),
+                })
+                .collect(),
+            recursive: self.recursive,
+        }
     }
 }
 
@@ -111,26 +118,6 @@ where
             recursive: recursive.is_some(),
         },
     ))
-}
-
-impl<'s, 'a> WithCTEs<'s, 'a> {
-    pub fn to_static(&self) -> WithCTEs<'static, 'static> {
-        WithCTEs {
-            parts: self
-                .parts
-                .iter()
-                .map(|p| WithCTE {
-                    name: p.name.to_static(),
-                    query: p.query.to_static(),
-                    columns: p
-                        .columns
-                        .as_ref()
-                        .map(|cs| cs.iter().map(|c| c.to_static()).collect()),
-                })
-                .collect(),
-            recursive: self.recursive,
-        }
-    }
 }
 
 #[cfg(test)]

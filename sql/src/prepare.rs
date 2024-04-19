@@ -33,7 +33,11 @@ impl<'s, 'a> CompatibleParser for Prepare<'s, 'a> {
     }
 
     fn to_static(&self) -> Self::StaticVersion {
-        todo!()
+        Prepare {
+            name: self.name.to_static(),
+            params: self.params.clone(),
+            query: Box::new(self.query.to_static()),
+        }
     }
 }
 
@@ -84,20 +88,6 @@ where
     )(i)?;
 
     Ok((i, tmp))
-}
-
-impl<'s, 'a> Prepare<'s, 'a> {
-    pub fn to_static(&self) -> Prepare<'static, 'static> {
-        Prepare {
-            name: self.name.to_static(),
-            params: self.params.clone(),
-            query: Box::new(self.query.to_static()),
-        }
-    }
-
-    pub fn parameter_count(&self) -> usize {
-        0
-    }
 }
 
 #[cfg(test)]

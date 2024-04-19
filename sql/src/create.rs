@@ -26,25 +26,6 @@ pub enum WithOptions {
     FillFactor(usize),
 }
 
-impl<'s, 'a> CreateTable<'s, 'a> {
-    pub fn to_static(&self) -> CreateTable<'static, 'static> {
-        CreateTable {
-            identifier: self.identifier.to_static(),
-            fields: self.fields.iter().map(|f| f.to_static()).collect(),
-            if_not_exists: self.if_not_exists,
-            primary_key: self
-                .primary_key
-                .as_ref()
-                .map(|parts| parts.iter().map(|p| p.to_static()).collect()),
-            withs: self.withs.clone(),
-        }
-    }
-
-    pub fn parameter_count(&self) -> usize {
-        0
-    }
-}
-
 impl<'s> CompatibleParser for CreateIndex<'s> {
     type StaticVersion = CreateIndex<'static>;
 
@@ -89,7 +70,16 @@ impl<'s, 'a> CompatibleParser for CreateTable<'s, 'a> {
     }
 
     fn to_static(&self) -> Self::StaticVersion {
-        todo!()
+        CreateTable {
+            identifier: self.identifier.to_static(),
+            fields: self.fields.iter().map(|f| f.to_static()).collect(),
+            if_not_exists: self.if_not_exists,
+            primary_key: self
+                .primary_key
+                .as_ref()
+                .map(|parts| parts.iter().map(|p| p.to_static()).collect()),
+            withs: self.withs.clone(),
+        }
     }
 }
 
@@ -169,7 +159,7 @@ where
                                     Literal::SmallInteger(v) => v as usize,
                                     Literal::Integer(v) => v as usize,
                                     Literal::BigInteger(v) => v as usize,
-                                    _ => todo!(),
+                                    other => panic!("Fill Factor needs to be a number, but got {:?}", other),
                                 };
 
                                 WithOptions::FillFactor(value)
@@ -277,15 +267,6 @@ pub struct TableField<'s, 'a> {
     pub modifiers: crate::arenas::Vec<'a, TypeModifier>,
 }
 
-impl<'s, 'a> TableField<'s, 'a> {
-    pub fn to_static(&self) -> TableField<'static, 'static> {
-        TableField {
-            ident: self.ident.to_static(),
-            datatype: self.datatype.clone(),
-            modifiers: self.modifiers.clone_to_heap(),
-        }
-    }
-}
 impl<'i, 'a, 's> crate::ArenaParser<'i, 'a> for TableField<'s, 'a>
 where
     'i: 's,
@@ -304,7 +285,11 @@ impl<'s, 'a> CompatibleParser for TableField<'s, 'a> {
         0
     }
     fn to_static(&self) -> Self::StaticVersion {
-        todo!()
+        TableField {
+            ident: self.ident.to_static(),
+            datatype: self.datatype.clone(),
+            modifiers: self.modifiers.clone_to_heap(),
+        }
     }
 }
 

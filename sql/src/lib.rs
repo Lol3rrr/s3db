@@ -1,5 +1,4 @@
 //! [Reference](https://www.postgresql.org/docs/16/sql.html)
-#![deny(clippy::todo)]
 
 use nom::IResult;
 
@@ -129,11 +128,54 @@ impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
     type StaticVersion = Query<'static, 'static>;
 
     fn parameter_count(&self) -> usize {
-        0
+        match self {
+            Self::WithCTE { cte, query } => {
+                core::cmp::max(cte.parameter_count(), query.parameter_count())
+            }
+            Self::Prepare(p) => p.params.len(),
+            Self::Select(s) => s.max_parameter(),
+            Self::Insert(i) => i.max_parameter(),
+            Self::Update(u) => u.max_parameter(),
+            Self::Copy_(c) => c.parameter_count(),
+            Self::Delete(d) => d.max_parameter(),
+            Self::CreateTable(_) => 0,
+            Self::CreateIndex(_) => 0,
+            Self::AlterTable(_) => 0,
+            Self::DropIndex(_) => 0,
+            Self::TruncateTable(_) => 0,
+            Self::DropTable(_) => 0,
+            Self::Configuration(_) => 0,
+            Self::BeginTransaction(_) => 0,
+            Self::CommitTransaction => 0,
+            Self::RollbackTransaction => 0,
+            Self::Vacuum(_) => 0,
+        }
     }
 
     fn to_static(&self) -> Self::StaticVersion {
-        todo!()
+        match self {
+            Self::WithCTE { cte, query } => Query::WithCTE {
+                cte: cte.to_static(),
+                query: Box::new(query.to_static()),
+            },
+            Self::Prepare(prepare) => Query::Prepare(prepare.to_static()),
+            Self::Select(s) => Query::Select(s.to_static()),
+            Self::Insert(ins) => Query::Insert(ins.to_static()),
+            Self::Update(ups) => Query::Update(ups.to_static()),
+            Self::Copy_(c) => Query::Copy_(c.to_static()),
+            Self::Delete(d) => Query::Delete(d.to_static()),
+            Self::CreateTable(ct) => Query::CreateTable(ct.to_static()),
+            Self::CreateIndex(ci) => Query::CreateIndex(ci.to_static()),
+            Self::AlterTable(at) => Query::AlterTable(at.to_static()),
+            Self::DropIndex(di) => Query::DropIndex(di.to_static()),
+            Self::DropTable(dt) => Query::DropTable(dt.to_static()),
+            Self::TruncateTable(t) => Query::TruncateTable(t.to_static()),
+            Self::Configuration(c) => Query::Configuration(c.clone()),
+            Self::BeginTransaction(iso) => Query::BeginTransaction(iso.clone()),
+            Self::CommitTransaction => Query::CommitTransaction,
+            Self::RollbackTransaction => Query::RollbackTransaction,
+            Self::Vacuum(v) => Query::Vacuum(v.to_static()),
+        }
     }
 }
 
@@ -151,11 +193,11 @@ impl<'s, 'a> CompatibleParser for Vec<Query<'s, 'a>> {
     type StaticVersion = Vec<Query<'static, 'static>>;
 
     fn parameter_count(&self) -> usize {
-        0
+        self.iter().map(|q| q.parameter_count()).max().unwrap_or(0)
     }
 
     fn to_static(&self) -> Self::StaticVersion {
-        todo!()
+        self.iter().map(|q| q.to_static()).collect()
     }
 }
 
@@ -201,58 +243,7 @@ impl<'s, 'a> Query<'s, 'a> {
         }
 
         Ok(queries)
-    }
-
-    pub fn to_static(&self) -> Query<'static, 'static> {
-        match self {
-            Self::WithCTE { cte, query } => Query::WithCTE {
-                cte: cte.to_static(),
-                query: Box::new(query.to_static()),
-            },
-            Self::Prepare(prepare) => Query::Prepare(prepare.to_static()),
-            Self::Select(s) => Query::Select(s.to_static()),
-            Self::Insert(ins) => Query::Insert(ins.to_static()),
-            Self::Update(ups) => Query::Update(ups.to_static()),
-            Self::Copy_(c) => Query::Copy_(c.to_static()),
-            Self::Delete(d) => Query::Delete(d.to_static()),
-            Self::CreateTable(ct) => Query::CreateTable(ct.to_static()),
-            Self::CreateIndex(ci) => Query::CreateIndex(ci.to_static()),
-            Self::AlterTable(at) => Query::AlterTable(at.to_static()),
-            Self::DropIndex(di) => Query::DropIndex(di.to_static()),
-            Self::DropTable(dt) => Query::DropTable(dt.to_static()),
-            Self::TruncateTable(t) => Query::TruncateTable(t.to_static()),
-            Self::Configuration(c) => Query::Configuration(c.clone()),
-            Self::BeginTransaction(iso) => Query::BeginTransaction(iso.clone()),
-            Self::CommitTransaction => Query::CommitTransaction,
-            Self::RollbackTransaction => Query::RollbackTransaction,
-            Self::Vacuum(v) => Query::Vacuum(v.to_static()),
-        }
-    }
-
-    pub fn parameter_count(&self) -> usize {
-        match self {
-            Self::WithCTE { cte, query } => {
-                core::cmp::max(cte.parameter_count(), query.parameter_count())
-            }
-            Self::Prepare(p) => p.params.len(),
-            Self::Select(s) => s.max_parameter(),
-            Self::Insert(i) => i.max_parameter(),
-            Self::Update(u) => u.max_parameter(),
-            Self::Copy_(c) => c.parameter_count(),
-            Self::Delete(d) => d.max_parameter(),
-            Self::CreateTable(_) => 0,
-            Self::CreateIndex(_) => 0,
-            Self::AlterTable(_) => 0,
-            Self::DropIndex(_) => 0,
-            Self::TruncateTable(_) => 0,
-            Self::DropTable(_) => 0,
-            Self::Configuration(_) => 0,
-            Self::BeginTransaction(_) => 0,
-            Self::CommitTransaction => 0,
-            Self::RollbackTransaction => 0,
-            Self::Vacuum(_) => 0,
-        }
-    }
+    } 
 }
 
 fn query<'i, 'a>(
