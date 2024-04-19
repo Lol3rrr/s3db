@@ -2,9 +2,7 @@ use nom::{IResult, Parser};
 
 use crate::Parser as _Parser;
 
-use super::{
-    DataType, Identifier, Literal, TypeModifier,
-};
+use super::{DataType, Identifier, Literal, TypeModifier};
 
 #[derive(Debug, PartialEq)]
 pub enum AlterTable<'s> {
@@ -93,7 +91,10 @@ impl<'s> AlterTable<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for AlterTable<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for AlterTable<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -138,7 +139,10 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             DataType::parse(),
             nom::character::complete::multispace1,
-            nom::multi::separated_list0(nom::character::complete::multispace1, TypeModifier::parse()),
+            nom::multi::separated_list0(
+                nom::character::complete::multispace1,
+                TypeModifier::parse(),
+            ),
         ))
         .map(
             |(_, column, _, data_type, _, type_modifiers)| AlterTable::AddColumn {
@@ -258,21 +262,28 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
 
 #[cfg(test)]
 mod tests {
-    use crate::{Literal, macros::parser_parse};
+    use crate::{macros::parser_parse, Literal};
 
     use super::*;
 
     #[test]
     fn alter_table_rename() {
-        parser_parse!(AlterTable, "ALTER TABLE \"user\" RENAME TO \"user_v1\"", AlterTable::Rename {
+        parser_parse!(
+            AlterTable,
+            "ALTER TABLE \"user\" RENAME TO \"user_v1\"",
+            AlterTable::Rename {
                 from: Identifier("user".into()),
                 to: Identifier("user_v1".into())
-            });
+            }
+        );
     }
 
     #[test]
     fn alter_add_column() {
-        parser_parse!(AlterTable, "alter table \"user\" ADD COLUMN \"help_flags1\" BIGINT NOT NULL DEFAULT 0", AlterTable::AddColumn {
+        parser_parse!(
+            AlterTable,
+            "alter table \"user\" ADD COLUMN \"help_flags1\" BIGINT NOT NULL DEFAULT 0",
+            AlterTable::AddColumn {
                 table: Identifier("user".into()),
                 column_name: Identifier("help_flags1".into()),
                 data_type: DataType::BigInteger,
@@ -282,7 +293,8 @@ mod tests {
                         value: Some(Literal::SmallInteger(0))
                     }
                 ]
-            });
+            }
+        );
     }
 
     #[test]
@@ -310,45 +322,65 @@ mod tests {
 
     #[test]
     fn alter_column_drop_not_null() {
-        parser_parse!(AlterTable, "ALTER TABLE \"user\" ALTER COLUMN is_service_account DROP NOT NULL", AlterTable::AtlerColumnDropNotNull {
+        parser_parse!(
+            AlterTable,
+            "ALTER TABLE \"user\" ALTER COLUMN is_service_account DROP NOT NULL",
+            AlterTable::AtlerColumnDropNotNull {
                 table: Identifier("user".into()),
                 column: Identifier("is_service_account".into())
-            });
+            }
+        );
     }
 
     #[test]
     fn alter_column_add_bytea_null() {
-        parser_parse!(AlterTable, "alter table \"dashboard_snapshot\" ADD COLUMN \"dashboard_encrypted\" BYTEA NULL", AlterTable::AddColumn {
+        parser_parse!(
+            AlterTable,
+            "alter table \"dashboard_snapshot\" ADD COLUMN \"dashboard_encrypted\" BYTEA NULL",
+            AlterTable::AddColumn {
                 table: Identifier("dashboard_snapshot".into()),
                 column_name: Identifier("dashboard_encrypted".into()),
                 data_type: DataType::ByteA,
                 type_modifiers: vec![TypeModifier::Null]
-            });
+            }
+        );
     }
 
     #[test]
     fn alter_column_type() {
-        parser_parse!(AlterTable, "ALTER TABLE annotation ALTER COLUMN tags TYPE VARCHAR(4096)", AlterTable::AlterColumnTypes {
+        parser_parse!(
+            AlterTable,
+            "ALTER TABLE annotation ALTER COLUMN tags TYPE VARCHAR(4096)",
+            AlterTable::AlterColumnTypes {
                 table: Identifier("annotation".into()),
                 columns: vec![(Identifier("tags".into()), DataType::VarChar { size: 4096 })]
-            });
+            }
+        );
     }
 
     #[test]
     fn alter_column_rename() {
-        parser_parse!(AlterTable, "ALTER TABLE alert_instance RENAME COLUMN def_org_id TO rule_org_id", AlterTable::RenameColumn {
+        parser_parse!(
+            AlterTable,
+            "ALTER TABLE alert_instance RENAME COLUMN def_org_id TO rule_org_id",
+            AlterTable::RenameColumn {
                 table: Identifier("alert_instance".into()),
                 from: Identifier("def_org_id".into()),
                 to: Identifier("rule_org_id".into())
-            });
+            }
+        );
     }
 
     #[test]
     fn alter_set_default() {
-        parser_parse!(AlterTable, "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false", AlterTable::SetColumnDefault {
+        parser_parse!(
+            AlterTable,
+            "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false",
+            AlterTable::SetColumnDefault {
                 table: Identifier("alert_rule".into()),
                 column: Identifier("is_paused".into()),
                 value: Literal::Bool(false)
-            });
+            }
+        );
     }
 }

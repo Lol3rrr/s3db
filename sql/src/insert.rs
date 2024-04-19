@@ -1,8 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{
-    dialects, CompatibleParser, Parser as _
-};
+use crate::{dialects, CompatibleParser, Parser as _};
 
 use super::{common::Identifier, ColumnReference, Select, ValueExpression};
 
@@ -89,7 +87,10 @@ impl<'s> InsertValues<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Insert<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Insert<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -234,7 +235,7 @@ fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::Verbo
 
 #[cfg(test)]
 mod tests {
-    use crate::{Literal, macros::parser_parse};
+    use crate::{macros::parser_parse, Literal};
 
     use super::*;
 

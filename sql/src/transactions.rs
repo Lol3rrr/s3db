@@ -4,11 +4,9 @@ pub struct BeginTransaction {
     pub isolation: IsolationMode,
 }
 
-pub struct CommitTransaction {
-}
+pub struct CommitTransaction {}
 
-pub struct AbortTransaction {
-}
+pub struct AbortTransaction {}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum IsolationMode {
@@ -25,11 +23,7 @@ pub enum IsolationMode {
 
 impl<'i> crate::Parser<'i> for BeginTransaction {
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            begin_transaction(i).map(|(first, im)| (first, BeginTransaction {
-                isolation: im,
-            }))
-        }
+        move |i| begin_transaction(i).map(|(first, im)| (first, BeginTransaction { isolation: im }))
     }
 }
 
@@ -91,9 +85,7 @@ pub fn begin_transaction(
 
 impl<'i> crate::Parser<'i> for CommitTransaction {
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            commit_transaction(i).map(|(f, _)| (f, CommitTransaction {}))
-        }
+        move |i| commit_transaction(i).map(|(f, _)| (f, CommitTransaction {}))
     }
 }
 
@@ -109,9 +101,7 @@ pub fn commit_transaction(i: &[u8]) -> IResult<&[u8], (), nom::error::VerboseErr
 
 impl<'i> crate::Parser<'i> for AbortTransaction {
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            rollback_transaction(i).map(|(f, _)| (f, AbortTransaction{}))
-        }
+        move |i| rollback_transaction(i).map(|(f, _)| (f, AbortTransaction {}))
     }
 }
 

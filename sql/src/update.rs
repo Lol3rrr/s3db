@@ -1,8 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{
-    dialects, CompatibleParser, Parser as _
-};
+use crate::{dialects, CompatibleParser, Parser as _};
 
 use super::{Condition, Identifier, ValueExpression};
 
@@ -72,7 +70,10 @@ impl<'s> UpdateFrom<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Update<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Update<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -158,7 +159,10 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::{common::FunctionCall, BinaryOperator, ColumnReference, DataType, Literal, macros::parser_parse};
+    use crate::{
+        common::FunctionCall, macros::parser_parse, BinaryOperator, ColumnReference, DataType,
+        Literal,
+    };
 
     use super::*;
 

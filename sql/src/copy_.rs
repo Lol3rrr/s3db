@@ -28,7 +28,10 @@ impl<'s> CompatibleParser<dialects::Postgres> for Copy_<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Copy_<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Copy_<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]

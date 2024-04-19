@@ -33,11 +33,12 @@ impl<'s> Delete<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Delete<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Delete<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            delete(i)
-        }
+        move |i| delete(i)
     }
 }
 

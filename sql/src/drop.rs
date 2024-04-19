@@ -44,7 +44,10 @@ impl<'s> DropTable<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for DropIndex<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for DropIndex<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -94,7 +97,10 @@ pub fn drop_index(i: &[u8]) -> IResult<&[u8], DropIndex<'_>, nom::error::Verbose
     )(i)
 }
 
-impl<'i, 's> crate::Parser<'i> for DropTable<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for DropTable<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -145,20 +151,28 @@ mod tests {
 
     #[test]
     fn drop_index_basic() {
-        parser_parse!(DropIndex, "DROP INDEX \"UQE_user_login\" CASCADE", DropIndex {
+        parser_parse!(
+            DropIndex,
+            "DROP INDEX \"UQE_user_login\" CASCADE",
+            DropIndex {
                 name: Identifier("UQE_user_login".into()),
                 concurrently: false,
                 if_exists: false,
                 dependent_handling: DependentHandling::Cascade,
-            });
+            }
+        );
     }
 
     #[test]
     fn drop_table_basic() {
-        parser_parse!(DropTable, "DROP TABLE \"testing\"", DropTable {
+        parser_parse!(
+            DropTable,
+            "DROP TABLE \"testing\"",
+            DropTable {
                 names: vec![Identifier("testing".into())],
                 if_exists: false,
                 dependent_handling: DependentHandling::Restrict,
-            }); 
+            }
+        );
     }
 }

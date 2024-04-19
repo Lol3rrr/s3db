@@ -19,7 +19,8 @@ pub enum DataType {
 }
 
 impl<'i> crate::Parser<'i> for DataType {
-    fn parse() -> impl Fn(&'i[u8]) -> IResult<&'i [u8], DataType, nom::error::VerboseError<&'i [u8]>> {
+    fn parse(
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], DataType, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             // Only for the current implementation
             #[allow(deprecated)]

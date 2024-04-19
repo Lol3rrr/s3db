@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{Parser as _, Literal};
+use crate::{Literal, Parser as _};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Configuration {

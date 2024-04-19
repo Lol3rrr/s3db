@@ -1,7 +1,10 @@
-use crate::{Literal, ColumnReference, BinaryOperator, FunctionCall, AggregateExpression, DataType, select, Identifier, CompatibleParser, Parser as _};
 use super::aggregate;
+use crate::{
+    select, AggregateExpression, BinaryOperator, ColumnReference, CompatibleParser, DataType,
+    FunctionCall, Identifier, Literal, Parser as _,
+};
 
-use nom::{Parser, IResult};
+use nom::{IResult, Parser};
 
 /// [Reference](https://www.postgresql.org/docs/current/sql-expressions.html)
 #[derive(Debug, PartialEq, Clone)]
@@ -191,7 +194,10 @@ impl<'s> ValueExpression<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for ValueExpression<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for ValueExpression<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -200,8 +206,10 @@ impl<'i, 's> crate::Parser<'i> for ValueExpression<'s> where 'i: 's {
     }
 }
 
-
-impl<'i, 's> crate::Parser<'i> for Vec<ValueExpression<'s>> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Vec<ValueExpression<'s>>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             nom::multi::separated_list1(
@@ -293,7 +301,11 @@ pub fn value_expression(
             |(relation, _, _)| ValueExpression::AllFromRelation { relation },
         ),
         nom::combinator::map(
-            nom::sequence::tuple((ColumnReference::parse(), nom::bytes::complete::tag("::"), DataType::parse())),
+            nom::sequence::tuple((
+                ColumnReference::parse(),
+                nom::bytes::complete::tag("::"),
+                DataType::parse(),
+            )),
             |(cr, _, ty)| ValueExpression::TypeCast {
                 base: Box::new(ValueExpression::ColumnReference(cr)),
                 target_ty: ty,
@@ -342,7 +354,7 @@ pub fn value_expression(
         nom::combinator::not(nom::combinator::peek(nom::branch::alt((
             nom::bytes::complete::tag_no_case("INNER"),
         )))),
-        BinaryOperator::parse(), 
+        BinaryOperator::parse(),
         nom::character::complete::multispace0,
     ))(remaining);
     let (remaining, (_, _, operator, _)) = match tmp {

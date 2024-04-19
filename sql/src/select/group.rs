@@ -1,9 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{
-    ColumnReference, Literal,
-    Parser as _
-};
+use crate::{ColumnReference, Literal, Parser as _};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum GroupAttribute<'s> {
@@ -20,7 +17,10 @@ impl<'s> GroupAttribute<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Vec<GroupAttribute<'s>> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Vec<GroupAttribute<'s>>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -66,14 +66,22 @@ mod tests {
 
     #[test]
     fn single_attribute() {
-        parser_parse!(Vec<GroupAttribute<'_>>, "group by first", vec![GroupAttribute::ColumnRef(ColumnReference {
-            relation: None,
-            column: "first".into()
-        })]);
+        parser_parse!(
+            Vec<GroupAttribute<'_>>,
+            "group by first",
+            vec![GroupAttribute::ColumnRef(ColumnReference {
+                relation: None,
+                column: "first".into()
+            })]
+        );
     }
 
     #[test]
     fn column_index() {
-        parser_parse!(Vec<GroupAttribute<'_>>, "group by 1", vec![GroupAttribute::ColumnIndex(1)]);
+        parser_parse!(
+            Vec<GroupAttribute<'_>>,
+            "group by 1",
+            vec![GroupAttribute::ColumnIndex(1)]
+        );
     }
 }

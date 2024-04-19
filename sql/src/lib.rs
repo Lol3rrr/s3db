@@ -33,7 +33,7 @@ mod condition;
 pub use condition::Condition;
 
 mod transactions;
-pub use transactions::{IsolationMode, BeginTransaction, CommitTransaction, AbortTransaction};
+pub use transactions::{AbortTransaction, BeginTransaction, CommitTransaction, IsolationMode};
 
 mod drop;
 pub use drop::{DependentHandling, DropIndex, DropTable};
@@ -57,6 +57,8 @@ pub use copy_::Copy_;
 mod vacuum;
 pub use vacuum::Vacuum;
 
+pub(crate) mod nom_util;
+
 pub mod dialects {
     /// Indicates that the parser should be compatible with the Postgres Dialect of SQL
     pub struct Postgres;
@@ -75,16 +77,25 @@ pub trait Parser<'i>: Sized {
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>>;
 }
 
+pub trait ArenaParser<'i, 'a>: Sized {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>>;
+}
+
 #[derive(Debug, PartialEq)]
-pub enum Query<'s> {
-    WithCTE { cte: WithCTEs<'s>, query: Box<Self> },
-    Prepare(prepare::Prepare<'s>),
+pub enum Query<'s, 'a> {
+    WithCTE {
+        cte: WithCTEs<'s, 'a>,
+        query: Box<Self>,
+    },
+    Prepare(prepare::Prepare<'s, 'a>),
     Select(select::Select<'s>),
     Insert(insert::Insert<'s>),
     Update(update::Update<'s>),
     Copy_(copy_::Copy_<'s>),
     Delete(delete::Delete<'s>),
-    CreateTable(create::CreateTable<'s>),
+    CreateTable(create::CreateTable<'s, 'a>),
     CreateIndex(create::CreateIndex<'s>),
     AlterTable(alter::AlterTable<'s>),
     DropIndex(drop::DropIndex<'s>),
@@ -100,14 +111,39 @@ pub enum Query<'s> {
 #[derive(Debug)]
 pub struct ParseQueryError {}
 
-impl<'s> Query<'s> {
-    pub fn parse<'r>(raw: &'r [u8]) -> Result<Self, ParseQueryError>
+impl<'i, 's, 'a> ArenaParser<'i, 'a> for Query<'s, 'a>
+where
+    'i: 's,
+{
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| nom::combinator::complete(move |i| query(i, a))(i)
+    }
+}
+
+impl<'i, 's, 'a> ArenaParser<'i, 'a> for Vec<Query<'s, 'a>> where 'i: 's {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            nom::multi::many1(move |i| query(i, a))(i)
+        }
+    }
+}
+
+impl<'s, 'a> Query<'s, 'a> {
+    pub fn parse<'r, 'outer_a>(
+        raw: &'r [u8],
+        arena: &'outer_a bumpalo::Bump,
+    ) -> Result<Self, ParseQueryError>
     where
         'r: 's,
+        'outer_a: 'a,
     {
-        let (remaining, query) = nom::combinator::complete(query)(raw).map_err(|e| {
+        let (remaining, query) = Query::parse_arena(arena)(raw).map_err(|e| {
             dbg!(&e);
-            ParseQueryError{}
+            ParseQueryError {}
         })?;
 
         if !remaining.is_empty() {
@@ -118,14 +154,19 @@ impl<'s> Query<'s> {
         Ok(query)
     }
 
-    pub fn parse_multiple<'r>(raw: &'r [u8]) -> Result<Vec<Self>, ParseQueryError>
+    pub fn parse_multiple<'r, 'outer_a>(
+        raw: &'r [u8],
+        arena: &'outer_a bumpalo::Bump,
+    ) -> Result<Vec<Self>, ParseQueryError>
     where
         'r: 's,
+        'outer_a: 'a,
     {
-        let (remaining, queries) = nom::multi::many1(query)(raw).map_err(|e| {
-            dbg!(e);
-            ParseQueryError {}
-        })?;
+        let (remaining, queries) =
+            nom::multi::many1(move |i| query(i, arena))(raw).map_err(|e| {
+                dbg!(e);
+                ParseQueryError {}
+            })?;
 
         if !remaining.is_empty() {
             let _ = dbg!(core::str::from_utf8(remaining));
@@ -135,7 +176,7 @@ impl<'s> Query<'s> {
         Ok(queries)
     }
 
-    pub fn to_static(&self) -> Query<'static> {
+    pub fn to_static(&self) -> Query<'static, 'a> {
         match self {
             Self::WithCTE { cte, query } => Query::WithCTE {
                 cte: cte.to_static(),
@@ -187,8 +228,11 @@ impl<'s> Query<'s> {
     }
 }
 
-fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]>> {
-    let (raw, ctes) = nom::combinator::opt(with_ctes)(raw)?;
+fn query<'i, 'a>(
+    raw: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Query<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+    let (raw, ctes) = nom::combinator::opt(move |i| with_ctes(i, arena))(raw)?;
 
     let (rem, inner) = nom::combinator::map(
         nom::sequence::tuple((
@@ -202,20 +246,16 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
                 nom::combinator::map(BeginTransaction::parse(), |iso| {
                     Query::BeginTransaction(iso.isolation)
                 }),
-                nom::combinator::map(CommitTransaction::parse(), |_| {
-                    Query::CommitTransaction
-                }),
-                nom::combinator::map(AbortTransaction::parse(), |_| {
-                    Query::RollbackTransaction
-                }),
-                nom::combinator::map(CreateTable::parse(), Query::CreateTable),
+                nom::combinator::map(CommitTransaction::parse(), |_| Query::CommitTransaction),
+                nom::combinator::map(AbortTransaction::parse(), |_| Query::RollbackTransaction),
+                nom::combinator::map(CreateTable::parse_arena(arena), Query::CreateTable),
                 nom::combinator::map(CreateIndex::parse(), Query::CreateIndex),
                 nom::combinator::map(AlterTable::parse(), Query::AlterTable),
                 nom::combinator::map(DropIndex::parse(), Query::DropIndex),
                 nom::combinator::map(DropTable::parse(), Query::DropTable),
                 nom::combinator::map(TruncateTable::parse(), Query::TruncateTable),
                 nom::combinator::map(Configuration::parse(), Query::Configuration),
-                nom::combinator::map(Prepare::parse(), Query::Prepare),
+                nom::combinator::map(Prepare::parse_arena(arena), Query::Prepare),
                 nom::combinator::map(Vacuum::parse(), Query::Vacuum),
             )),
             nom::character::complete::multispace0,
@@ -238,25 +278,63 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
 
 #[cfg(test)]
 pub(crate) mod macros {
+    macro_rules! arena_parser_parse {
+        ($target_ty:ty, $input:expr) => {{
+            use crate::ArenaParser as _;
+            let arena = bumpalo::Bump::new();
+            let (remaining, _) = <$target_ty>::parse_arena(&arena)($input.as_bytes()).unwrap();
+            assert_eq!(
+                &[] as &[u8],
+                remaining,
+                "{:?}",
+                core::str::from_utf8(remaining).unwrap()
+            );
+        }};
+        ($target_ty:ty, $input:expr, $expected:expr) => {
+            arena_parser_parse!($target_ty, $input, $expected, &[])
+        };
+        ($target_ty:ty, $input:expr, $expected:expr, $remaining:expr) => {{
+            use crate::ArenaParser as _;
+            let arena = bumpalo::Bump::new();
+            let (remaining, result) = <$target_ty>::parse_arena(&arena)($input.as_bytes()).unwrap();
+            assert_eq!(
+                $remaining as &[u8],
+                remaining,
+                "{:?}",
+                core::str::from_utf8(remaining).unwrap()
+            );
+            assert_eq!($expected, result);
+        }};
+    }
+    pub(crate) use arena_parser_parse;
+
     macro_rules! parser_parse {
         ($target_ty:ty, $input:expr) => {{
             use crate::Parser as _;
             let (remaining, _) = <$target_ty>::parse()($input.as_bytes()).unwrap();
-            assert_eq!(&[] as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
+            assert_eq!(
+                &[] as &[u8],
+                remaining,
+                "{:?}",
+                core::str::from_utf8(remaining).unwrap()
+            );
         }};
         ($target_ty:ty, $input:expr, $expected:expr) => {
             parser_parse!($target_ty, $input, $expected, &[])
         };
-        ($target_ty:ty, $input:expr, $expected:expr, $remaining:expr) => {
-            {
-                use crate::Parser as _;
-                let (remaining, result) = <$target_ty>::parse()($input.as_bytes()).unwrap();
-                assert_eq!($remaining as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
-                assert_eq!($expected, result);
-            }
-        } 
+        ($target_ty:ty, $input:expr, $expected:expr, $remaining:expr) => {{
+            use crate::Parser as _;
+            let (remaining, result) = <$target_ty>::parse()($input.as_bytes()).unwrap();
+            assert_eq!(
+                $remaining as &[u8],
+                remaining,
+                "{:?}",
+                core::str::from_utf8(remaining).unwrap()
+            );
+            assert_eq!($expected, result);
+        }};
     }
-    pub (crate) use parser_parse;
+    pub(crate) use parser_parse;
 
     macro_rules! parser_parse_err {
         ($target_ty:ty, $input:expr) => {{
@@ -269,7 +347,10 @@ pub(crate) mod macros {
 
 #[cfg(test)]
 mod tests {
-    use crate::select::{GroupAttribute, OrderAttribute};
+    use crate::{
+        macros::arena_parser_parse,
+        select::{GroupAttribute, OrderAttribute},
+    };
 
     use super::*;
 
@@ -277,140 +358,126 @@ mod tests {
 
     #[test]
     fn select_with_where() {
-        let query = Query::parse("select * from table where first = 'value'".as_bytes()).unwrap();
-        dbg!(&query);
+        arena_parser_parse!(Query, "select * from table where first = 'value'");
     }
 
     #[test]
     fn select_with_where_multiple() {
-        let query = Query::parse(
-            "select * from table where first = 'value' AND second = 'other'".as_bytes(),
-        )
-        .unwrap();
-        dbg!(&query);
+        arena_parser_parse!(
+            Query,
+            "select * from table where first = 'value' AND second = 'other'"
+        );
     }
 
     #[test]
     fn select_test() {
-        let query = Query::parse(
-            "SELECT \"id\", \"migration_id\", \"sql\", \"success\", \"error\", \"timestamp\" FROM \"migration_log\""
-                .as_bytes(),
-        )
-        .unwrap();
-
-        let select = match query {
-            Query::Select(s) => s,
-            other => {
-                dbg!(other);
-                panic!();
-            }
-        };
-        dbg!(&select);
-
-        assert_eq!(
-            vec![
-                ValueExpression::ColumnReference(ColumnReference {
-                    relation: None,
-                    column: "id".into(),
-                }),
-                ValueExpression::ColumnReference(ColumnReference {
-                    relation: None,
-                    column: "migration_id".into(),
-                }),
-                ValueExpression::ColumnReference(ColumnReference {
-                    relation: None,
-                    column: "sql".into()
-                }),
-                ValueExpression::ColumnReference(ColumnReference {
-                    relation: None,
-                    column: "success".into()
-                }),
-                ValueExpression::ColumnReference(ColumnReference {
-                    relation: None,
-                    column: "error".into()
-                }),
-                ValueExpression::ColumnReference(ColumnReference {
-                    relation: None,
-                    column: "timestamp".into()
-                })
-            ],
-            select.values
+        arena_parser_parse!(
+            Query,
+            "SELECT \"id\", \"migration_id\", \"sql\", \"success\", \"error\", \"timestamp\" FROM \"migration_log\"",
+            Query::Select(Select {
+                values: vec![
+                    ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "id".into(),
+                    }),
+                    ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "migration_id".into(),
+                    }),
+                    ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "sql".into()
+                    }),
+                    ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "success".into()
+                    }),
+                    ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "error".into()
+                    }),
+                    ValueExpression::ColumnReference(ColumnReference {
+                        relation: None,
+                        column: "timestamp".into()
+                    })
+                ],
+                table: Some(TableExpression::Relation("migration_log".into())),
+                combine:None,
+                limit:None,
+                order_by:None,
+                having:None,
+                group_by:None,
+                for_update:None,
+                where_condition:None,
+            })
         );
-        assert_eq!(
-            TableExpression::Relation("migration_log".into()),
-            select.table.unwrap()
-        );
-        assert_eq!(None, select.where_condition);
     }
 
     #[test]
     fn create_table() {
-        let query = Query::parse("CREATE TABLE IF NOT EXISTS \"migration_log\" (\n\"id\" SERIAL PRIMARY KEY  NOT NULL\n, \"migration_id\" VARCHAR(255) NOT NULL\n, \"sql\" TEXT NOT NULL\n, \"success\" BOOL NOT NULL\n, \"error\" TEXT NOT NULL\n, \"timestamp\" TIMESTAMP NOT NULL\n);".as_bytes()).unwrap();
-
-        assert!(matches!(query, Query::CreateTable(_)), "{:?}", query);
-
-        let query = Query::parse("CREATE TABLE IF NOT EXISTS \"user\" (\n\"id\" SERIAL PRIMARY KEY  NOT NULL\n, \"version\" INTEGER NOT NULL\n, \"login\" VARCHAR(190) NOT NULL\n, \"email\" VARCHAR(190) NOT NULL\n, \"name\" VARCHAR(255) NULL\n, \"password\" VARCHAR(255) NULL\n, \"salt\" VARCHAR(50) NULL\n, \"rands\" VARCHAR(50) NULL\n, \"company\" VARCHAR(255) NULL\n, \"account_id\" BIGINT NOT NULL\n, \"is_admin\" BOOL NOT NULL\n, \"created\" TIMESTAMP NOT NULL\n, \"updated\" TIMESTAMP NOT NULL\n);".as_bytes()).unwrap();
-
-        assert!(matches!(query, Query::CreateTable(_)), "{:?}", query);
+        arena_parser_parse!(
+            Query,
+            "CREATE TABLE IF NOT EXISTS \"migration_log\" (\n\"id\" SERIAL PRIMARY KEY  NOT NULL\n, \"migration_id\" VARCHAR(255) NOT NULL\n, \"sql\" TEXT NOT NULL\n, \"success\" BOOL NOT NULL\n, \"error\" TEXT NOT NULL\n, \"timestamp\" TIMESTAMP NOT NULL\n);"
+        );
+        arena_parser_parse!(
+            Query,
+            "CREATE TABLE IF NOT EXISTS \"user\" (\n\"id\" SERIAL PRIMARY KEY  NOT NULL\n, \"version\" INTEGER NOT NULL\n, \"login\" VARCHAR(190) NOT NULL\n, \"email\" VARCHAR(190) NOT NULL\n, \"name\" VARCHAR(255) NULL\n, \"password\" VARCHAR(255) NULL\n, \"salt\" VARCHAR(50) NULL\n, \"rands\" VARCHAR(50) NULL\n, \"company\" VARCHAR(255) NULL\n, \"account_id\" BIGINT NOT NULL\n, \"is_admin\" BOOL NOT NULL\n, \"created\" TIMESTAMP NOT NULL\n, \"updated\" TIMESTAMP NOT NULL\n);"
+        );
     }
 
     #[test]
     fn insert_query() {
-        let query = Query::parse(
+        arena_parser_parse!(
+            Query,
             "INSERT INTO \"migration_log\" (\"migration_id\",\"sql\",\"success\",\"error\",\"timestamp\") VALUES ($1, $2, $3, $4, $5) RETURNING \"id\""
-                .as_bytes(),
-        )
-        .unwrap();
-
-        assert!(matches!(query, Query::Insert(_)), "{:?}", query);
+        );
     }
 
     #[test]
     fn alter_table() {
-        let query = Query::parse("ALTER TABLE \"user\" RENAME TO \"user_v1\"".as_bytes()).unwrap();
-
-        assert!(matches!(query, Query::AlterTable(_)), "{:?}", query);
+        arena_parser_parse!(
+            Query,
+            "ALTER TABLE \"user\" RENAME TO \"user_v1\""
+        );
     }
 
     #[test]
     fn insert_with_select() {
-        let query = Query::parse("INSERT INTO \"user\" (\"name\"\n, \"company\"\n, \"org_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\") SELECT \"name\"\n, \"company\"\n, \"account_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\" FROM \"user_v1\"".as_bytes()).unwrap();
-
-        assert!(matches!(query, Query::Insert(_)), "{:?}", query);
+        arena_parser_parse!(
+            Query,
+            "INSERT INTO \"user\" (\"name\"\n, \"company\"\n, \"org_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\") SELECT \"name\"\n, \"company\"\n, \"account_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\" FROM \"user_v1\""
+        );
     }
 
     #[test]
     fn drop_index() {
-        let query = Query::parse("DROP INDEX \"UQE_user_login\" CASCADE".as_bytes()).unwrap();
-
-        assert!(matches!(query, Query::DropIndex(_)), "{:?}", query);
+        arena_parser_parse!(
+            Query,
+            "DROP INDEX \"UQE_user_login\" CASCADE"
+        );
     }
 
     #[test]
     fn multiple_queries() {
-        let queries = Query::parse_multiple("ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false;\nUPDATE alert_rule SET is_paused = false;".as_bytes()).unwrap();
-
-        dbg!(&queries);
-
-        assert_eq!(2, queries.len(), "{:?}", queries);
+        arena_parser_parse!(
+            Vec<Query>,
+            "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false;\nUPDATE alert_rule SET is_paused = false;"
+        );
     }
 
     #[test]
     fn max_parameter_select() {
-        let query = "SELECT \"id\", \"role_id\", \"action\", \"scope\", \"kind\", \"attribute\", \"identifier\", \"updated\", \"created\" FROM \"permission\" WHERE \"action\" IN ($1,$2,$3,$4)";
-
-        let query = Query::parse(query.as_bytes()).unwrap();
-
-        assert_eq!(4, query.parameter_count());
+        arena_parser_parse!(
+            Query,
+            "SELECT \"id\", \"role_id\", \"action\", \"scope\", \"kind\", \"attribute\", \"identifier\", \"updated\", \"created\" FROM \"permission\" WHERE \"action\" IN ($1,$2,$3,$4)"
+        );
     }
 
     #[test]
     fn select_rename_table() {
-        let query_str = "SELECT p.name FROM permission AS p";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        assert_eq!(
+        arena_parser_parse!(
+            Query,
+            "SELECT p.name FROM permission AS p",
             Query::Select(Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: Some(Identifier("p".into())),
@@ -428,18 +495,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None,
-            }),
-            query
+            })
         );
     }
 
     #[test]
     fn select_rename_attribute() {
-        let query_str = "SELECT name AS pname FROM permission";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        assert_eq!(
+        arena_parser_parse!(
+            Query,
+            "SELECT name AS pname FROM permission",
             Query::Select(Select {
                 values: vec![ValueExpression::Renamed {
                     inner: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -456,21 +520,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            }),
-            query
+            })
         );
     }
 
     #[test]
     fn select_with_basic_join() {
-        let query_str =
-            "SELECT user.name, password.hash FROM user JOIN password ON user.id = password.uid";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        dbg!(&query);
-
-        assert_eq!(
+        arena_parser_parse!(
+            Query,
+            "SELECT user.name, password.hash FROM user JOIN password ON user.id = password.uid",
             Query::Select(Select {
                 values: vec![
                     ValueExpression::ColumnReference(ColumnReference {
@@ -508,42 +566,31 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            }),
-            query
+            })
         );
     }
 
     #[test]
     fn select_with_renaming_table() {
-        let query_str = "SELECT r.name as role_name, r.id as role_id, r.org_id as org_id,p.action, p.scope\n\tFROM permission AS p\n\tINNER JOIN role AS r ON p.role_id = r.id\n\tWHERE r.name LIKE $1";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        dbg!(&query);
-
-        // todo!()
+        arena_parser_parse!(
+            Query,
+            "SELECT r.name as role_name, r.id as role_id, r.org_id as org_id,p.action, p.scope\n\tFROM permission AS p\n\tINNER JOIN role AS r ON p.role_id = r.id\n\tWHERE r.name LIKE $1"
+        );
     }
 
     #[test]
     fn select_large() {
-        let query_str = "SELECT \"id\", \"role_id\", \"action\", \"scope\", \"kind\", \"attribute\", \"identifier\", \"updated\", \"created\" FROM \"permission\" WHERE ( action IN ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16))";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        dbg!(&query);
-
-        // todo!()
+        arena_parser_parse!(
+            Query,
+            "SELECT \"id\", \"role_id\", \"action\", \"scope\", \"kind\", \"attribute\", \"identifier\", \"updated\", \"created\" FROM \"permission\" WHERE ( action IN ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16))"
+        );
     }
 
     #[test]
     fn select_with_order_by() {
-        let query_str = "SELECT \"id\" FROM \"alert_rule\" ORDER BY \"id\" ASC";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        dbg!(&query);
-
-        assert_eq!(
+        arena_parser_parse!(
+            Query,
+            "SELECT \"id\" FROM \"alert_rule\" ORDER BY \"id\" ASC",
             Query::Select(Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -564,20 +611,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            }),
-            query
+            })
         );
     }
 
     #[test]
     fn select_with_group_by() {
-        let query_str = "SELECT \"id\" FROM \"alert_rule\" GROUP BY \"id\"";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        dbg!(&query);
-
-        assert_eq!(
+        arena_parser_parse!(
+            Query,
+            "SELECT \"id\" FROM \"alert_rule\" GROUP BY \"id\"",
             Query::Select(Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -594,30 +636,23 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            }),
-            query
+            })
         );
     }
 
     #[test]
     fn select_complex() {
-        let query_str = "SELECT dashboard.id, dashboard.uid, dashboard.is_folder, dashboard.org_id, count(dashboard_acl.id) as count\n\t\t  FROM dashboard\n\t\t\t\tLEFT JOIN dashboard_acl ON dashboard.id = dashboard_acl.dashboard_id\n\t\t  WHERE dashboard.has_acl IS TRUE\n\t\t  GROUP BY dashboard.id";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        dbg!(&query);
-
-        // todo!()
+        arena_parser_parse!(
+            Query,
+            "SELECT dashboard.id, dashboard.uid, dashboard.is_folder, dashboard.org_id, count(dashboard_acl.id) as count\n\t\t  FROM dashboard\n\t\t\t\tLEFT JOIN dashboard_acl ON dashboard.id = dashboard_acl.dashboard_id\n\t\t  WHERE dashboard.has_acl IS TRUE\n\t\t  GROUP BY dashboard.id"
+        );
     }
 
     #[test]
-    fn select_complex2() {
-        let query_str = "\n\tSELECT res.uid, res.is_folder, res.org_id\n\tFROM (SELECT dashboard.id, dashboard.uid, dashboard.is_folder, dashboard.org_id, count(dashboard_acl.id) as count\n\t\t  FROM dashboard\n\t\t\t\tLEFT JOIN dashboard_acl ON dashboard.id = dashboard_acl.dashboard_id\n\t\t  WHERE dashboard.has_acl IS TRUE\n\t\t  GROUP BY dashboard.id) as res\n\tWHERE res.count = 0\n\t";
-
-        let query = Query::parse(query_str.as_bytes()).unwrap();
-
-        dbg!(&query);
-
-        // todo!()
+    fn select_complex2() {    
+        arena_parser_parse!(
+            Query,
+            "\n\tSELECT res.uid, res.is_folder, res.org_id\n\tFROM (SELECT dashboard.id, dashboard.uid, dashboard.is_folder, dashboard.org_id, count(dashboard_acl.id) as count\n\t\t  FROM dashboard\n\t\t\t\tLEFT JOIN dashboard_acl ON dashboard.id = dashboard_acl.dashboard_id\n\t\t  WHERE dashboard.has_acl IS TRUE\n\t\t  GROUP BY dashboard.id) as res\n\tWHERE res.count = 0\n\t"
+        );
     }
 }

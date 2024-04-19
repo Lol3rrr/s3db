@@ -1,28 +1,44 @@
 use nom::{IResult, Parser};
 
-use crate::{query, Identifier, Query, Parser as _};
+use crate::{query, Identifier, Parser as _, Query};
 
 #[derive(Debug, PartialEq)]
-pub struct WithCTE<'s> {
+pub struct WithCTE<'s, 'a> {
     pub name: Identifier<'s>,
-    pub query: Query<'s>,
+    pub query: Query<'s, 'a>,
     pub columns: Option<Vec<Identifier<'s>>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct WithCTEs<'s> {
-    pub parts: Vec<WithCTE<'s>>,
+pub struct WithCTEs<'s, 'a> {
+    pub parts: Vec<WithCTE<'s, 'a>>,
     pub recursive: bool,
 }
 
-impl<'s> WithCTEs<'s> {
+impl<'s, 'a> WithCTEs<'s, 'a> {
     pub fn parameter_count(&self) -> usize {
         // TODO
         0
     }
 }
 
-pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>, nom::error::VerboseError<&[u8]>> {
+impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for WithCTEs<'s, 'a> where 'i: 's {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            with_ctes(i, a)
+        }
+    }
+}
+
+pub fn with_ctes<'i, 's, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], WithCTEs<'s, 'a>, nom::error::VerboseError<&'i [u8]>>
+where
+    'i: 's,
+{
     let (remaining, (_, _, _, recursive)) = nom::sequence::tuple((
         nom::character::complete::multispace0,
         nom::bytes::complete::tag_no_case("WITH"),
@@ -65,7 +81,7 @@ pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>, nom::error::VerboseEr
             nom::character::complete::multispace1,
             nom::bytes::complete::tag("("),
             nom::character::complete::multispace0,
-            query,
+            move |i| query(i, arena),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag(")"),
         ))
@@ -85,8 +101,8 @@ pub fn with_ctes(i: &[u8]) -> IResult<&[u8], WithCTEs<'_>, nom::error::VerboseEr
     ))
 }
 
-impl<'s> WithCTEs<'s> {
-    pub fn to_static(&self) -> WithCTEs<'static> {
+impl<'s, 'a> WithCTEs<'s, 'a> {
+    pub fn to_static(&self) -> WithCTEs<'static, 'a> {
         WithCTEs {
             parts: self
                 .parts
@@ -109,7 +125,7 @@ impl<'s> WithCTEs<'s> {
 mod tests {
     use crate::{
         BinaryOperator, ColumnReference, Combination, Condition, Literal, Select, TableExpression,
-        ValueExpression,
+        ValueExpression, macros::arena_parser_parse,
     };
 
     use super::*;
@@ -118,15 +134,9 @@ mod tests {
 
     #[test]
     fn single_cte() {
-        let (remaining, result) = with_ctes("WITH something AS (SELECT 1)".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            WithCTEs,
+            "WITH something AS (SELECT 1)",
             WithCTEs {
                 parts: vec![WithCTE {
                     name: "something".into(),
@@ -144,29 +154,20 @@ mod tests {
                     columns: None,
                 }],
                 recursive: false,
-            },
-            result
+            }
         );
     }
 
     #[test]
     fn multiple() {
-        let query_str = "
+        arena_parser_parse!(
+            WithCTEs,
+"
 WITH regional_sales AS (
     SELECT 2
 ), top_regions AS (
     SELECT 3
-)";
-        let (remaining, result) = with_ctes(query_str.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+)",
             WithCTEs {
                 parts: vec![
                     WithCTE {
@@ -201,26 +202,15 @@ WITH regional_sales AS (
                     }
                 ],
                 recursive: false,
-            },
-            result
+            }
         );
     }
 
     #[test]
     fn recursive_cte() {
-        let query_str =
-            "WITH RECURSIVE cte (n) AS ( SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2 )";
-
-        let (remaining, result) = with_ctes(query_str.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        arena_parser_parse!(
+            WithCTEs,
+            "WITH RECURSIVE cte (n) AS ( SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2 )",
             WithCTEs {
                 parts: vec![WithCTE {
                     name: "cte".into(),
@@ -275,8 +265,7 @@ WITH regional_sales AS (
                     columns: Some(vec!["n".into()]),
                 }],
                 recursive: true
-            },
-            result
+            }
         );
     }
 }

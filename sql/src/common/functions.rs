@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Select, Parser as _};
+use crate::{CompatibleParser, Parser as _, Select};
 
 use super::{Identifier, Literal, ValueExpression};
 
@@ -64,8 +64,11 @@ pub enum FunctionCall<'s> {
     },
 }
 
-impl<'i, 's> crate::Parser<'i> for FunctionCall<'s> where 'i: 's {
-    fn parse() -> impl Fn(&'i[u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 's> crate::Parser<'i> for FunctionCall<'s>
+where
+    'i: 's,
+{
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
             function_call(i)
@@ -306,13 +309,16 @@ impl<'s> FunctionCall<'s> {
 #[cfg(test)]
 mod tests {
 
-    use crate::{AggregateExpression, ColumnReference, macros::parser_parse, TableExpression};
+    use crate::{macros::parser_parse, AggregateExpression, ColumnReference, TableExpression};
 
     use super::*;
 
     #[test]
     fn coalesce() {
-        parser_parse!(FunctionCall, "COALESCE(dashboard.updated_by, -1)", FunctionCall::Coalesce {
+        parser_parse!(
+            FunctionCall,
+            "COALESCE(dashboard.updated_by, -1)",
+            FunctionCall::Coalesce {
                 values: vec![
                     ValueExpression::ColumnReference(ColumnReference {
                         relation: Some(Identifier("dashboard".into())),
@@ -320,21 +326,29 @@ mod tests {
                     }),
                     ValueExpression::Literal(Literal::SmallInteger(-1))
                 ]
-            });
+            }
+        );
     }
 
     #[test]
     fn set_val_without_is_called() {
-        parser_parse!(FunctionCall, "setval('id', 123)", FunctionCall::SetValue {
+        parser_parse!(
+            FunctionCall,
+            "setval('id', 123)",
+            FunctionCall::SetValue {
                 sequence_name: Identifier("id".into()),
                 value: Box::new(ValueExpression::Literal(Literal::SmallInteger(123))),
                 is_called: true
-            });
+            }
+        );
     }
 
     #[test]
     fn set_val_with_subquery() {
-        parser_parse!(FunctionCall, "setval('org_id_seq', (SELECT max(id) FROM org))", FunctionCall::SetValue {
+        parser_parse!(
+            FunctionCall,
+            "setval('org_id_seq', (SELECT max(id) FROM org))",
+            FunctionCall::SetValue {
                 sequence_name: Identifier("org_id_seq".into()),
                 value: Box::new(ValueExpression::SubQuery(Select {
                     values: vec![ValueExpression::AggregateExpression(
@@ -355,46 +369,67 @@ mod tests {
                     combine: None
                 })),
                 is_called: true
-            });
+            }
+        );
     }
 
     #[test]
     fn lower() {
-        parser_parse!(FunctionCall, "lower($1)", FunctionCall::Lower {
-            value: Box::new(ValueExpression::Placeholder(1)),
-        });
+        parser_parse!(
+            FunctionCall,
+            "lower($1)",
+            FunctionCall::Lower {
+                value: Box::new(ValueExpression::Placeholder(1)),
+            }
+        );
     }
 
     #[test]
     fn substr_without_count() {
-        parser_parse!(FunctionCall, "substr('content', 4)", FunctionCall::Substr {
+        parser_parse!(
+            FunctionCall,
+            "substr('content', 4)",
+            FunctionCall::Substr {
                 value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
                 start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
                 count: None
-            });
+            }
+        );
     }
 
     #[test]
     fn substr_with_count() {
-        parser_parse!(FunctionCall, "substr('content', 4, 2)", FunctionCall::Substr {
+        parser_parse!(
+            FunctionCall,
+            "substr('content', 4, 2)",
+            FunctionCall::Substr {
                 value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
                 start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
                 count: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(2))))
-            });
+            }
+        );
     }
 
     #[test]
     fn current_schemas() {
-        parser_parse!(FunctionCall, "current_schemas(true)", FunctionCall::CurrentSchemas{implicit: true});
+        parser_parse!(
+            FunctionCall,
+            "current_schemas(true)",
+            FunctionCall::CurrentSchemas { implicit: true }
+        );
     }
 
     #[test]
     fn array_position() {
-        parser_parse!(FunctionCall, "array_position('this is wrong but anyway', 'first')", FunctionCall::ArrayPosition {
+        parser_parse!(
+            FunctionCall,
+            "array_position('this is wrong but anyway', 'first')",
+            FunctionCall::ArrayPosition {
                 array: Box::new(ValueExpression::Literal(Literal::Str(
                     "this is wrong but anyway".into()
                 ))),
                 target: Box::new(ValueExpression::Literal(Literal::Str("first".into())))
-            });
+            }
+        );
     }
 }

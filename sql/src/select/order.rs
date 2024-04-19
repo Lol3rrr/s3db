@@ -1,9 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{
-    ColumnReference, Literal,
-    Parser as _
-};
+use crate::{ColumnReference, Literal, Parser as _};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Ordering<'s> {
@@ -30,7 +27,10 @@ pub enum NullOrdering {
     Last,
 }
 
-impl<'i, 's> crate::Parser<'i> for Vec<Ordering<'s>> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Vec<Ordering<'s>>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -108,61 +108,81 @@ pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::Verbo
 mod tests {
     use super::*;
 
-    use pretty_assertions::assert_eq;
     use crate::macros::parser_parse;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn order_by_column() {
-        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something", vec![Ordering {
+        parser_parse!(
+            Vec<Ordering<'_>>,
+            "ORDER BY something",
+            vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::Last,
-            }]);
+            }]
+        );
     }
 
     #[test]
     fn order_by_column_asc() {
-        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something ASC", vec![Ordering {
+        parser_parse!(
+            Vec<Ordering<'_>>,
+            "ORDER BY something ASC",
+            vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::Last,
-            }]);
+            }]
+        );
     }
 
     #[test]
     fn orderings() {
-        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something DESC", vec![Ordering {
+        parser_parse!(
+            Vec<Ordering<'_>>,
+            "ORDER BY something DESC",
+            vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Descending,
                 nulls: NullOrdering::First,
-            }]);
+            }]
+        );
 
-        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something DESC NULLS LAST", vec![Ordering {
+        parser_parse!(
+            Vec<Ordering<'_>>,
+            "ORDER BY something DESC NULLS LAST",
+            vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Descending,
                 nulls: NullOrdering::Last,
-            }]);
+            }]
+        );
 
-        parser_parse!(Vec<Ordering<'_>>, "ORDER BY something ASC NULLS FIRST", vec![Ordering {
+        parser_parse!(
+            Vec<Ordering<'_>>,
+            "ORDER BY something ASC NULLS FIRST",
+            vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "something".into()
                 }),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::First,
-            }]);
+            }]
+        );
     }
 
     #[test]
@@ -178,10 +198,14 @@ mod tests {
 
     #[test]
     fn order_by_index() {
-        parser_parse!(Vec<Ordering<'_>>, "order by 1", vec![Ordering {
+        parser_parse!(
+            Vec<Ordering<'_>>,
+            "order by 1",
+            vec![Ordering {
                 column: OrderAttribute::ColumnIndex(1),
                 order: OrderBy::Ascending,
                 nulls: NullOrdering::Last
-            }]);
+            }]
+        );
     }
 }

@@ -92,7 +92,10 @@ impl<'s> From<&'s str> for Identifier<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Identifier<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Identifier<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             nom::branch::alt((
@@ -100,7 +103,9 @@ impl<'i, 's> crate::Parser<'i> for Identifier<'s> where 'i: 's {
                     nom::sequence::tuple((
                         nom::bytes::complete::tag("\""),
                         nom::combinator::consumed(nom::sequence::tuple((
-                            nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
+                            nom::bytes::complete::take_while1(|b| {
+                                (b as char).is_alphabetic() || b == b'_'
+                            }),
                             nom::bytes::complete::take_while(|b| {
                                 (b as char).is_alphanumeric() || b == b'_'
                             }),
@@ -114,14 +119,17 @@ impl<'i, 's> crate::Parser<'i> for Identifier<'s> where 'i: 's {
                 ),
                 nom::combinator::complete(nom::sequence::tuple((
                     nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
-                    nom::bytes::complete::take_while(|b| (b as char).is_alphanumeric() || b == b'_'),
+                    nom::bytes::complete::take_while(|b| {
+                        (b as char).is_alphanumeric() || b == b'_'
+                    }),
                 )))
-                .map(|(content, _)| Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))),
+                .map(|(content, _)| {
+                    Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))
+                }),
             ))(i)
         }
     }
 }
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ColumnReference<'s> {
@@ -138,7 +146,10 @@ impl<'s> ColumnReference<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for ColumnReference<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for ColumnReference<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             nom::combinator::map(
@@ -291,7 +302,7 @@ pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier, nom::error::Verbo
 mod tests {
     use crate::select::{Select, TableExpression};
 
-    use crate::{Condition, macros::parser_parse};
+    use crate::{macros::parser_parse, Condition};
 
     use super::*;
 
@@ -301,20 +312,32 @@ mod tests {
     fn test_identifier() {
         parser_parse!(Identifier, "testing", Identifier(Cow::Borrowed("testing")));
 
-        parser_parse!(Identifier, "\"testing\"", Identifier(Cow::Borrowed("testing")));
+        parser_parse!(
+            Identifier,
+            "\"testing\"",
+            Identifier(Cow::Borrowed("testing"))
+        );
     }
 
     #[test]
     fn test_column_reference() {
-        parser_parse!(ColumnReference, "table.column", ColumnReference {
+        parser_parse!(
+            ColumnReference,
+            "table.column",
+            ColumnReference {
                 relation: Some(Identifier(Cow::Borrowed("table"))),
                 column: Identifier(Cow::Borrowed("column")),
-            });
+            }
+        );
 
-        parser_parse!(ColumnReference, "column", ColumnReference {
+        parser_parse!(
+            ColumnReference,
+            "column",
+            ColumnReference {
                 relation: None,
                 column: Identifier(Cow::Borrowed("column")),
-            });
+            }
+        );
     }
 
     #[test]
@@ -325,7 +348,8 @@ mod tests {
 
     #[test]
     fn value_in_list() {
-        let (remaining, expr) = ValueExpression::parse()("name in ('first', 'second')".as_bytes()).unwrap();
+        let (remaining, expr) =
+            ValueExpression::parse()("name in ('first', 'second')".as_bytes()).unwrap();
         assert_eq!(
             &[] as &[u8],
             remaining,
@@ -464,7 +488,13 @@ mod tests {
 
     #[test]
     fn type_modifier_testing() {
-        parser_parse!(TypeModifier, "COLLATE \"C\"", TypeModifier::Collate { collation: "C".into() });
+        parser_parse!(
+            TypeModifier,
+            "COLLATE \"C\"",
+            TypeModifier::Collate {
+                collation: "C".into()
+            }
+        );
     }
 
     #[test]

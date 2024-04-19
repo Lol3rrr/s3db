@@ -1,8 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{
-    CompatibleParser, Condition, Identifier, Parser as _,
-};
+use crate::{CompatibleParser, Condition, Identifier, Parser as _};
 
 use super::Select;
 
@@ -33,7 +31,10 @@ pub enum JoinKind {
     Cross,
 }
 
-impl<'i, 's> crate::Parser<'i> for TableExpression<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for TableExpression<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -56,8 +57,12 @@ pub fn table_expression(
                 nom::bytes::complete::tag(")"),
             ))
             .map(|(_, _, query, _, _)| TableExpression::SubQuery(Box::new(query))),
-            nom::sequence::tuple((Identifier::parse(), nom::bytes::complete::tag("."), Identifier::parse()))
-                .map(|(_, _, name)| TableExpression::Relation(name)),
+            nom::sequence::tuple((
+                Identifier::parse(),
+                nom::bytes::complete::tag("."),
+                Identifier::parse(),
+            ))
+            .map(|(_, _, name)| TableExpression::Relation(name)),
             Identifier::parse().map(TableExpression::Relation),
         ))(i)?;
 
@@ -282,7 +287,10 @@ mod tests {
 
     #[test]
     fn join_on_suquery() {
-        parser_parse!(TableExpression<'_>, "first INNER JOIN (SELECT name FROM second)", TableExpression::Join {
+        parser_parse!(
+            TableExpression<'_>,
+            "first INNER JOIN (SELECT name FROM second)",
+            TableExpression::Join {
                 left: Box::new(TableExpression::Relation("first".into())),
                 right: Box::new(TableExpression::SubQuery(Box::new(Select {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
@@ -301,21 +309,29 @@ mod tests {
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![]),
                 lateral: false,
-            }); 
+            }
+        );
     }
 
     #[test]
     fn rename_with_columns() {
-        parser_parse!(TableExpression<'_>, "something as o(n)", TableExpression::Renamed {
+        parser_parse!(
+            TableExpression<'_>,
+            "something as o(n)",
+            TableExpression::Renamed {
                 inner: Box::new(TableExpression::Relation(Identifier("something".into()))),
                 name: "o".into(),
                 column_rename: Some(vec![Identifier("n".into())])
-            });
+            }
+        );
     }
 
     #[test]
     fn join_on_suquery_lateral() {
-        parser_parse!(TableExpression<'_>, "first INNER JOIN LATERAL (SELECT name FROM second)", TableExpression::Join {
+        parser_parse!(
+            TableExpression<'_>,
+            "first INNER JOIN LATERAL (SELECT name FROM second)",
+            TableExpression::Join {
                 left: Box::new(TableExpression::Relation("first".into())),
                 right: Box::new(TableExpression::SubQuery(Box::new(Select {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
@@ -334,6 +350,7 @@ mod tests {
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![]),
                 lateral: true,
-            });
+            }
+        );
     }
 }

@@ -28,7 +28,10 @@ impl<'s> Condition<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Condition<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Condition<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -132,9 +135,9 @@ mod tests {
 
     use crate::{
         common::{BinaryOperator, Identifier},
+        macros::parser_parse,
         select::{NullOrdering, OrderAttribute, Ordering, SelectLimit},
         ColumnReference, Literal, OrderBy, Select, TableExpression,
-        macros::parser_parse
     };
 
     use super::*;
@@ -378,7 +381,10 @@ mod tests {
 
     #[test]
     fn new_parser_basic_and() {
-        parser_parse!(Condition, "name = 'first' AND id = 132", Condition::And(vec![
+        parser_parse!(
+            Condition,
+            "name = 'first' AND id = 132",
+            Condition::And(vec![
                 Condition::Value(Box::new(ValueExpression::Operator {
                     first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
@@ -395,7 +401,8 @@ mod tests {
                     second: Box::new(ValueExpression::Literal(Literal::SmallInteger(132))),
                     operator: BinaryOperator::Equal
                 }))
-            ]));
+            ])
+        );
     }
 
     #[test]
@@ -502,7 +509,7 @@ mod tests {
             ))]),
             " INNER".as_bytes()
         );
-    } 
+    }
 
     #[test]
     fn not_field() {

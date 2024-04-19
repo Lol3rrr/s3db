@@ -1,13 +1,13 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Literal, Parser as _Parser};
+use crate::{dialects, ArenaParser as _, CompatibleParser, Literal, Parser as _Parser};
 
 use super::common::{DataType, Identifier, TypeModifier};
 
 #[derive(Debug, PartialEq)]
-pub struct CreateTable<'s> {
+pub struct CreateTable<'s, 'a> {
     pub identifier: Identifier<'s>,
-    pub fields: Vec<TableField<'s>>,
+    pub fields: Vec<TableField<'s, 'a>>,
     pub if_not_exists: bool,
     pub primary_key: Option<Vec<Identifier<'s>>>,
     pub withs: Vec<WithOptions>,
@@ -26,10 +26,8 @@ pub enum WithOptions {
     FillFactor(usize),
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for CreateTable<'s> {
-    type StaticVersion = CreateTable<'static>;
-
-    fn to_static(&self) -> Self::StaticVersion {
+impl<'s, 'a> CreateTable<'s, 'a> {
+    pub fn to_static(&self) -> CreateTable<'static, 'a> {
         CreateTable {
             identifier: self.identifier.to_static(),
             fields: self.fields.iter().map(|f| f.to_static()).collect(),
@@ -42,7 +40,7 @@ impl<'s> CompatibleParser<dialects::Postgres> for CreateTable<'s> {
         }
     }
 
-    fn parameter_count(&self) -> usize {
+    pub fn parameter_count(&self) -> usize {
         0
     }
 }
@@ -64,22 +62,30 @@ impl<'s> CompatibleParser<dialects::Postgres> for CreateIndex<'s> {
     }
 }
 
-enum ParsedTableField<'s> {
-    Field(TableField<'s>),
+enum ParsedTableField<'s, 'a> {
+    Field(TableField<'s, 'a>),
     PrimaryKey(Vec<Identifier<'s>>),
 }
 
-impl<'i, 's> crate::Parser<'i> for CreateTable<'s> where 'i: 's {
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            #[allow(deprecated)]
-            create_table(i)
-        }
+impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for CreateTable<'s, 'a>
+where
+    'i: 's,
+{
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| create_table(i, a)
     }
 }
 
 #[deprecated]
-pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::VerboseError<&[u8]>> {
+pub fn create_table<'i, 's, 'a>(
+    i: &'i [u8],
+    a: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], CreateTable<'s, 'a>, nom::error::VerboseError<&'i [u8]>>
+where
+    'i: 's,
+{
     let (remaining, (_, _, _, if_not_exists, _, table_ident, _, _, _, raw_parts, _, _, with)) =
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("CREATE"),
@@ -101,7 +107,7 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
                     nom::character::complete::multispace0,
                 )),
                 nom::branch::alt((
-                    create_field.map(ParsedTableField::Field),
+                    TableField::parse_arena(a).map(ParsedTableField::Field),
                     nom::sequence::tuple((
                         nom::bytes::complete::tag_no_case("PRIMARY"),
                         nom::character::complete::multispace1,
@@ -191,7 +197,10 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
     ))
 }
 
-impl<'i, 's> crate::Parser<'i> for CreateIndex<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for CreateIndex<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
@@ -247,14 +256,14 @@ pub fn create_index(i: &[u8]) -> IResult<&[u8], CreateIndex<'_>, nom::error::Ver
 }
 
 #[derive(Debug, PartialEq)]
-pub struct TableField<'s> {
+pub struct TableField<'s, 'a> {
     pub ident: Identifier<'s>,
     pub datatype: DataType,
-    pub modifiers: Vec<TypeModifier>,
+    pub modifiers: bumpalo::collections::Vec<'a, TypeModifier>,
 }
 
-impl<'s> TableField<'s> {
-    pub fn to_static(&self) -> TableField<'static> {
+impl<'s, 'a> TableField<'s, 'a> {
+    pub fn to_static(&self) -> TableField<'static, 'a> {
         TableField {
             ident: self.ident.to_static(),
             datatype: self.datatype.clone(),
@@ -262,16 +271,36 @@ impl<'s> TableField<'s> {
         }
     }
 }
+impl<'i, 'a, 's> crate::ArenaParser<'i, 'a> for TableField<'s, 'a>
+where
+    'i: 's,
+{
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| create_field(i, a)
+    }
+}
 
-fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseError<&[u8]>> {
+fn create_field<'i, 's, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], TableField<'s, 'a>, nom::error::VerboseError<&'i [u8]>>
+where
+    'i: 's,
+{
     nom::combinator::map(
         nom::sequence::tuple((
             Identifier::parse(),
             nom::character::complete::multispace1,
             DataType::parse(),
-            nom::multi::many0(
-                nom::sequence::tuple((nom::character::complete::multispace1, TypeModifier::parse()))
-                    .map(|(_, m)| m),
+            crate::nom_util::bump_many0(
+                arena,
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    TypeModifier::parse(),
+                ))
+                .map(|(_, m)| m),
             ),
         )),
         |(i, _, datatype, modifiers)| TableField {
@@ -285,11 +314,12 @@ fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::macros::parser_parse;
+    use crate::macros::{arena_parser_parse, parser_parse};
 
     #[test]
     fn create_table_test() {
-        parser_parse!(
+        let arena = bumpalo::Bump::new();
+        arena_parser_parse!(
             CreateTable,
             "CREATE TABLE IF NOT EXISTS \"migration_log\" (\n\"id\" SERIAL PRIMARY KEY  NOT NULL\n, \"migration_id\" VARCHAR(255) NOT NULL\n, \"sql\" TEXT NOT NULL\n, \"success\" BOOL NOT NULL\n, \"error\" TEXT NOT NULL\n, \"timestamp\" TIMESTAMP NOT NULL\n);",
             CreateTable {
@@ -299,32 +329,32 @@ mod tests {
                     TableField {
                         ident: "id".into(),
                         datatype: DataType::Serial,
-                        modifiers: vec![TypeModifier::PrimaryKey, TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::PrimaryKey, TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "migration_id".into(),
                         datatype: DataType::VarChar { size: 255 },
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "sql".into(),
                         datatype: DataType::Text,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "success".into(),
                         datatype: DataType::Bool,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "error".into(),
                         datatype: DataType::Text,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "timestamp".into(),
                         datatype: DataType::Timestamp,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     }
                 ],
                 primary_key: None,
@@ -366,20 +396,15 @@ mod tests {
 
     #[test]
     fn field() {
-        let (remaining, field) = create_field("\"id\" SERIAL PRIMARY KEY".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(
+        let arena = bumpalo::Bump::new();
+        arena_parser_parse!(
+            TableField,
+            "\"id\" SERIAL PRIMARY KEY",
             TableField {
                 ident: "id".into(),
                 datatype: DataType::Serial,
-                modifiers: vec![TypeModifier::PrimaryKey]
-            },
-            field
+                modifiers: bumpalo::vec![in &arena; TypeModifier::PrimaryKey]
+            }
         );
     }
 
@@ -392,7 +417,8 @@ mod tests {
 
     #[test]
     fn create_table_explicit_primary_key() {
-        parser_parse!(
+        let arena = bumpalo::Bump::new();
+        arena_parser_parse!(
             CreateTable,
             "CREATE TABLE IF NOT EXISTS \"alert_instance\" (\n\"def_org_id\" BIGINT NOT NULL\n, \"def_uid\" VARCHAR(40) NOT NULL DEFAULT 0\n, \"labels\" TEXT NOT NULL\n, \"labels_hash\" VARCHAR(190) NOT NULL\n, \"current_state\" VARCHAR(190) NOT NULL\n, \"current_state_since\" BIGINT NOT NULL\n, \"last_eval_time\" BIGINT NOT NULL\n, PRIMARY KEY ( \"def_org_id\",\"def_uid\",\"labels_hash\" ));",
             CreateTable {
@@ -400,37 +426,37 @@ mod tests {
                     TableField {
                         ident: "def_org_id".into(),
                         datatype: DataType::BigInteger,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "def_uid".into(),
                         datatype: DataType::VarChar {size: 40 },
-                        modifiers: vec![TypeModifier::NotNull, TypeModifier::DefaultValue { value: Some(Literal::SmallInteger(0)) }],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull, TypeModifier::DefaultValue { value: Some(Literal::SmallInteger(0)) }],
                     },
                     TableField {
                         ident: "labels".into(),
                         datatype: DataType::Text,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "labels_hash".into(),
                         datatype: DataType::VarChar{size: 190},
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "current_state".into(),
                         datatype: DataType::VarChar{size: 190},
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "current_state_since".into(),
                         datatype: DataType::BigInteger,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                     TableField {
                         ident: "last_eval_time".into(),
                         datatype: DataType::BigInteger,
-                        modifiers: vec![TypeModifier::NotNull],
+                        modifiers: bumpalo::vec![in &arena; TypeModifier::NotNull],
                     },
                 ],
                 identifier: "alert_instance".into(),
@@ -444,7 +470,8 @@ mod tests {
 
     #[test]
     fn create_with_fillfactor() {
-        parser_parse!(
+        let arena = bumpalo::Bump::new();
+        arena_parser_parse!(
             CreateTable,
             "CREATE TABLE testing (name int) with (fillfactor=100)",
             CreateTable {
@@ -452,7 +479,7 @@ mod tests {
                 fields: vec![TableField {
                     ident: "name".into(),
                     datatype: DataType::Integer,
-                    modifiers: Vec::new()
+                    modifiers: bumpalo::vec![in &arena; ]
                 }],
                 if_not_exists: false,
                 primary_key: None,

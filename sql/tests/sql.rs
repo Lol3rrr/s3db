@@ -9,9 +9,10 @@ use sql::{
 
 #[test]
 fn insert_with_on_conflict() {
+    let arena = bumpalo::Bump::new();
     let query_str = "\n\t\t\tINSERT INTO folder (uid, org_id, title, created, updated)\n\t\t\tSELECT uid, org_id, title, created, updated FROM dashboard WHERE is_folder = true\n\t\t\tON CONFLICT(uid, org_id) DO UPDATE SET title=excluded.title, updated=excluded.updated\n\t\t";
 
-    let insert_query = match Query::parse(query_str.as_bytes()) {
+    let insert_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Insert(i)) => i,
         other => panic!("{:?}", other),
     };
@@ -100,9 +101,10 @@ fn insert_with_on_conflict() {
 
 #[test]
 fn delete_test() {
+    let arena = bumpalo::Bump::new();
     let query_str = "\n\t\t\tDELETE FROM folder WHERE NOT EXISTS\n\t\t\t\t(SELECT 1 FROM dashboard WHERE dashboard.uid = folder.uid AND dashboard.org_id = folder.org_id AND dashboard.is_folder = true)\n\t";
 
-    let delete_query = match Query::parse(query_str.as_bytes()) {
+    let delete_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Delete(d)) => d,
         other => panic!("{:?}", other),
     };
@@ -175,13 +177,14 @@ fn delete_test() {
 
 #[test]
 fn something() {
+    let arena = bumpalo::Bump::new();
     let query_str = "
         SELECT \"id\", \"version\", \"email\", \"name\", \"login\", \"password\", \"salt\", \"rands\", \"company\", \"email_verified\", \"theme\", \"help_flags1\", \"is_disabled\", \"is_admin\", \"is_service_account\", \"org_id\", \"created\", \"updated\", \"last_seen_at\"
         FROM \"user\"
         WHERE (LOWER(email)=LOWER($1) OR LOWER(login)=LOWER($2))
         LIMIT 1";
 
-    let query = match Query::parse(query_str.as_bytes()).unwrap() {
+    let query = match Query::parse(query_str.as_bytes(), &arena).unwrap() {
         Query::Select(s) => s,
         other => panic!("{:?}", other),
     };
@@ -313,9 +316,10 @@ fn something() {
 
 #[test]
 fn select_for_update() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT * FROM server_lock WHERE operation_uid = $1 FOR UPDATE";
 
-    let query = match Query::parse(query_str.as_bytes()).unwrap() {
+    let query = match Query::parse(query_str.as_bytes(), &arena).unwrap() {
         Query::Select(s) => s,
         other => panic!("{:?}", other),
     };
@@ -349,9 +353,10 @@ fn select_for_update() {
 
 #[test]
 fn select_limit_offset() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT \"id\", \"id\", \"alertmanager_configuration\", \"configuration_hash\", \"configuration_version\", \"created_at\", \"default\", \"org_id\", \"last_applied\" FROM \"alert_configuration_history\" WHERE (org_id = $1) ORDER BY \"id\" DESC, id LIMIT 1 OFFSET 99";
 
-    let query = match Query::parse(query_str.as_bytes()).unwrap() {
+    let query = match Query::parse(query_str.as_bytes(), &arena).unwrap() {
         Query::Select(s) => s,
         other => panic!("{:?}", other),
     };
@@ -445,9 +450,10 @@ fn select_limit_offset() {
 
 #[test]
 fn select_something() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT \"org_id\", \"namespace\", \"key\" FROM \"kv_store\" WHERE (namespace = $1) AND (\"key\" LIKE $2)";
 
-    let query = match Query::parse(query_str.as_bytes()) {
+    let query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -504,12 +510,13 @@ fn select_something() {
 
 #[test]
 fn select_other() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT
             (SELECT COUNT(*) FROM \"user\" WHERE is_service_account = true) AS serviceaccounts,
             (SELECT COUNT(*) FROM \"api_key\"WHERE service_account_id IS NOT NULL ) AS serviceaccount_tokens,
             (SELECT COUNT(*) FROM \"org_user\" AS ou JOIN \"user\" AS u ON u.id = ou.user_id WHERE u.is_disabled = false AND u.is_service_account = true AND ou.role=$1) AS serviceaccounts_with_no_role";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -518,9 +525,10 @@ fn select_other() {
 
 #[test]
 fn update_something() {
+    let arena = bumpalo::Bump::new();
     let query_str = "UPDATE \"alert_configuration_history\" SET \"last_applied\" = $1 WHERE (org_id = $2 AND configuration_hash = $3) AND (CTID IN (SELECT CTID FROM \"alert_configuration_history\" WHERE (org_id = $4 AND configuration_hash = $5) ORDER BY \"id\" DESC LIMIT 1))";
 
-    let update = match Query::parse(query_str.as_bytes()) {
+    let update = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Update(u)) => u,
         other => panic!("{:?}", other),
     };
@@ -532,6 +540,7 @@ fn update_something() {
 
 #[test]
 fn testing() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT permission.action,permission.scope
 FROM permission
 INNER JOIN role ON role.id = permission.role_id
@@ -541,7 +550,7 @@ INNER JOIN (
     WHERE br.role IN ($1) AND (br.org_id = $2 OR br.org_id = $3)
 ) as all_role ON role.id = all_role.role_id";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(),&arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -669,9 +678,10 @@ INNER JOIN (
 
 #[test]
 fn testing_subquery() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT br.role_id FROM builtin_role AS br\n\t\t\tWHERE br.role IN ($1)\n\t\t\tAND (br.org_id = $2 OR br.org_id = $3)";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -734,6 +744,7 @@ fn testing_subquery() {
 
 #[test]
 fn with_select() {
+    let arena = bumpalo::Bump::new();
     let query_str = "
 WITH regional_sales AS (
     SELECT region, SUM(amount) AS total_sales
@@ -751,16 +762,17 @@ SELECT region,
 FROM orders
 WHERE region IN (SELECT region FROM top_regions)
 GROUP BY region, product;";
-    let query_res = Query::parse(query_str.as_bytes()).unwrap();
+    let query_res = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     dbg!(&query_res);
 }
 
 #[test]
 fn select_aggregate_with_operator() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT SUM(total_sales)/10 FROM regional_sales";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -794,9 +806,10 @@ fn select_aggregate_with_operator() {
 
 #[test]
 fn select_group_by_number() {
+    let arena = bumpalo::Bump::new();
     let query_str = "SELECT MAX(balance), plz FROM users GROUP BY 2";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };

@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Parser as _};
+use crate::{dialects, ArenaParser as _, CompatibleParser, Parser as _};
 
 use super::{common::ValueExpression, condition::Condition};
 
@@ -111,17 +111,40 @@ impl<'s> Select<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Select<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Select<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
-            select(i)
+            select(i, &bumpalo::Bump::new())
+        }
+    }
+}
+
+impl<'i, 'a, 's> crate::ArenaParser<'i, 'a> for Select<'s>
+where
+    'i: 's,
+{
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            select(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn select<'i, 's, 'a>(
+    i: &'i [u8],
+    a: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Select<'s>, nom::error::VerboseError<&'i [u8]>>
+where
+    'i: 's,
+{
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("SELECT"),
         nom::character::complete::multispace1,
@@ -181,17 +204,23 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                     nom::character::complete::multispace0,
                     Combination::parse(),
                     nom::character::complete::multispace1,
-                    select,
+                    Select::parse_arena(a),
                 ))
                 .map(|(_, c, _, s)| (c, Box::new(s))),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((nom::character::complete::multispace1, <Vec<GroupAttribute<'_>>>::parse()))
-                    .map(|(_, attributes)| attributes),
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    <Vec<GroupAttribute<'_>>>::parse(),
+                ))
+                .map(|(_, attributes)| attributes),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((nom::character::complete::multispace1, <Vec<Ordering<'_>>>::parse()))
-                    .map(|(_, order)| order),
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    <Vec<Ordering<'_>>>::parse(),
+                ))
+                .map(|(_, order)| order),
             ),
             nom::combinator::opt(
                 nom::sequence::tuple((
@@ -257,8 +286,9 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
 #[cfg(test)]
 mod tests {
     use crate::{
-        self as sql, AggregateExpression, BinaryOperator, ColumnReference, Identifier, Literal,
-        macros::{parser_parse, parser_parse_err}
+        self as sql,
+        macros::{parser_parse, parser_parse_err},
+        AggregateExpression, BinaryOperator, ColumnReference, Identifier, Literal,
     };
 
     use super::*;
@@ -267,10 +297,7 @@ mod tests {
 
     #[test]
     fn count_select() {
-        parser_parse!(
-            Select,
-            "select count(*) from pgbench_branches"
-        );
+        parser_parse!(Select, "select count(*) from pgbench_branches");
     }
 
     #[test]

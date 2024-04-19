@@ -1,29 +1,35 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Parser as _};
+use crate::Parser as _;
 
-use super::{
-    query, DataType, Identifier, Query,
-};
+use super::{query, DataType, Identifier, Query};
 
 #[derive(Debug, PartialEq)]
-pub struct Prepare<'s> {
+pub struct Prepare<'s, 'a> {
     pub name: Identifier<'s>,
     pub params: Vec<DataType>,
-    pub query: Box<Query<'s>>,
+    pub query: Box<Query<'s, 'a>>,
 }
 
-impl<'i, 's> crate::Parser<'i> for Prepare<'s> where 'i: 's {
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            #[allow(deprecated)]
-            parse(i)
-        }
+impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for Prepare<'s, 'a>
+where
+    'i: 's,
+{
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| parse(i, a)
     }
 }
 
 #[deprecated]
-pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn parse<'i, 's, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Prepare<'s, 'a>, nom::error::VerboseError<&'s [u8]>>
+where
+    'i: 's,
+{
     let (i, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("PREPARE"),
         nom::character::complete::multispace1,
@@ -53,7 +59,7 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&
             nom::character::complete::multispace1,
             nom::bytes::complete::tag("as"),
             nom::character::complete::multispace1,
-            query,
+            move |i| query(i, arena),
         )),
         |(name, params, _, _, _, q)| Prepare {
             name,
@@ -65,10 +71,8 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&
     Ok((i, tmp))
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Prepare<'s> {
-    type StaticVersion = Prepare<'static>;
-
-    fn to_static(&self) -> Self::StaticVersion {
+impl<'s, 'a> Prepare<'s, 'a> {
+    pub fn to_static(&self) -> Prepare<'static, 'a> {
         Prepare {
             name: self.name.to_static(),
             params: self.params.clone(),
@@ -76,7 +80,7 @@ impl<'s> CompatibleParser<dialects::Postgres> for Prepare<'s> {
         }
     }
 
-    fn parameter_count(&self) -> usize {
+    pub fn parameter_count(&self) -> usize {
         0
     }
 }
@@ -84,14 +88,18 @@ impl<'s> CompatibleParser<dialects::Postgres> for Prepare<'s> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        BinaryOperator, ColumnReference, Condition, Select, TableExpression, ValueExpression, macros::parser_parse,
+        macros::arena_parser_parse, BinaryOperator, ColumnReference, Condition, Select, TableExpression,
+        ValueExpression,
     };
 
     use super::*;
 
     #[test]
     fn prepared_no_params() {
-        parser_parse!(Prepare, "PREPARE testing as SELECT * FROM users", Prepare {
+        arena_parser_parse!(
+            Prepare,
+            "PREPARE testing as SELECT * FROM users",
+            Prepare {
                 name: "testing".into(),
                 params: vec![],
                 query: Box::new(Query::Select(Select {
@@ -105,12 +113,16 @@ mod tests {
                     for_update: None,
                     combine: None,
                 }))
-            });
+            }
+        );
     }
 
     #[test]
     fn prepared_params() {
-        parser_parse!(Prepare, "PREPARE testing(integer) as SELECT * FROM users WHERE id = $1", Prepare {
+        arena_parser_parse!(
+            Prepare,
+            "PREPARE testing(integer) as SELECT * FROM users WHERE id = $1",
+            Prepare {
                 name: "testing".into(),
                 params: vec![DataType::Integer],
                 query: Box::new(Query::Select(Select {
@@ -133,6 +145,7 @@ mod tests {
                     for_update: None,
                     combine: None,
                 }))
-            });
+            }
+        );
     }
 }
