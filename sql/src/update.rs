@@ -69,6 +69,7 @@ impl<'i, 'a> ArenaParser<'i, 'a> for Update<'i, 'a> {
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
+            #[allow(deprecated)]
             update(i, a)
         }
     }
@@ -152,7 +153,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        common::FunctionCall, macros::parser_parse, macros::arena_parser_parse, BinaryOperator, ColumnReference, DataType,
+        common::FunctionCall, macros::arena_parser_parse, BinaryOperator, ColumnReference, DataType,
         Literal,
     };
 

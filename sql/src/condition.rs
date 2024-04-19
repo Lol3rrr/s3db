@@ -1,7 +1,7 @@
 use nom::{IResult, Parser};
 
 use super::ValueExpression;
-use crate::{Parser as _, ArenaParser, CompatibleParser};
+use crate::{ArenaParser, CompatibleParser};
 
 #[derive(Debug, PartialEq)]
 pub enum Condition<'s, 'a> {
@@ -45,6 +45,7 @@ impl<'i, 'a> ArenaParser<'i, 'a> for Condition<'i, 'a>  {
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
+            #[allow(deprecated)]
             condition(i, a)
         }
     }
@@ -220,7 +221,7 @@ mod tests {
                             values: vec![ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: Identifier("CTID".into()),
-                            })],
+                            })].into(),
                             table: Some(TableExpression::Relation(Identifier(
                                 "alert_configuration_history".into()
                             ))),

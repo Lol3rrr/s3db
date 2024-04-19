@@ -362,14 +362,6 @@ pub(crate) mod macros {
         }};
     }
     pub(crate) use parser_parse;
-
-    macro_rules! parser_parse_err {
-        ($target_ty:ty, $input:expr) => {{
-            use crate::Parser as _;
-            let _tmp = <$target_ty>::parse()($input.as_bytes()).unwrap_err();
-        }};
-    }
-    pub(crate) use parser_parse_err;
 }
 
 #[cfg(test)]
@@ -427,7 +419,7 @@ mod tests {
                         relation: None,
                         column: "timestamp".into()
                     })
-                ],
+                ].into(),
                 table: Some(TableExpression::Relation("migration_log".into())),
                 combine:None,
                 limit:None,
@@ -509,7 +501,7 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: Some(Identifier("p".into())),
                     column: Identifier("name".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Renamed {
                     inner: Box::new(TableExpression::Relation(Identifier("permission".into()))),
                     name: Identifier("p".into()),
@@ -538,7 +530,7 @@ mod tests {
                         column: Identifier("name".into())
                     })),
                     name: Identifier("pname".into())
-                }],
+                }].into(),
                 table: Some(TableExpression::Relation(Identifier("permission".into()))),
                 where_condition: None,
                 order_by: None,
@@ -566,7 +558,7 @@ mod tests {
                         relation: Some(Identifier("password".into())),
                         column: Identifier("hash".into())
                     })
-                ],
+                ].into(),
                 table: Some(TableExpression::Join {
                     left: Box::new(TableExpression::Relation(Identifier("user".into()))),
                     right: Box::new(TableExpression::Relation(Identifier("password".into()))),
@@ -622,7 +614,7 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Relation(Identifier("alert_rule".into()))),
                 where_condition: None,
                 order_by: Some(vec![Ordering {
@@ -651,7 +643,7 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Relation(Identifier("alert_rule".into()))),
                 where_condition: None,
                 order_by: None,

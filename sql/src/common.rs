@@ -508,7 +508,7 @@ mod tests {
             "(EXISTS (SELECT 1 FROM alert_rule a WHERE d.uid = a.namespace_uid))",
             ValueExpression::FunctionCall(FunctionCall::Exists {
                 query: Box::new(Select {
-                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                     table: Some(TableExpression::Renamed {
                         inner: Box::new(TableExpression::Relation("alert_rule".into())),
                         name: "a".into(),
@@ -601,7 +601,7 @@ mod tests {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "name".into(),
-                    })],
+                    })].into(),
                     table: Some(TableExpression::Relation("users".into())),
                     where_condition: None,
                     order_by: None,

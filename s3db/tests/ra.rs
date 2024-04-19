@@ -727,7 +727,7 @@ fn parse_with_context_cte() {
         values: vec![ValueExpression::ColumnReference(ColumnReference {
             relation: None,
             column: "name".into(),
-        })],
+        })].into(),
         table: Some(sql::TableExpression::Relation("cte".into())),
         where_condition: None,
         order_by: None,

@@ -49,7 +49,7 @@ fn insert_with_on_conflict() {
                         relation: None,
                         column: Identifier("updated".into()),
                     })
-                ],
+                ].into(),
                 table: Some(TableExpression::Relation(Identifier("dashboard".into()))),
                 where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
@@ -116,7 +116,7 @@ fn delete_test() {
                 ValueExpression::Not(Box::new(ValueExpression::FunctionCall(
                     FunctionCall::Exists {
                         query: Box::new(Select {
-                            values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                            values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                             table: Some(TableExpression::Relation(Identifier("dashboard".into()))),
                             where_condition: Some(Condition::And(vec![
                                 Condition::Value(Box::new(ValueExpression::Operator {
@@ -268,7 +268,7 @@ fn something() {
                     relation: None,
                     column: "last_seen_at".into()
                 })
-            ],
+            ].into(),
             table: Some(TableExpression::Relation("user".into())),
             where_condition: Some(Condition::And(vec![Condition::Or(vec![
                 Condition::And(vec![Condition::Value(Box::new(
@@ -328,7 +328,7 @@ fn select_for_update() {
 
     assert_eq!(
         Select {
-            values: vec![ValueExpression::All],
+            values: vec![ValueExpression::All].into(),
             table: Some(TableExpression::Relation(Identifier("server_lock".into()))),
             where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                 ValueExpression::Operator {
@@ -403,7 +403,7 @@ fn select_limit_offset() {
                     relation: None,
                     column: Identifier("last_applied".into())
                 })
-            ],
+            ].into(),
             table: Some(TableExpression::Relation(Identifier(
                 "alert_configuration_history".into()
             ))),
@@ -473,7 +473,7 @@ fn select_something() {
                     relation: None,
                     column: Identifier("key".into())
                 })
-            ],
+            ].into(),
             table: Some(TableExpression::Relation(Identifier("kv_store".into()))),
             where_condition: Some(Condition::And(vec![
                 Condition::And(vec![Condition::Value(Box::new(
@@ -566,7 +566,7 @@ INNER JOIN (
                     relation: Some("permission".into()),
                     column: "scope".into(),
                 })
-            ],
+            ].into(),
             table: Some(TableExpression::Join {
                 left: Box::new(TableExpression::Join {
                     left: Box::new(TableExpression::Relation("permission".into())),
@@ -592,7 +592,7 @@ INNER JOIN (
                         values: vec![ValueExpression::ColumnReference(ColumnReference {
                             relation: Some("br".into()),
                             column: "role_id".into(),
-                        })],
+                        })].into(),
                         table: Some(TableExpression::Renamed {
                             inner: Box::new(TableExpression::Relation("builtin_role".into())),
                             name: "br".into(),
@@ -693,7 +693,7 @@ fn testing_subquery() {
             values: vec![ValueExpression::ColumnReference(ColumnReference {
                 relation: Some(Identifier("br".into())),
                 column: "role_id".into()
-            })],
+            })].into(),
             table: Some(TableExpression::Renamed {
                 inner: Box::new(TableExpression::Relation("builtin_role".into())),
                 name: "br".into(),
@@ -790,7 +790,7 @@ fn select_aggregate_with_operator() {
                 )),
                 second: Box::new(ValueExpression::Literal(Literal::SmallInteger(10))),
                 operator: BinaryOperator::Divide,
-            }],
+            }].into(),
             table: Some(TableExpression::Relation("regional_sales".into())),
             where_condition: None,
             order_by: None,
@@ -827,7 +827,7 @@ fn select_group_by_number() {
                     relation: None,
                     column: "plz".into()
                 })
-            ],
+            ].into(),
             table: Some(TableExpression::Relation("users".into())),
             where_condition: None,
             order_by: None,

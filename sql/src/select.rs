@@ -23,7 +23,7 @@ pub use order::{NullOrdering, OrderAttribute, OrderBy, Ordering};
 #[derive(Debug, PartialEq)]
 pub struct Select<'s, 'a> {
     /// The Values that will be returned by the Query for each Row
-    pub values: Vec<ValueExpression<'s, 'a>>,
+    pub values: crate::arenas::Vec<'a, ValueExpression<'s, 'a>>,
     /// The base table expression to select values from
     pub table: Option<TableExpression<'s, 'a>>,
     /// A condition to filter out unwanted queries
@@ -47,7 +47,7 @@ impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
 
     fn to_static(&self) -> Self::StaticVersion {
         Select {
-            values: self.values.iter().map(|v| v.to_static()).collect(),
+            values: crate::arenas::Vec::Heap(self.values.iter().map(|v| v.to_static()).collect()),
             table: self.table.as_ref().map(|t| t.to_static()),
             where_condition: self.where_condition.as_ref().map(|c| c.to_static()),
             order_by: self.order_by.as_ref().map(|orders| {
@@ -148,7 +148,7 @@ pub fn select<'i, 'a>(
         nom::sequence::tuple((
             nom::combinator::opt(nom::bytes::complete::tag_no_case("distinct")),
             nom::character::complete::multispace0,
-            <Vec<ValueExpression<'i, 'a>>>::parse_arena(a),
+            <crate::arenas::Vec<'a, ValueExpression<'i, 'a>>>::parse_arena(a),
             nom::combinator::opt(nom::combinator::map(
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
@@ -295,7 +295,7 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("name".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Relation(Identifier("users".into()))),
                 where_condition: None,
                 order_by: None,
@@ -320,7 +320,7 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: Some(Identifier("u".into())),
                     column: Identifier("name".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Renamed {
                     inner: Box::new(TableExpression::Relation(Identifier("user".into()))),
                     name: Identifier("u".into()),
@@ -345,7 +345,7 @@ mod tests {
             Select {
                 values: vec![ValueExpression::AggregateExpression(
                     AggregateExpression::Count(Box::new(ValueExpression::All))
-                )],
+                )].into(),
                 table: Some(TableExpression::Relation(Identifier("api_key".into()))),
                 where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
@@ -373,7 +373,7 @@ mod tests {
             Select,
             "SELECT * FROM customer INNER JOIN orders ON customer.ID=orders.customer INNER JOIN products ON orders.product=products.ID",
             Select {
-                values: vec![ValueExpression::All],
+                values: vec![ValueExpression::All].into(),
                 table: Some(TableExpression::Join {
                     left: Box::new(TableExpression::Join {
                         left: Box::new(TableExpression::Relation(Identifier("customer".into()))),
@@ -432,7 +432,7 @@ mod tests {
             Select,
             "SELECT * FROM customer JOIN orders ON customer.ID=orders.customer JOIN products ON orders.product=products.ID",
             Select {
-                values: vec![ValueExpression::All],
+                values: vec![ValueExpression::All].into(),
                 table: Some(TableExpression::Join {
                     left: Box::new(TableExpression::Join {
                         left: Box::new(TableExpression::Relation(Identifier("customer".into()))),
@@ -494,7 +494,7 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("name".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Relation(Identifier("users".into()))),
                 where_condition: None,
                 order_by: Some(vec![Ordering {
@@ -520,7 +520,7 @@ mod tests {
             Select,
             "SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2",
             Select {
-                values: vec![ValueExpression::Literal(sql::Literal::SmallInteger(1))],
+                values: vec![ValueExpression::Literal(sql::Literal::SmallInteger(1))].into(),
                 table: None,
                 where_condition: None,
                 order_by: None,
@@ -540,7 +540,7 @@ mod tests {
                                 1
                             ))),
                             operator: BinaryOperator::Add,
-                        }],
+                        }].into(),
                         table: Some(TableExpression::Relation("cte".into())),
                         where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                             ValueExpression::Operator {
@@ -576,7 +576,7 @@ mod tests {
             Select {
                 values: vec![ValueExpression::AggregateExpression(
                     AggregateExpression::Count(Box::new(ValueExpression::All))
-                )],
+                )].into(),
                 table: Some(TableExpression::Relation("orders".into())),
                 where_condition: None,
                 order_by: None,

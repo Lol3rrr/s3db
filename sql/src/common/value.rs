@@ -95,6 +95,18 @@ impl<'i, 'a> CompatibleParser for Vec<ValueExpression<'i, 'a>> {
     }
 }
 
+impl<'i, 'a> CompatibleParser for crate::arenas::Vec<'a, ValueExpression<'i, 'a>> {
+    type StaticVersion = crate::arenas::Vec<'static,ValueExpression<'static, 'static>>;
+
+    fn to_static(&self) -> Self::StaticVersion {
+        crate::arenas::Vec::Heap(self.iter().map(|p| p.to_static()).collect())
+    }
+
+    fn parameter_count(&self) -> usize {
+        self.iter().map(|p| p.parameter_count()).max().unwrap_or(0)
+    }
+}
+
 impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
     type StaticVersion = ValueExpression<'static, 'static>;
 
@@ -214,6 +226,7 @@ impl<'i, 'a> ArenaParser<'i, 'a> for ValueExpression<'i, 'a> {
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
+            #[allow(deprecated)]
             value_expression(i, a)
         }
     }
@@ -225,6 +238,25 @@ impl<'i, 'a> ArenaParser<'i, 'a> for Vec<ValueExpression<'i, 'a>> {
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             nom::multi::separated_list1(
+                nom::bytes::complete::tag(","),
+                nom::sequence::delimited(
+                    nom::character::complete::multispace0,
+                    ValueExpression::parse_arena(a),
+                    nom::character::complete::multispace0,
+                ),
+            )(i)
+        }
+    }
+}
+
+
+impl<'i, 'a> ArenaParser<'i, 'a> for crate::arenas::Vec<'a, ValueExpression<'i, 'a>> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            crate::nom_util::bump_separated_list1(
+                a,
                 nom::bytes::complete::tag(","),
                 nom::sequence::delimited(
                     nom::character::complete::multispace0,

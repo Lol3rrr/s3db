@@ -133,7 +133,7 @@ mod tests {
                             values: vec![ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: Identifier("id".into())
-                            })],
+                            })].into(),
                             table: Some(TableExpression::Relation(Identifier("dashboard".into()))),
                             where_condition: None,
                             order_by: None,

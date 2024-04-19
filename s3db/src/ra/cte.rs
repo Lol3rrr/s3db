@@ -176,7 +176,7 @@ mod tests {
             parts: vec![WithCTE {
                 name: "something".into(),
                 query: Query::Select(Select {
-                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                     table: None,
                     where_condition: None,
                     order_by: None,
@@ -223,7 +223,7 @@ mod tests {
             parts: vec![WithCTE {
                 name: "something".into(),
                 query: Query::Select(Select {
-                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                     table: None,
                     where_condition: None,
                     order_by: None,
@@ -245,7 +245,7 @@ mod tests {
                                     1,
                                 ))),
                                 operator: BinaryOperator::Add,
-                            }],
+                            }].into(),
                             table: Some(TableExpression::Relation("something".into())),
                             where_condition: None,
                             order_by: None,

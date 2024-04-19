@@ -16,7 +16,7 @@ impl<'a, T> Boxed<'a, T> {
             },
             Self::Heap(heaped) => Boxed::Heap(heaped),
         }
-    }
+    } 
 }
 
 impl<T> From<std::boxed::Box<T>> for Boxed<'static, T> {

@@ -104,7 +104,7 @@ mod tests {
                 name: "testing".into(),
                 params: vec![],
                 query: Box::new(Query::Select(Select {
-                    values: vec![ValueExpression::All],
+                    values: vec![ValueExpression::All].into(),
                     table: Some(TableExpression::Relation("users".into())),
                     where_condition: None,
                     having: None,
@@ -127,7 +127,7 @@ mod tests {
                 name: "testing".into(),
                 params: vec![DataType::Integer],
                 query: Box::new(Query::Select(Select {
-                    values: vec![ValueExpression::All],
+                    values: vec![ValueExpression::All].into(),
                     table: Some(TableExpression::Relation("users".into())),
                     where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {

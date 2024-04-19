@@ -151,6 +151,7 @@ impl<'i, 'a> ArenaParser<'i, 'a> for FunctionCall<'i, 'a> {
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
+            #[allow(deprecated)]
             function_call(i, a)
         }
     }
@@ -359,7 +360,7 @@ mod tests {
                                 column: Identifier("id".into())
                             }
                         )))
-                    )],
+                    )].into(),
                     table: Some(TableExpression::Relation(Identifier("org".into()))),
                     where_condition: None,
                     order_by: None,

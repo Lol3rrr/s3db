@@ -89,6 +89,7 @@ impl<'i, 'a> ArenaParser<'i, 'a> for TableExpression<'i, 'a> {
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
+            #[allow(deprecated)]
             table_expression(i, a)
         }
     }
@@ -297,7 +298,7 @@ mod tests {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "name".into(),
-                    })],
+                    })].into(),
                     table: Some(TableExpression::Relation("second".into())),
                     where_condition: None,
                     order_by: None,
@@ -338,7 +339,7 @@ mod tests {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "name".into(),
-                    })],
+                    })].into(),
                     table: Some(TableExpression::Relation("second".into())),
                     where_condition: None,
                     order_by: None,

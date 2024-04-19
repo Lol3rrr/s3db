@@ -138,7 +138,7 @@ mod tests {
                 parts: vec![WithCTE {
                     name: "something".into(),
                     query: Query::Select(Select {
-                        values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                        values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                         table: None,
                         where_condition: None,
                         order_by: None,
@@ -170,7 +170,7 @@ WITH regional_sales AS (
                     WithCTE {
                         name: "regional_sales".into(),
                         query: Query::Select(Select {
-                            values: vec![ValueExpression::Literal(Literal::SmallInteger(2))],
+                            values: vec![ValueExpression::Literal(Literal::SmallInteger(2))].into(),
                             table: None,
                             where_condition: None,
                             order_by: None,
@@ -185,7 +185,7 @@ WITH regional_sales AS (
                     WithCTE {
                         name: "top_regions".into(),
                         query: Query::Select(Select {
-                            values: vec![ValueExpression::Literal(Literal::SmallInteger(3))],
+                            values: vec![ValueExpression::Literal(Literal::SmallInteger(3))].into(),
                             table: None,
                             where_condition: None,
                             order_by: None,
@@ -212,7 +212,7 @@ WITH regional_sales AS (
                 parts: vec![WithCTE {
                     name: "cte".into(),
                     query: Query::Select(Select {
-                        values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                        values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                         table: None,
                         where_condition: None,
                         order_by: None,
@@ -234,7 +234,7 @@ WITH regional_sales AS (
                                         Literal::SmallInteger(1)
                                     )),
                                     operator: BinaryOperator::Add,
-                                }],
+                                }].into(),
                                 table: Some(TableExpression::Relation("cte".into())),
                                 where_condition: Some(Condition::And(vec![Condition::Value(
                                     Box::new(ValueExpression::Operator {
