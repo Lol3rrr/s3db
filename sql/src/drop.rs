@@ -44,6 +44,16 @@ impl<'s> DropTable<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for DropIndex<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            drop_index(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn drop_index(i: &[u8]) -> IResult<&[u8], DropIndex<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
@@ -84,6 +94,16 @@ pub fn drop_index(i: &[u8]) -> IResult<&[u8], DropIndex<'_>, nom::error::Verbose
     )(i)
 }
 
+impl<'i, 's> crate::Parser<'i> for DropTable<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            drop_table(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn drop_table(i: &[u8]) -> IResult<&[u8], DropTable<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
@@ -121,48 +141,24 @@ pub fn drop_table(i: &[u8]) -> IResult<&[u8], DropTable<'_>, nom::error::Verbose
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::macros::parser_parse;
 
     #[test]
     fn drop_index_basic() {
-        let (remaining, drop_index) =
-            drop_index("DROP INDEX \"UQE_user_login\" CASCADE".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            DropIndex {
+        parser_parse!(DropIndex, "DROP INDEX \"UQE_user_login\" CASCADE", DropIndex {
                 name: Identifier("UQE_user_login".into()),
                 concurrently: false,
                 if_exists: false,
                 dependent_handling: DependentHandling::Cascade,
-            },
-            drop_index
-        );
+            });
     }
 
     #[test]
     fn drop_table_basic() {
-        let (remaining, table) = drop_table("DROP TABLE \"testing\"".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            DropTable {
+        parser_parse!(DropTable, "DROP TABLE \"testing\"", DropTable {
                 names: vec![Identifier("testing".into())],
                 if_exists: false,
                 dependent_handling: DependentHandling::Restrict,
-            },
-            table
-        );
+            }); 
     }
 }

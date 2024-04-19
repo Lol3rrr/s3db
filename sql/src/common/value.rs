@@ -278,7 +278,7 @@ pub fn value_expression(
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),
                 nom::character::complete::multispace0,
-                select::select,
+                select::Select::parse(),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             )),
@@ -373,7 +373,7 @@ pub fn value_expression(
                 nom::sequence::tuple((
                     nom::bytes::complete::tag("("),
                     nom::character::complete::multispace0,
-                    select::select,
+                    select::Select::parse(),
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag(")"),
                 )),

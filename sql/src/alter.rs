@@ -3,7 +3,6 @@ use nom::{IResult, Parser};
 use crate::Parser as _Parser;
 
 use super::{
-    common::type_modifier,
     DataType, Identifier, Literal, TypeModifier,
 };
 
@@ -139,7 +138,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
             nom::character::complete::multispace1,
             DataType::parse(),
             nom::character::complete::multispace1,
-            nom::multi::separated_list0(nom::character::complete::multispace1, type_modifier),
+            nom::multi::separated_list0(nom::character::complete::multispace1, TypeModifier::parse()),
         ))
         .map(
             |(_, column, _, data_type, _, type_modifiers)| AlterTable::AddColumn {
@@ -169,7 +168,7 @@ pub fn alter_table(i: &[u8]) -> IResult<&[u8], AlterTable<'_>, nom::error::Verbo
                 DataType::parse(),
                 nom::combinator::opt(nom::sequence::tuple((
                     nom::character::complete::multispace1,
-                    type_modifier,
+                    TypeModifier::parse(),
                 ))),
             ))
             .map(|(_, _, _, cname, _, _, _, dt, _tm)| (cname, dt)),

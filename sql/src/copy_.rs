@@ -28,6 +28,16 @@ impl<'s> CompatibleParser<dialects::Postgres> for Copy_<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Copy_<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            parse(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn parse(i: &[u8]) -> IResult<&[u8], Copy_<'_>, nom::error::VerboseError<&[u8]>> {
     let (rem, (_, _, name, _, _, _, source)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("copy"),

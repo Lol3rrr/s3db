@@ -1,7 +1,7 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    self as sql, select::select, CompatibleParser, Condition, Identifier, Parser as _,
+    CompatibleParser, Condition, Identifier, Parser as _,
 };
 
 use super::Select;
@@ -51,7 +51,7 @@ pub fn table_expression(
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),
                 nom::character::complete::multispace0,
-                select,
+                Select::parse(),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             ))
@@ -188,7 +188,7 @@ pub fn table_expression(
 
         match on_condition {
             Ok((remaining, _)) => {
-                let (remaining, condition) = sql::condition::condition(remaining)?;
+                let (remaining, condition) = Condition::parse()(remaining)?;
 
                 outer_remaining = remaining;
                 table = TableExpression::Join {

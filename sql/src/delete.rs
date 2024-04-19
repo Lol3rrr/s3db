@@ -2,7 +2,7 @@ use nom::{IResult, Parser};
 
 use crate::{dialects, CompatibleParser, Parser as _};
 
-use super::{condition::condition, Condition, Identifier};
+use super::{Condition, Identifier};
 
 #[derive(Debug, PartialEq)]
 pub struct Delete<'s> {
@@ -33,6 +33,14 @@ impl<'s> Delete<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Delete<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            delete(i)
+        }
+    }
+}
+
 pub fn delete(i: &[u8]) -> IResult<&[u8], Delete<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, _, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("DELETE"),
@@ -47,7 +55,7 @@ pub fn delete(i: &[u8]) -> IResult<&[u8], Delete<'_>, nom::error::VerboseError<&
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("WHERE"),
             nom::character::complete::multispace1,
-            condition,
+            Condition::parse(),
         ))
         .map(|(_, _, _, cond)| cond),
     )(remaining)?;

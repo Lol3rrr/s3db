@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{select, CompatibleParser, Select, Parser as _};
+use crate::{CompatibleParser, Select, Parser as _};
 
 use super::{Identifier, Literal, ValueExpression};
 
@@ -120,7 +120,7 @@ pub fn function_call(
                 nom::bytes::complete::tag_no_case("exists"),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag("("),
-                select::select,
+                Select::parse(),
                 nom::bytes::complete::tag(")"),
             )),
             |(_, _, _, query, _)| FunctionCall::Exists {
@@ -305,9 +305,8 @@ impl<'s> FunctionCall<'s> {
 
 #[cfg(test)]
 mod tests {
-    use select::TableExpression;
 
-    use crate::{AggregateExpression, ColumnReference, macros::parser_parse};
+    use crate::{AggregateExpression, ColumnReference, macros::parser_parse, TableExpression};
 
     use super::*;
 

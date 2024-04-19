@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{condition::condition, dialects, CompatibleParser, Parser as _};
+use crate::{dialects, CompatibleParser, Parser as _};
 
 use super::{common::ValueExpression, condition::Condition};
 
@@ -111,6 +111,16 @@ impl<'s> Select<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Select<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            select(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("SELECT"),
@@ -160,7 +170,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                         "where condition",
                         nom::combinator::cut(nom::sequence::tuple((
                             nom::combinator::opt(nom::character::complete::multispace1),
-                            condition,
+                            Condition::parse(),
                         ))),
                     ),
                 ))
@@ -188,7 +198,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                     nom::character::complete::multispace1,
                     nom::bytes::complete::tag_no_case("HAVING"),
                     nom::character::complete::multispace1,
-                    condition,
+                    Condition::parse(),
                 ))
                 .map(|(_, _, _, cond)| cond),
             ),
@@ -248,7 +258,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
 mod tests {
     use crate::{
         self as sql, AggregateExpression, BinaryOperator, ColumnReference, Identifier, Literal,
-        Query,
+        macros::{parser_parse, parser_parse_err}
     };
 
     use super::*;
@@ -257,31 +267,25 @@ mod tests {
 
     #[test]
     fn count_select() {
-        let (_, select) = select("select count(*) from pgbench_branches".as_bytes()).unwrap();
-        dbg!(select);
+        parser_parse!(
+            Select,
+            "select count(*) from pgbench_branches"
+        );
     }
 
     #[test]
     fn select_where_and() {
-        let (remain, select) = select(
-            "SELECT 1 FROM \"pg_indexes\" WHERE \"tablename\"=$1 AND \"indexname\"=$2".as_bytes(),
-        )
-        .unwrap();
-        dbg!(remain, select);
+        parser_parse!(
+            Select,
+            "SELECT 1 FROM \"pg_indexes\" WHERE \"tablename\"=$1 AND \"indexname\"=$2"
+        );
     }
 
     #[test]
     fn select_with_limit() {
-        let (remaining, select) = select("SELECT name FROM users LIMIT 1".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT name FROM users LIMIT 1",
             Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -298,18 +302,15 @@ mod tests {
                 }),
                 for_update: None,
                 combine: None,
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn select_with_alias_without_as() {
-        let (remaining, select) = select("SELECT u.name FROM user u".as_bytes()).unwrap();
-
-        dbg!(&remaining, &select);
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT u.name FROM user u",
             Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: Some(Identifier("u".into())),
@@ -327,26 +328,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn select_where_not_null() {
-        let (remaining, select) = select(
-            "SELECT COUNT(*) FROM \"api_key\"WHERE service_account_id IS NOT NULL".as_bytes(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT COUNT(*) FROM \"api_key\"WHERE service_account_id IS NOT NULL",
             Select {
                 values: vec![ValueExpression::AggregateExpression(
                     AggregateExpression::Count(Box::new(ValueExpression::All))
@@ -368,24 +358,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn select_multiple_inner_joins() {
-        let (remaining, select) = select("SELECT * FROM customer INNER JOIN orders ON customer.ID=orders.customer INNER JOIN products ON orders.product=products.ID".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        dbg!(&select);
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT * FROM customer INNER JOIN orders ON customer.ID=orders.customer INNER JOIN products ON orders.product=products.ID",
             Select {
                 values: vec![ValueExpression::All],
                 table: Some(TableExpression::Join {
@@ -436,22 +417,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None,
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn select_multiple_joins() {
-        let (remaining, select) = select("SELECT * FROM customer JOIN orders ON customer.ID=orders.customer JOIN products ON orders.product=products.ID".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT * FROM customer JOIN orders ON customer.ID=orders.customer JOIN products ON orders.product=products.ID",
             Select {
                 values: vec![ValueExpression::All],
                 table: Some(TableExpression::Join {
@@ -502,21 +476,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn select_order_by_column_reference() {
-        let query_str = "SELECT name FROM users ORDER BY users.age";
-
-        let select = match Query::parse(query_str.as_bytes()) {
-            Ok(Query::Select(s)) => s,
-            other => panic!("{:?}", other),
-        };
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT name FROM users ORDER BY users.age",
             Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
@@ -537,21 +505,15 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn union_all() {
-        let query_str = "SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2";
-
-        let select = match Query::parse(query_str.as_bytes()) {
-            Ok(Query::Select(s)) => s,
-            other => panic!("{:?}", other),
-        };
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2",
             Select {
                 values: vec![ValueExpression::Literal(sql::Literal::SmallInteger(1))],
                 table: None,
@@ -597,19 +559,15 @@ mod tests {
                         combine: None
                     })
                 )),
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn having_clause() {
-        let query_str = "SELECT count(*) FROM orders GROUP BY uid HAVING uid > 0";
-
-        let (remaining, select) = select(query_str.as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-
-        assert_eq!(
+        parser_parse!(
+            Select,
+            "SELECT count(*) FROM orders GROUP BY uid HAVING uid > 0",
             Select {
                 values: vec![ValueExpression::AggregateExpression(
                     AggregateExpression::Count(Box::new(ValueExpression::All))
@@ -634,18 +592,12 @@ mod tests {
                 limit: None,
                 for_update: None,
                 combine: None,
-            },
-            select
+            }
         );
     }
 
     #[test]
     fn errors() {
-        let tmp = select("SELECT something FROM".as_bytes()).unwrap_err();
-        assert!(
-            matches!(tmp, nom::Err::Failure(_)),
-            "Expected Failure: {:?}",
-            tmp
-        );
+        parser_parse_err!(Select, "SELECT something FROM");
     }
 }

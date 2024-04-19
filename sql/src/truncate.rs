@@ -7,6 +7,16 @@ pub struct TruncateTable<'s> {
     pub names: Vec<Identifier<'s>>,
 }
 
+impl<'i, 's> crate::Parser<'i> for TruncateTable<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            parse(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn parse(i: &[u8]) -> IResult<&[u8], TruncateTable<'_>, nom::error::VerboseError<&[u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
@@ -45,13 +55,13 @@ impl<'s> CompatibleParser<dialects::Postgres> for TruncateTable<'s> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::single_parse_test;
     use super::*;
+    use crate::macros::parser_parse;
 
     #[test]
     fn truncate_single_table() {
-        single_parse_test!(
-            parse,
+        parser_parse!(
+            TruncateTable,
             "truncate table pgbench_accounts, pgbench_branches, pgbench_history, pgbench_tellers",
             TruncateTable {
                 names: vec![

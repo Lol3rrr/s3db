@@ -1,5 +1,15 @@
 use nom::{IResult, Parser};
 
+pub struct BeginTransaction {
+    pub isolation: IsolationMode,
+}
+
+pub struct CommitTransaction {
+}
+
+pub struct AbortTransaction {
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum IsolationMode {
     Standard,
@@ -11,6 +21,16 @@ pub enum IsolationMode {
     RepeatableRead,
     ReadCommitted,
     ReadUncommitted,
+}
+
+impl<'i> crate::Parser<'i> for BeginTransaction {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            begin_transaction(i).map(|(first, im)| (first, BeginTransaction {
+                isolation: im,
+            }))
+        }
+    }
 }
 
 /// [Reference](https://www.postgresql.org/docs/current/sql-begin.html)
@@ -69,6 +89,14 @@ pub fn begin_transaction(
     Ok((remaining, isomode))
 }
 
+impl<'i> crate::Parser<'i> for CommitTransaction {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            commit_transaction(i).map(|(f, _)| (f, CommitTransaction {}))
+        }
+    }
+}
+
 pub fn commit_transaction(i: &[u8]) -> IResult<&[u8], (), nom::error::VerboseError<&[u8]>> {
     let (remaining, _) = nom::branch::alt((
         nom::bytes::complete::tag_no_case("COMMIT"),
@@ -77,6 +105,14 @@ pub fn commit_transaction(i: &[u8]) -> IResult<&[u8], (), nom::error::VerboseErr
     ))(i)?;
 
     Ok((remaining, ()))
+}
+
+impl<'i> crate::Parser<'i> for AbortTransaction {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            rollback_transaction(i).map(|(f, _)| (f, AbortTransaction{}))
+        }
+    }
 }
 
 pub fn rollback_transaction(i: &[u8]) -> IResult<&[u8], (), nom::error::VerboseError<&[u8]>> {

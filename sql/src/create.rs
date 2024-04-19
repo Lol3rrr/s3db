@@ -2,7 +2,7 @@ use nom::{IResult, Parser};
 
 use crate::{dialects, CompatibleParser, Literal, Parser as _Parser};
 
-use super::common::{type_modifier, DataType, Identifier, TypeModifier};
+use super::common::{DataType, Identifier, TypeModifier};
 
 #[derive(Debug, PartialEq)]
 pub struct CreateTable<'s> {
@@ -69,6 +69,16 @@ enum ParsedTableField<'s> {
     PrimaryKey(Vec<Identifier<'s>>),
 }
 
+impl<'i, 's> crate::Parser<'i> for CreateTable<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            create_table(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, _, if_not_exists, _, table_ident, _, _, _, raw_parts, _, _, with)) =
         nom::sequence::tuple((
@@ -181,6 +191,16 @@ pub fn create_table(i: &[u8]) -> IResult<&[u8], CreateTable, nom::error::Verbose
     ))
 }
 
+impl<'i, 's> crate::Parser<'i> for CreateIndex<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            create_index(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn create_index(i: &[u8]) -> IResult<&[u8], CreateIndex<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, unique, _, _, _, name, _, table, _, _, columns, _)) =
         nom::sequence::tuple((
@@ -250,7 +270,7 @@ fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseE
             nom::character::complete::multispace1,
             DataType::parse(),
             nom::multi::many0(
-                nom::sequence::tuple((nom::character::complete::multispace1, type_modifier))
+                nom::sequence::tuple((nom::character::complete::multispace1, TypeModifier::parse()))
                     .map(|(_, m)| m),
             ),
         )),
@@ -264,16 +284,14 @@ fn create_field(i: &[u8]) -> IResult<&[u8], TableField<'_>, nom::error::VerboseE
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::single_parse_test;
     use super::*;
+    use crate::macros::parser_parse;
 
     #[test]
     fn create_table_test() {
-        let (remaining, query)= create_table("CREATE TABLE IF NOT EXISTS \"migration_log\" (\n\"id\" SERIAL PRIMARY KEY  NOT NULL\n, \"migration_id\" VARCHAR(255) NOT NULL\n, \"sql\" TEXT NOT NULL\n, \"success\" BOOL NOT NULL\n, \"error\" TEXT NOT NULL\n, \"timestamp\" TIMESTAMP NOT NULL\n);".as_bytes()).unwrap();
-
-        assert_eq!(&[b';'] as &[u8], remaining);
-
-        assert_eq!(
+        parser_parse!(
+            CreateTable,
+            "CREATE TABLE IF NOT EXISTS \"migration_log\" (\n\"id\" SERIAL PRIMARY KEY  NOT NULL\n, \"migration_id\" VARCHAR(255) NOT NULL\n, \"sql\" TEXT NOT NULL\n, \"success\" BOOL NOT NULL\n, \"error\" TEXT NOT NULL\n, \"timestamp\" TIMESTAMP NOT NULL\n);",
             CreateTable {
                 identifier: "migration_log".into(),
                 if_not_exists: true,
@@ -312,60 +330,37 @@ mod tests {
                 primary_key: None,
                 withs: Vec::new(),
             },
-            query
+            &[b';']
         );
     }
 
     #[test]
     fn create_unique_index() {
-        let (remaining, query) = create_index(
-            "CREATE UNIQUE INDEX \"UQE_user_login\" ON \"user\" (\"login\");".as_bytes(),
-        )
-        .unwrap();
-
-        dbg!(&remaining, &query);
-
-        assert_eq!(
-            &[b';'] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            CreateIndex,
+            "CREATE UNIQUE INDEX \"UQE_user_login\" ON \"user\" (\"login\");",
             CreateIndex {
                 identifier: Identifier("UQE_user_login".into()),
                 table: Identifier("user".into()),
                 columns: vec![Identifier("login".into())],
                 unique: true,
             },
-            query
+            &[b';']
         );
     }
 
     #[test]
     fn create_normal_index() {
-        let (remaining, query) =
-            create_index("CREATE INDEX \"UQE_user_login\" ON \"user\" (\"login\");".as_bytes())
-                .unwrap();
-
-        dbg!(&remaining, &query);
-
-        assert_eq!(
-            &[b';'] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            CreateIndex,
+            "CREATE INDEX \"UQE_user_login\" ON \"user\" (\"login\");",
             CreateIndex {
                 identifier: Identifier("UQE_user_login".into()),
                 table: Identifier("user".into()),
                 columns: vec![Identifier("login".into())],
                 unique: false,
             },
-            query
+            &[b';']
         );
     }
 
@@ -388,44 +383,69 @@ mod tests {
         );
     }
 
-    
-
     #[test]
     fn type_modifier_test() {
-        let (remaining, modifier) = type_modifier("NOT NULL".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(TypeModifier::NotNull, modifier);
+        parser_parse!(TypeModifier, "NOT NULL", TypeModifier::NotNull);
 
-        let (remaining, modifier) = type_modifier("PRIMARY KEY".as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(TypeModifier::PrimaryKey, modifier);
+        parser_parse!(TypeModifier, "PRIMARY KEY", TypeModifier::PrimaryKey);
     }
 
     #[test]
     fn create_table_explicit_primary_key() {
-        let (remaining, query) = create_table("CREATE TABLE IF NOT EXISTS \"alert_instance\" (\n\"def_org_id\" BIGINT NOT NULL\n, \"def_uid\" VARCHAR(40) NOT NULL DEFAULT 0\n, \"labels\" TEXT NOT NULL\n, \"labels_hash\" VARCHAR(190) NOT NULL\n, \"current_state\" VARCHAR(190) NOT NULL\n, \"current_state_since\" BIGINT NOT NULL\n, \"last_eval_time\" BIGINT NOT NULL\n, PRIMARY KEY ( \"def_org_id\",\"def_uid\",\"labels_hash\" ));".as_bytes()).unwrap();
-
-        assert_eq!(&[b';'] as &[u8], remaining);
-
-        dbg!(&query);
-
-        assert!(query.primary_key.is_some());
+        parser_parse!(
+            CreateTable,
+            "CREATE TABLE IF NOT EXISTS \"alert_instance\" (\n\"def_org_id\" BIGINT NOT NULL\n, \"def_uid\" VARCHAR(40) NOT NULL DEFAULT 0\n, \"labels\" TEXT NOT NULL\n, \"labels_hash\" VARCHAR(190) NOT NULL\n, \"current_state\" VARCHAR(190) NOT NULL\n, \"current_state_since\" BIGINT NOT NULL\n, \"last_eval_time\" BIGINT NOT NULL\n, PRIMARY KEY ( \"def_org_id\",\"def_uid\",\"labels_hash\" ));",
+            CreateTable {
+                fields: vec![
+                    TableField {
+                        ident: "def_org_id".into(),
+                        datatype: DataType::BigInteger,
+                        modifiers: vec![TypeModifier::NotNull],
+                    },
+                    TableField {
+                        ident: "def_uid".into(),
+                        datatype: DataType::VarChar {size: 40 },
+                        modifiers: vec![TypeModifier::NotNull, TypeModifier::DefaultValue { value: Some(Literal::SmallInteger(0)) }],
+                    },
+                    TableField {
+                        ident: "labels".into(),
+                        datatype: DataType::Text,
+                        modifiers: vec![TypeModifier::NotNull],
+                    },
+                    TableField {
+                        ident: "labels_hash".into(),
+                        datatype: DataType::VarChar{size: 190},
+                        modifiers: vec![TypeModifier::NotNull],
+                    },
+                    TableField {
+                        ident: "current_state".into(),
+                        datatype: DataType::VarChar{size: 190},
+                        modifiers: vec![TypeModifier::NotNull],
+                    },
+                    TableField {
+                        ident: "current_state_since".into(),
+                        datatype: DataType::BigInteger,
+                        modifiers: vec![TypeModifier::NotNull],
+                    },
+                    TableField {
+                        ident: "last_eval_time".into(),
+                        datatype: DataType::BigInteger,
+                        modifiers: vec![TypeModifier::NotNull],
+                    },
+                ],
+                identifier: "alert_instance".into(),
+                withs: vec![],
+                primary_key: Some(vec!["def_org_id".into(), "def_uid".into(), "labels_hash".into()]),
+                if_not_exists: true,
+            },
+            &[b';']
+        );
     }
 
     #[test]
     fn create_with_fillfactor() {
-        single_parse_test!(
-            create_table,
+        parser_parse!(
+            CreateTable,
             "CREATE TABLE testing (name int) with (fillfactor=100)",
             CreateTable {
                 identifier: "testing".into(),

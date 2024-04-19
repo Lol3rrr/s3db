@@ -8,6 +8,16 @@ pub enum Configuration {
     ClientMinMessages { value: Literal<'static> },
 }
 
+impl<'i> crate::Parser<'i> for Configuration {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            parse(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn parse(i: &[u8]) -> IResult<&[u8], Configuration, nom::error::VerboseError<&[u8]>> {
     let (i, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("set"),
@@ -41,19 +51,12 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Configuration, nom::error::VerboseError
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    macro_rules! test_config {
-        ($query:literal, $expected:expr) => {
-            let (remaining, tmp) = parse($query.as_bytes()).unwrap();
-            assert_eq!(&[] as &[u8], remaining);
-
-            assert_eq!($expected, tmp);
-        };
-    }
+    use crate::macros::parser_parse;
 
     #[test]
     fn set_encoding() {
-        test_config!(
+        parser_parse!(
+            Configuration,
             "set client_encoding to 'UTF8'",
             Configuration::ClientEncoding {
                 target: Literal::Str("UTF8".into())
@@ -63,7 +66,8 @@ mod tests {
 
     #[test]
     fn set_client_min_messages() {
-        test_config!(
+        parser_parse!(
+            Configuration,
             "set CLIENT_MIN_MESSAGES TO 'ERROR'",
             Configuration::ClientMinMessages {
                 value: Literal::Str("ERROR".into())

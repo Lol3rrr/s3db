@@ -13,6 +13,16 @@ pub struct Prepare<'s> {
     pub query: Box<Query<'s>>,
 }
 
+impl<'i, 's> crate::Parser<'i> for Prepare<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            parse(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&[u8]>> {
     let (i, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("PREPARE"),
@@ -74,19 +84,14 @@ impl<'s> CompatibleParser<dialects::Postgres> for Prepare<'s> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        BinaryOperator, ColumnReference, Condition, Select, TableExpression, ValueExpression,
+        BinaryOperator, ColumnReference, Condition, Select, TableExpression, ValueExpression, macros::parser_parse,
     };
 
     use super::*;
 
     #[test]
     fn prepared_no_params() {
-        let (remaining, tmp) = parse("PREPARE testing as SELECT * FROM users".as_bytes()).unwrap();
-
-        dbg!(remaining, &tmp);
-
-        assert_eq!(
-            Prepare {
+        parser_parse!(Prepare, "PREPARE testing as SELECT * FROM users", Prepare {
                 name: "testing".into(),
                 params: vec![],
                 query: Box::new(Query::Select(Select {
@@ -100,21 +105,12 @@ mod tests {
                     for_update: None,
                     combine: None,
                 }))
-            },
-            tmp
-        );
+            });
     }
 
     #[test]
     fn prepared_params() {
-        let (remaining, tmp) =
-            parse("PREPARE testing(integer) as SELECT * FROM users WHERE id = $1".as_bytes())
-                .unwrap();
-
-        dbg!(remaining, &tmp);
-
-        assert_eq!(
-            Prepare {
+        parser_parse!(Prepare, "PREPARE testing(integer) as SELECT * FROM users WHERE id = $1", Prepare {
                 name: "testing".into(),
                 params: vec![DataType::Integer],
                 query: Box::new(Query::Select(Select {
@@ -137,48 +133,6 @@ mod tests {
                     for_update: None,
                     combine: None,
                 }))
-            },
-            tmp
-        );
-    }
-
-    #[test]
-    #[ignore = "Too large"]
-    fn test() {
-        let (remaining, tmp) = parse(
-            "prepare neword (INTEGER, INTEGER, INTEGER, INTEGER, INTEGER) as select neword($1,$2,$3,$4,$5,0)"
-                .as_bytes(),
-        )
-        .unwrap();
-
-        dbg!(remaining, &tmp);
-
-        assert_eq!(
-            Prepare {
-                name: "testing".into(),
-                params: vec![DataType::Integer],
-                query: Box::new(Query::Select(Select {
-                    values: vec![ValueExpression::All],
-                    table: Some(TableExpression::Relation("users".into())),
-                    where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                        ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: "id".into(),
-                            })),
-                            second: Box::new(ValueExpression::Placeholder(1)),
-                            operator: BinaryOperator::Equal
-                        }
-                    ))])),
-                    having: None,
-                    order_by: None,
-                    group_by: None,
-                    limit: None,
-                    for_update: None,
-                    combine: None,
-                }))
-            },
-            tmp
-        );
+            });
     }
 }

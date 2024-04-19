@@ -4,7 +4,7 @@ use crate::{
     dialects, CompatibleParser, Parser as _
 };
 
-use super::{common::Identifier, select::select, ColumnReference, Select, ValueExpression};
+use super::{common::Identifier, ColumnReference, Select, ValueExpression};
 
 #[derive(Debug, PartialEq)]
 pub struct Insert<'s> {
@@ -89,6 +89,16 @@ impl<'s> InsertValues<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Insert<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            insert(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn insert(i: &[u8]) -> IResult<&[u8], Insert<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, ident, _, _, fields, _, _, values, returning, on_conflict)) =
         nom::sequence::tuple((
@@ -218,13 +228,13 @@ fn insert_values(i: &[u8]) -> IResult<&[u8], InsertValues<'_>, nom::error::Verbo
             )),
             |(_, values)| InsertValues::Values(values),
         ),
-        nom::combinator::map(select, InsertValues::Select),
+        nom::combinator::map(Select::parse(), InsertValues::Select),
     ))(i)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::Literal;
+    use crate::{Literal, macros::parser_parse};
 
     use super::*;
 
@@ -232,17 +242,9 @@ mod tests {
 
     #[test]
     fn insert_single_row() {
-        let query = "INSERT INTO testing (first, second) VALUES ('fval', 'sval')";
-        let (remaining, ins) = insert(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Insert,
+            "INSERT INTO testing (first, second) VALUES ('fval', 'sval')",
             Insert {
                 table: Identifier("testing".into()),
                 fields: vec![Identifier("first".into()), Identifier("second".into())],
@@ -252,25 +254,15 @@ mod tests {
                 ]]),
                 returning: None,
                 on_conflict: None,
-            },
-            ins
+            }
         );
     }
 
     #[test]
     fn insert_multiple_rows() {
-        let query =
-            "INSERT INTO testing (first, second) VALUES ('fval', 'sval'), ('fval2', 'sval2')";
-        let (remaining, ins) = insert(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Insert,
+            "INSERT INTO testing (first, second) VALUES ('fval', 'sval'), ('fval2', 'sval2')",
             Insert {
                 table: Identifier("testing".into()),
                 fields: vec![Identifier("first".into()), Identifier("second".into())],
@@ -286,75 +278,50 @@ mod tests {
                 ]),
                 returning: None,
                 on_conflict: None,
-            },
-            ins
+            }
         );
     }
 
     #[test]
     fn insert_with_returning() {
-        let (remaining, ins) = insert(
-            "INSERT INTO \"migration_log\" (\"migration_id\",\"sql\",\"success\",\"error\",\"timestamp\") VALUES ($1, $2, $3, $4, $5) RETURNING \"id\""
-                .as_bytes(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
+        parser_parse!(
+            Insert,
+            "INSERT INTO \"migration_log\" (\"migration_id\",\"sql\",\"success\",\"error\",\"timestamp\") VALUES ($1, $2, $3, $4, $5) RETURNING \"id\"",
+            Insert {
+                table: "migration_log".into(),
+                fields: vec![
+                    Identifier::from("migration_id"),
+                    "sql".into(),
+                    "success".into(),
+                    "error".into(),
+                    "timestamp".into()
+                ],
+                values: InsertValues::Values(vec![vec![
+                    ValueExpression::Placeholder(1),
+                    ValueExpression::Placeholder(2),
+                    ValueExpression::Placeholder(3),
+                    ValueExpression::Placeholder(4),
+                    ValueExpression::Placeholder(5),
+                ]]),
+                returning: Some("id".into()),
+                on_conflict: None,
+            }
         );
-
-        assert_eq!(Identifier::from("migration_log"), ins.table);
-        assert_eq!(
-            vec![
-                Identifier::from("migration_id"),
-                "sql".into(),
-                "success".into(),
-                "error".into(),
-                "timestamp".into()
-            ],
-            ins.fields
-        );
-        assert_eq!(
-            InsertValues::Values(vec![vec![
-                ValueExpression::Placeholder(1),
-                ValueExpression::Placeholder(2),
-                ValueExpression::Placeholder(3),
-                ValueExpression::Placeholder(4),
-                ValueExpression::Placeholder(5),
-            ]]),
-            ins.values
-        );
-        assert_eq!(Some("id".into()), ins.returning);
     }
 
     #[test]
     fn insert_with_select_query() {
-        let (remaining, ins) = insert("INSERT INTO \"user\" (\"name\"\n, \"company\"\n, \"org_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\") SELECT \"name\"\n, \"company\"\n, \"account_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\" FROM \"user_v1\"".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
+        parser_parse!(
+            Insert,
+            "INSERT INTO \"user\" (\"name\"\n, \"company\"\n, \"org_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\") SELECT \"name\"\n, \"company\"\n, \"account_id\"\n, \"is_admin\"\n, \"created\"\n, \"updated\"\n, \"version\"\n, \"email\"\n, \"password\"\n, \"rands\"\n, \"salt\"\n, \"id\"\n, \"login\" FROM \"user_v1\""
         );
-
-        dbg!(&ins);
     }
 
     #[test]
     fn insert_select_with_function() {
-        let (remaining, ins) = insert("INSERT INTO dashboard_version\n(\n\tdashboard_id,\n\tversion,\n\tparent_version,\n\trestored_from,\n\tcreated,\n\tcreated_by,\n\tmessage,\n\tdata\n)\nSELECT\n\tdashboard.id,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.updated,\n\tCOALESCE(dashboard.updated_by, -1),\n\t'',\n\tdashboard.data\nFROM dashboard".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
+        parser_parse!(
+            Insert,
+            "INSERT INTO dashboard_version\n(\n\tdashboard_id,\n\tversion,\n\tparent_version,\n\trestored_from,\n\tcreated,\n\tcreated_by,\n\tmessage,\n\tdata\n)\nSELECT\n\tdashboard.id,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.updated,\n\tCOALESCE(dashboard.updated_by, -1),\n\t'',\n\tdashboard.data\nFROM dashboard"
         );
-
-        dbg!(&ins);
     }
 }

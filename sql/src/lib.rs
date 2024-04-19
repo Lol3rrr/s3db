@@ -33,7 +33,7 @@ mod condition;
 pub use condition::Condition;
 
 mod transactions;
-pub use transactions::IsolationMode;
+pub use transactions::{IsolationMode, BeginTransaction, CommitTransaction, AbortTransaction};
 
 mod drop;
 pub use drop::{DependentHandling, DropIndex, DropTable};
@@ -194,29 +194,29 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
         nom::sequence::tuple((
             nom::character::complete::multispace0,
             nom::branch::alt((
-                nom::combinator::map(select::select, Query::Select),
-                nom::combinator::map(insert::insert, Query::Insert),
-                nom::combinator::map(update::update, Query::Update),
-                nom::combinator::map(copy_::parse, Query::Copy_),
-                nom::combinator::map(delete::delete, Query::Delete),
-                nom::combinator::map(transactions::begin_transaction, |iso| {
-                    Query::BeginTransaction(iso)
+                nom::combinator::map(Select::parse(), Query::Select),
+                nom::combinator::map(Insert::parse(), Query::Insert),
+                nom::combinator::map(Update::parse(), Query::Update),
+                nom::combinator::map(Copy_::parse(), Query::Copy_),
+                nom::combinator::map(Delete::parse(), Query::Delete),
+                nom::combinator::map(BeginTransaction::parse(), |iso| {
+                    Query::BeginTransaction(iso.isolation)
                 }),
-                nom::combinator::map(transactions::commit_transaction, |_| {
+                nom::combinator::map(CommitTransaction::parse(), |_| {
                     Query::CommitTransaction
                 }),
-                nom::combinator::map(transactions::rollback_transaction, |_| {
+                nom::combinator::map(AbortTransaction::parse(), |_| {
                     Query::RollbackTransaction
                 }),
-                nom::combinator::map(create::create_table, Query::CreateTable),
-                nom::combinator::map(create::create_index, Query::CreateIndex),
+                nom::combinator::map(CreateTable::parse(), Query::CreateTable),
+                nom::combinator::map(CreateIndex::parse(), Query::CreateIndex),
                 nom::combinator::map(AlterTable::parse(), Query::AlterTable),
-                nom::combinator::map(drop::drop_index, Query::DropIndex),
-                nom::combinator::map(drop::drop_table, Query::DropTable),
-                nom::combinator::map(truncate::parse, Query::TruncateTable),
-                nom::combinator::map(set_config::parse, Query::Configuration),
-                nom::combinator::map(prepare::parse, Query::Prepare),
-                nom::combinator::map(vacuum::parse, Query::Vacuum),
+                nom::combinator::map(DropIndex::parse(), Query::DropIndex),
+                nom::combinator::map(DropTable::parse(), Query::DropTable),
+                nom::combinator::map(TruncateTable::parse(), Query::TruncateTable),
+                nom::combinator::map(Configuration::parse(), Query::Configuration),
+                nom::combinator::map(Prepare::parse(), Query::Prepare),
+                nom::combinator::map(Vacuum::parse(), Query::Vacuum),
             )),
             nom::character::complete::multispace0,
             nom::combinator::opt(nom::bytes::complete::tag(";")),
@@ -239,17 +239,32 @@ fn query(raw: &[u8]) -> IResult<&[u8], Query<'_>, nom::error::VerboseError<&[u8]
 #[cfg(test)]
 pub(crate) mod macros {
     macro_rules! parser_parse {
+        ($target_ty:ty, $input:expr) => {{
+            use crate::Parser as _;
+            let (remaining, _) = <$target_ty>::parse()($input.as_bytes()).unwrap();
+            assert_eq!(&[] as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
+        }};
         ($target_ty:ty, $input:expr, $expected:expr) => {
+            parser_parse!($target_ty, $input, $expected, &[])
+        };
+        ($target_ty:ty, $input:expr, $expected:expr, $remaining:expr) => {
             {
                 use crate::Parser as _;
                 let (remaining, result) = <$target_ty>::parse()($input.as_bytes()).unwrap();
-                assert_eq!(&[] as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
+                assert_eq!($remaining as &[u8], remaining, "{:?}", core::str::from_utf8(remaining).unwrap());
                 assert_eq!($expected, result);
             }
-        };
+        } 
     }
     pub (crate) use parser_parse;
 
+    macro_rules! parser_parse_err {
+        ($target_ty:ty, $input:expr) => {{
+            use crate::Parser as _;
+            let _tmp = <$target_ty>::parse()($input.as_bytes()).unwrap_err();
+        }};
+    }
+    pub(crate) use parser_parse_err;
 }
 
 #[cfg(test)]
@@ -259,17 +274,6 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
-
-    macro_rules! single_parse_test {
-        ($func:ident, $query:literal, $expected:expr) => {
-            let (remaining, result) = $func($query.as_bytes()).unwrap();
-
-            pretty_assertions::assert_eq!(&[] as &[u8], remaining);
-            pretty_assertions::assert_eq!($expected, result);
-        };
-    }
-
-    pub(crate) use single_parse_test;
 
     #[test]
     fn select_with_where() {

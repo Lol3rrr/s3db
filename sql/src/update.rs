@@ -1,7 +1,6 @@
 use nom::{IResult, Parser};
 
 use crate::{
-    condition::condition,
     dialects, CompatibleParser, Parser as _
 };
 
@@ -73,6 +72,16 @@ impl<'s> UpdateFrom<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Update<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            update(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&[u8]>> {
     let (remaining, (_, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("UPDATE"),
@@ -123,7 +132,7 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("WHERE"),
             nom::character::complete::multispace1,
-            condition,
+            Condition::parse(),
         ))
         .map(|(_, _, _, cond)| cond),
     )(remaining)?;
@@ -149,23 +158,15 @@ pub fn update(i: &[u8]) -> IResult<&[u8], Update<'_>, nom::error::VerboseError<&
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::{common::FunctionCall, BinaryOperator, ColumnReference, DataType, Literal};
+    use crate::{common::FunctionCall, BinaryOperator, ColumnReference, DataType, Literal, macros::parser_parse};
 
     use super::*;
 
     #[test]
     fn basic_update() {
-        let (remaining, update) =
-            update("UPDATE user SET name = 'changed' WHERE name = 'other'".as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Update,
+            "UPDATE user SET name = 'changed' WHERE name = 'other'",
             Update {
                 table: Identifier("user".into()),
                 fields: vec![(
@@ -183,27 +184,15 @@ mod tests {
                     }
                 ))])),
                 from: None,
-            },
-            update
+            }
         );
     }
 
     #[test]
     fn more_complicated() {
-        let (remaining, update) = update(
-            "UPDATE \"temp_user\" SET created = $1, updated = $2 WHERE created = '0' AND status in ('SignUpStarted', 'InvitePending')"
-                .as_bytes(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Update,
+            "UPDATE \"temp_user\" SET created = $1, updated = $2 WHERE created = '0' AND status in ('SignUpStarted', 'InvitePending')",
             Update {
                 table: Identifier("temp_user".into()),
                 fields: vec![
@@ -238,25 +227,15 @@ mod tests {
                     })),
                 ])),
                 from: None,
-            },
-            update
+            }
         );
     }
 
     #[test]
     fn update_complex() {
-        let query = "UPDATE dashboard SET uid=lpad('' || id::text,9,'0') WHERE uid IS NULL";
-
-        let (remaining, update) = update(query.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Update,
+            "UPDATE dashboard SET uid=lpad('' || id::text,9,'0') WHERE uid IS NULL",
             Update {
                 table: Identifier("dashboard".into()),
                 fields: vec![(
@@ -288,25 +267,15 @@ mod tests {
                     }
                 ))])),
                 from: None,
-            },
-            update
+            }
         );
     }
 
     #[test]
     fn update_with_from() {
-        let query_str = "UPDATE dashboard\n\tSET folder_uid = folder.uid\n\tFROM dashboard folder\n\tWHERE dashboard.folder_id = folder.id\n\t  AND dashboard.is_folder = $1";
-
-        let (remaining, update) = update(query_str.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Update,
+            "UPDATE dashboard\n\tSET folder_uid = folder.uid\n\tFROM dashboard folder\n\tWHERE dashboard.folder_id = folder.id\n\t  AND dashboard.is_folder = $1",
             Update {
                 table: Identifier("dashboard".into()),
                 fields: vec![(
@@ -341,8 +310,7 @@ mod tests {
                     inner: Identifier("dashboard".into()),
                     name: Identifier("folder".into())
                 })
-            },
-            update
+            }
         );
     }
 }

@@ -28,6 +28,16 @@ impl<'s> Condition<'s> {
     }
 }
 
+impl<'i, 's> crate::Parser<'i> for Condition<'s> where 'i: 's {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            condition(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn condition(i: &[u8]) -> IResult<&[u8], Condition<'_>, nom::error::VerboseError<&[u8]>> {
     #[derive(Debug, PartialEq)]
     enum Connector {
@@ -124,6 +134,7 @@ mod tests {
         common::{BinaryOperator, Identifier},
         select::{NullOrdering, OrderAttribute, Ordering, SelectLimit},
         ColumnReference, Literal, OrderBy, Select, TableExpression,
+        macros::parser_parse
     };
 
     use super::*;
@@ -367,19 +378,7 @@ mod tests {
 
     #[test]
     fn new_parser_basic_and() {
-        let query_str = "name = 'first' AND id = 132";
-
-        let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
-
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            Condition::And(vec![
+        parser_parse!(Condition, "name = 'first' AND id = 132", Condition::And(vec![
                 Condition::Value(Box::new(ValueExpression::Operator {
                     first: Box::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
@@ -396,20 +395,14 @@ mod tests {
                     second: Box::new(ValueExpression::Literal(Literal::SmallInteger(132))),
                     operator: BinaryOperator::Equal
                 }))
-            ]),
-            condition
-        );
+            ]));
     }
 
     #[test]
     fn condition_complex() {
-        let query_str = "(org_id = $2 AND configuration_hash = $3) AND (CTID IN (SELECT CTID FROM \"alert_configuration_history\" ORDER BY \"id\" DESC LIMIT 1))";
-
-        let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
-
-        assert_eq!(&[] as &[u8], remaining);
-
-        assert_eq!(
+        parser_parse!(
+            Condition,
+            "(org_id = $2 AND configuration_hash = $3) AND (CTID IN (SELECT CTID FROM \"alert_configuration_history\" ORDER BY \"id\" DESC LIMIT 1))",
             Condition::And(vec![
                 Condition::And(vec![
                     Condition::Value(Box::new(ValueExpression::Operator {
@@ -464,25 +457,15 @@ mod tests {
                         operator: BinaryOperator::In
                     }
                 ))])
-            ]),
-            condition
+            ])
         );
     }
 
     #[test]
     fn mixed_ands_ors() {
-        let query_str = "true AND false OR false OR true AND true";
-
-        let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
-        assert_eq!(
-            &[] as &[u8],
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
-            condition,
+        parser_parse!(
+            Condition,
+            "true AND false OR false OR true AND true",
             Condition::Or(vec![
                 Condition::And(vec![
                     Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true)))),
@@ -495,23 +478,15 @@ mod tests {
                     Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true)))),
                     Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))))
                 ]),
-            ]),
+            ])
         );
     }
 
     #[test]
     fn single() {
-        let query_str = "customer.ID=orders.customer INNER";
-
-        let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
-        assert_eq!(
-            " INNER".as_bytes(),
-            remaining,
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-
-        assert_eq!(
+        parser_parse!(
+            Condition,
+            "customer.ID=orders.customer INNER",
             Condition::And(vec![Condition::Value(Box::new(
                 ValueExpression::Operator {
                     first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -525,202 +500,21 @@ mod tests {
                     operator: BinaryOperator::Equal
                 }
             ))]),
-            condition
+            " INNER".as_bytes()
         );
-    }
-
-    #[test]
-    #[ignore = "TODO"]
-    fn testing_parts() {
-        let query_str = "scope LIKE 'dashboards:uid:%' AND role_id IN (
-                    SELECT id
-                    FROM role
-                    INNER JOIN (
-                        SELECT ur.role_id\n\t\t\t
-                        FROM user_role AS ur\n\t\t\t
-                        WHERE ur.user_id = $1\n\t\t\tAND (ur.org_id = $2 OR ur.org_id = $3)\n\t\t
-                        UNION\n\t\t\t
-                        SELECT br.role_id
-                        FROM builtin_role AS br\n\t\t\t
-                        WHERE br.role IN ($4, $5)\n\t\t\tAND (br.org_id = $6 OR br.org_id = $7)\n\t\t
-                    ) as all_role ON role.id = all_role.role_id
-                ) AND action = $8";
-
-        let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
-
-        dbg!(&remaining, condition);
-
-        todo!()
-    }
-
-    #[test]
-    #[ignore = "TODO"]
-    fn testing_with_remainder2() {
-        let query_str = "(
-            (dashboard.uid IN (
-                SELECT substr(scope, 16)
-                FROM permission
-                WHERE scope LIKE 'dashboards:uid:%' AND role_id IN (
-                    SELECT id
-                    FROM role
-                    INNER JOIN (
-                        SELECT ur.role_id\n\t\t\t
-                        FROM user_role AS ur\n\t\t\t
-                        WHERE ur.user_id = $1\n\t\t\tAND (ur.org_id = $2 OR ur.org_id = $3)\n\t\t
-                        UNION\n\t\t\t
-                        SELECT br.role_id
-                        FROM builtin_role AS br\n\t\t\t
-                        WHERE br.role IN ($4, $5)\n\t\t\tAND (br.org_id = $6 OR br.org_id = $7)\n\t\t
-                    ) as all_role ON role.id = all_role.role_id
-                ) AND action = $8
-            ) AND NOT dashboard.is_folder) 
-        ) ";
-
-        let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
-
-        dbg!(&remaining, &condition);
-        todo!()
-    }
-
-    #[test]
-    #[ignore = "TODO"]
-    fn testing_with_remainder() {
-        let query_str = "(
-            (dashboard.uid IN (
-                SELECT substr(scope, 16)
-                FROM permission
-                WHERE scope LIKE 'dashboards:uid:%' AND role_id IN (
-                    SELECT id
-                    FROM role
-                    INNER JOIN (
-                        SELECT ur.role_id\n\t\t\t
-                        FROM user_role AS ur\n\t\t\t
-                        WHERE ur.user_id = $1\n\t\t\tAND (ur.org_id = $2 OR ur.org_id = $3)\n\t\t
-                        UNION\n\t\t\t
-                        SELECT br.role_id
-                        FROM builtin_role AS br\n\t\t\t
-                        WHERE br.role IN ($4, $5)\n\t\t\tAND (br.org_id = $6 OR br.org_id = $7)\n\t\t
-                    ) as all_role ON role.id = all_role.role_id
-                ) AND action = $8
-            ) AND NOT dashboard.is_folder
-            ) OR (dashboard.folder_id IN (
-                SELECT d.id
-                FROM dashboard as d
-                WHERE d.org_id = $9 AND d.uid IN (
-                    SELECT substr(scope, 13)
-                    FROM permission
-                    WHERE scope LIKE 'folders:uid:%' AND role_id IN (
-                        SELECT id
-                        FROM role
-                        INNER JOIN (
-                            SELECT ur.role_id\n\t\t\t
-                            FROM user_role AS ur\n\t\t\t
-                            WHERE ur.user_id = $10\n\t\t\tAND (ur.org_id = $11 OR ur.org_id = $12)\n\t\t
-                            UNION\n\t\t\t
-                            SELECT br.role_id
-                            FROM builtin_role AS br\n\t\t\t
-                            WHERE br.role IN ($13, $14)\n\t\t\tAND (br.org_id = $15 OR br.org_id = $16)\n\t\t
-                        ) as all_role ON role.id = all_role.role_id
-                    ) AND action = $17
-                    )
-                ) AND NOT dashboard.is_folder
-            )
-        ) AND dashboard.org_id=$18 AND dashboard.title ILIKE $19 AND dashboard.is_folder = false AND dashboard.folder_id = $20
-        ORDER BY";
-
-        let (remaining, condition) = condition(query_str.as_bytes()).unwrap();
-
-        dbg!(&remaining, &condition);
-        todo!()
-    }
-
-    #[test]
-    fn testing() {
-        let query_str = "(
-(dashboard.uid IN (
-    SELECT substr(scope, 16)
-    FROM permission
-    WHERE scope LIKE 'dashboards:uid:%' AND role_id IN (
-        SELECT id
-        FROM role
-        INNER JOIN (
-            SELECT ur.role_id
-            FROM user_role AS ur
-            WHERE ur.user_id = $1 AND (ur.org_id = $2 OR ur.org_id = $3)
-            UNION
-            SELECT br.role_id
-            FROM builtin_role AS br
-            WHERE br.role IN ($4, $5) AND (br.org_id = $6 OR br.org_id = $7)
-        ) as all_role ON role.id = all_role.role_id
-    ) AND action = $8
-    ) AND NOT dashboard.is_folder
-) OR (dashboard.folder_id IN (
-    SELECT d.id
-    FROM dashboard as d
-    WHERE d.org_id = $9 AND d.uid IN (
-        SELECT substr(scope, 13)
-        FROM permission
-        WHERE scope LIKE 'folders:uid:%' AND role_id IN (
-            SELECT id
-            FROM role
-            INNER JOIN (
-                SELECT ur.role_id
-                FROM user_role AS ur
-                WHERE ur.user_id = $10 AND (ur.org_id = $11 OR ur.org_id = $12)
-                UNION
-                SELECT br.role_id
-                FROM builtin_role AS br
-                WHERE br.role IN ($13, $14) AND (br.org_id = $15 OR br.org_id = $16)
-            ) as all_role ON role.id = all_role.role_id
-        ) AND action = $17
-    )
-    ) AND NOT dashboard.is_folder
-)
-)";
-
-        let (remaining, condition) = condition(query_str.as_bytes())
-            .map_err(|e| {
-                match e {
-                    nom::Err::Error(e) => {
-                        for entry in e.errors.iter() {
-                            println!(
-                                "- [{:?}] {:?}\n",
-                                entry.1,
-                                core::str::from_utf8(entry.0).unwrap()
-                            );
-                        }
-                    }
-                    nom::Err::Failure(f) => {
-                        for entry in f.errors.iter() {
-                            println!(
-                                "- [{:?}] {:?}\n",
-                                entry.1,
-                                core::str::from_utf8(entry.0).unwrap()
-                            );
-                        }
-                    }
-                    nom::Err::Incomplete(_) => todo!(),
-                };
-                ()
-            })
-            .unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-
-        let _ = condition;
-    }
+    } 
 
     #[test]
     fn not_field() {
-        let (remaining, condition) = condition("NOT table.field".as_bytes()).unwrap();
-        assert_eq!(&[] as &[u8], remaining);
-        assert_eq!(
+        parser_parse!(
+            Condition,
+            "NOT table.field",
             Condition::And(vec![Condition::Value(Box::new(ValueExpression::Not(
                 Box::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: Some("table".into()),
                     column: "field".into()
                 }))
-            )))]),
-            condition
+            )))])
         );
     }
 }

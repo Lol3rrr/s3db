@@ -95,38 +95,33 @@ impl<'s> From<&'s str> for Identifier<'s> {
 impl<'i, 's> crate::Parser<'i> for Identifier<'s> where 'i: 's {
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
-            #[allow(deprecated)]
-            identifier(i)
+            nom::branch::alt((
+                nom::combinator::map(
+                    nom::sequence::tuple((
+                        nom::bytes::complete::tag("\""),
+                        nom::combinator::consumed(nom::sequence::tuple((
+                            nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
+                            nom::bytes::complete::take_while(|b| {
+                                (b as char).is_alphanumeric() || b == b'_'
+                            }),
+                        )))
+                        .map(|(content, _)| {
+                            Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))
+                        }),
+                        nom::bytes::complete::tag("\""),
+                    )),
+                    |(_, tmp, _)| tmp,
+                ),
+                nom::combinator::complete(nom::sequence::tuple((
+                    nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
+                    nom::bytes::complete::take_while(|b| (b as char).is_alphanumeric() || b == b'_'),
+                )))
+                .map(|(content, _)| Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))),
+            ))(i)
         }
     }
 }
 
-#[deprecated]
-pub fn identifier(i: &[u8]) -> IResult<&[u8], Identifier<'_>, nom::error::VerboseError<&[u8]>> {
-    nom::branch::alt((
-        nom::combinator::map(
-            nom::sequence::tuple((
-                nom::bytes::complete::tag("\""),
-                nom::combinator::consumed(nom::sequence::tuple((
-                    nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
-                    nom::bytes::complete::take_while(|b| {
-                        (b as char).is_alphanumeric() || b == b'_'
-                    }),
-                )))
-                .map(|(content, _)| {
-                    Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))
-                }),
-                nom::bytes::complete::tag("\""),
-            )),
-            |(_, tmp, _)| tmp,
-        ),
-        nom::combinator::complete(nom::sequence::tuple((
-            nom::bytes::complete::take_while1(|b| (b as char).is_alphabetic() || b == b'_'),
-            nom::bytes::complete::take_while(|b| (b as char).is_alphanumeric() || b == b'_'),
-        )))
-        .map(|(content, _)| Identifier(Cow::Borrowed(core::str::from_utf8(content).unwrap()))),
-    ))(i)
-}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ColumnReference<'s> {
@@ -146,29 +141,21 @@ impl<'s> ColumnReference<'s> {
 impl<'i, 's> crate::Parser<'i> for ColumnReference<'s> where 'i: 's {
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
-            #[allow(deprecated)]
-            column_reference(i)
+            nom::combinator::map(
+                nom::sequence::tuple((
+                    nom::combinator::opt(nom::sequence::tuple((
+                        Identifier::parse(),
+                        nom::bytes::complete::tag("."),
+                    ))),
+                    Identifier::parse(),
+                )),
+                |(first, second)| ColumnReference {
+                    relation: first.map(|(n, _)| n),
+                    column: second,
+                },
+            )(i)
         }
     }
-}
-
-#[deprecated]
-pub fn column_reference(
-    i: &[u8],
-) -> IResult<&[u8], ColumnReference<'_>, nom::error::VerboseError<&[u8]>> {
-    nom::combinator::map(
-        nom::sequence::tuple((
-            nom::combinator::opt(nom::sequence::tuple((
-                Identifier::parse(),
-                nom::bytes::complete::tag("."),
-            ))),
-            Identifier::parse(),
-        )),
-        |(first, second)| ColumnReference {
-            relation: first.map(|(n, _)| n),
-            column: second,
-        },
-    )(i)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -256,6 +243,16 @@ pub enum TypeModifier {
     Collate { collation: String },
 }
 
+impl<'i> crate::Parser<'i> for TypeModifier {
+    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+        move |i| {
+            #[allow(deprecated)]
+            type_modifier(i)
+        }
+    }
+}
+
+#[deprecated]
 pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier, nom::error::VerboseError<&[u8]>> {
     nom::branch::alt((
         nom::sequence::tuple((
@@ -467,13 +464,7 @@ mod tests {
 
     #[test]
     fn type_modifier_testing() {
-        let (remaining, collation) = type_modifier("COLLATE \"C\"".as_bytes()).unwrap();
-        assert!(
-            remaining.is_empty(),
-            "{:?}",
-            core::str::from_utf8(remaining)
-        );
-        assert_eq!(TypeModifier::Collate { collation: "C".into() }, collation);
+        parser_parse!(TypeModifier, "COLLATE \"C\"", TypeModifier::Collate { collation: "C".into() });
     }
 
     #[test]
