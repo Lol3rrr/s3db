@@ -28,7 +28,7 @@ pub enum ValueExpression<'s, 'a> {
         operator: BinaryOperator,
     },
     FunctionCall(FunctionCall<'s, 'a>),
-    AggregateExpression(AggregateExpression),
+    AggregateExpression(AggregateExpression<'s, 'a>),
     WindowFunctionCall,
     TypeCast {
         base: Box<ValueExpression<'s, 'a>>,

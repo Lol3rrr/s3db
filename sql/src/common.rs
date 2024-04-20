@@ -170,15 +170,15 @@ where
 }
 
 #[derive(Debug, PartialEq)]
-pub enum AggregateExpression {
-    Count(Box<ValueExpression<'static, 'static>>),
-    Sum(Box<ValueExpression<'static, 'static>>),
-    AnyValue(Box<ValueExpression<'static, 'static>>),
-    Max(Box<ValueExpression<'static, 'static>>),
+pub enum AggregateExpression<'i, 'a> {
+    Count(Box<ValueExpression<'i, 'a>>),
+    Sum(Box<ValueExpression<'i, 'a>>),
+    AnyValue(Box<ValueExpression<'i, 'a>>),
+    Max(Box<ValueExpression<'i, 'a>>),
 }
 
-impl CompatibleParser for AggregateExpression {
-    type StaticVersion = AggregateExpression;
+impl<'i, 'a> CompatibleParser for AggregateExpression<'i, 'a> {
+    type StaticVersion = AggregateExpression<'static, 'static>;
 
     fn to_static(&self) -> Self::StaticVersion {
         match self {
@@ -199,7 +199,7 @@ impl CompatibleParser for AggregateExpression {
     }
 }
 
-impl<'i, 'a> ArenaParser<'i, 'a> for AggregateExpression {
+impl<'i, 'a> ArenaParser<'i, 'a> for AggregateExpression<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -209,7 +209,7 @@ impl<'i, 'a> ArenaParser<'i, 'a> for AggregateExpression {
     }
 }
 
-fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], AggregateExpression, nom::error::VerboseError<&'i [u8]>> {
+fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], AggregateExpression<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::delimited(
@@ -227,7 +227,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::Count(Box::new(exp.to_static())),
+            |exp| AggregateExpression::Count(Box::new(exp)),
         ),
         nom::combinator::map(
             nom::sequence::delimited(
@@ -242,7 +242,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::Sum(Box::new(exp.to_static())),
+            |exp| AggregateExpression::Sum(Box::new(exp)),
         ),
         nom::combinator::map(
             nom::sequence::delimited(
@@ -257,7 +257,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::AnyValue(Box::new(exp.to_static())),
+            |exp| AggregateExpression::AnyValue(Box::new(exp)),
         ),
         nom::combinator::map(
             nom::sequence::delimited(
@@ -272,7 +272,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::Max(Box::new(exp.to_static())),
+            |exp| AggregateExpression::Max(Box::new(exp)),
         ),
     ))(i)
 }
