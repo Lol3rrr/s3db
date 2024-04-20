@@ -184,9 +184,7 @@ where
                         }).collect() }
                     }
                     ra::RaExpression::Projection { inner, attributes } => {
-                        let input = results.pop().unwrap();
-
-                        
+                        let input = results.pop().unwrap(); 
 
                         let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
 
@@ -241,54 +239,38 @@ where
 
                         let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
 
-                    assert_eq!(
-                        inner_columns
-                            .iter()
-                            .map(|(n, t, _)| (n, t))
-                            .collect::<Vec<_>>(),
-                        input
-                            .columns
-                            .iter()
-                            .map(|(n, t, _)| (n, t))
-                            .collect::<Vec<_>>()
-                    );
+                        assert_eq!(
+                            inner_columns
+                                .iter()
+                                .map(|(n, t, _)| (n, t))
+                                .collect::<Vec<_>>(),
+                            input
+                                .columns
+                                .iter()
+                                .map(|(n, t, _)| (n, t))
+                                .collect::<Vec<_>>()
+                        );
 
-                    let result = {
-                        let mut tmp = Vec::new();
+                        let mut input_parts = input.parts;
 
-                        for row in input
-                            .parts
-                            .into_iter()
-                            .flat_map(|i| i.rows.into_iter())
-                        {
-                            // TODO
-                            tracing::trace!("Row: {:?}", row);
-
-                            let include_row = self
-                                .evaluate_ra_cond(
-                                    filter,
-                                    &row,
-                                    &inner_columns,
-                                    placeholders,
-                                    ctes,
-                                    outer,
-                                    transaction,
-                                    &arena
-                                )
-                                .await?;
-
-                            if include_row {
-                                tmp.push(row);
+                        let mut retain_mask = Vec::new();
+                        for part in input_parts.iter_mut() {
+                            retain_mask.reserve(part.rows.len());
+                            for row in part.rows.iter().rev() {
+                                let result = self.evaluate_ra_cond(filter, row, &inner_columns, placeholders, ctes, outer, transaction, &arena).await?;
+                                retain_mask.push(result);
                             }
+
+                            part.rows.retain(|_| {
+                                retain_mask.pop().expect("We push a value for every Row and only pop one per Row, so this should always work")
+                            });
                         }
 
-                        tmp
-                    };
 
-                    storage::EntireRelation {
-                        columns: input.columns,
-                        parts: vec![storage::PartialRelation { rows: result }],
-                    }
+                        storage::EntireRelation {
+                            columns: input.columns,
+                            parts: input_parts,
+                        }
                     }
                     ra::RaExpression::Aggregation { inner, attributes, aggregation_condition } => {
                         let input = results.pop().unwrap();
