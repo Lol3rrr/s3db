@@ -67,10 +67,11 @@ pub trait Execute<T> {
         ctx: &mut Context<T>,
     ) -> impl Future<Output = Result<Self::Prepared, Self::PrepareError>>;
 
-    fn execute_bound(
+    fn execute_bound<'arena>(
         &self,
         query: &<Self::Prepared as PreparedStatement>::Bound,
         ctx: &mut Context<T>,
+        arena: &'arena bumpalo::Bump,
     ) -> impl Future<Output = Result<ExecuteResult, Self::ExecuteBoundError>>;
 
     fn start_copy<'s, 'e, 'c>(
@@ -82,10 +83,11 @@ pub trait Execute<T> {
         's: 'e,
         'c: 'e;
 
-    fn execute<'q, 'a>(
+    fn execute<'q, 'a, 'arena>(
         &self,
         query: &sql::Query<'q, 'a>,
         ctx: &mut Context<T>,
+        arena: &'arena bumpalo::Bump,
     ) -> impl Future<
         Output = Result<
             ExecuteResult,
@@ -108,7 +110,7 @@ pub trait Execute<T> {
                 .bind(Vec::new(), Vec::new())
                 .map_err(ExecuteError::Bind)?;
 
-            self.execute_bound(&bound, ctx)
+            self.execute_bound(&bound, ctx, arena)
                 .await
                 .map_err(ExecuteError::Execute)
         }

@@ -253,7 +253,6 @@ impl ProjectionAttribute {
 
         if let ValueExpression::AllFromRelation { relation } = &expr {
             let mut columns = table_expression.get_columns();
-            dbg!(&columns);
 
             let src_name = match scope.renamings.get(relation.0.as_ref()) {
                 Some(n) => n,

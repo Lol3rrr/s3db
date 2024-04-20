@@ -33,25 +33,25 @@ macro_rules! execute {
                 let arena = bumpalo::Bump::new();
                 let mut outer_context = s3db::execution::Context::new();
                 let query = sql::Query::parse("BEGIN".as_bytes(), &arena).unwrap();
-                engine.execute(&query, &mut outer_context).await.unwrap();
+                engine.execute(&query, &mut outer_context, &bumpalo::Bump::new()).await.unwrap();
 
                 $(
                     {
                         let query = sql::Query::parse($queries.as_bytes(), &arena).unwrap();
-                        engine.execute(&query, &mut outer_context).await.unwrap();
+                        engine.execute(&query, &mut outer_context, &bumpalo::Bump::new()).await.unwrap();
                     }
                 )*
 
                 let query = sql::Query::parse("COMMIT".as_bytes(), &arena).unwrap();
-                engine.execute(&query, &mut outer_context).await.unwrap();
+                engine.execute(&query, &mut outer_context, &bumpalo::Bump::new()).await.unwrap();
 
                 let mut last_context = s3db::execution::Context::new();
                 let query = sql::Query::parse("BEGIN".as_bytes(), &arena).unwrap();
-                engine.execute(&query, &mut last_context).await.unwrap();
+                engine.execute(&query, &mut last_context, &bumpalo::Bump::new()).await.unwrap();
 
                 let query = sql::Query::parse($select.as_bytes(), &arena).unwrap();
                 engine
-                    .execute(&query, &mut last_context)
+                    .execute(&query, &mut last_context, &bumpalo::Bump::new())
                     .await
                     .unwrap()
             })

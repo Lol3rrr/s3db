@@ -1209,10 +1209,11 @@ where
     }
 
     #[tracing::instrument(skip(self, query, ctx))]
-    async fn execute_bound(
+    async fn execute_bound<'arena>(
         &self,
         query: &<Self::Prepared as PreparedStatement>::Bound,
         ctx: &mut Context<S::TransactionGuard>,
+        arena: &'arena bumpalo::Bump,
     ) -> Result<ExecuteResult, Self::ExecuteBoundError> {
         tracing::debug!("Executing Bound Query");
         tracing::debug!("{:#?}", query.query);
@@ -1385,7 +1386,7 @@ where
                             tracing::trace!("Using Select as Values for Insert");
 
                             let content = match self
-                                .execute(&Query::Select(select.to_static()), ctx)
+                                .execute(&Query::Select(select.to_static()), ctx, &arena)
                                 .boxed_local()
                                 .await
                                 .map_err(|e| ExecuteBoundError::Other("Executing Query"))?
@@ -2154,7 +2155,7 @@ mod tests {
         
         let mut ctx = Context::new();
         ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
-        let res = engine.execute(&query, &mut ctx).await.unwrap();
+        let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
         assert_eq!(ExecuteResult::Delete { deleted_rows: 1 }, res);
     }
@@ -2204,7 +2205,7 @@ mod tests {
 
         let mut ctx = Context::new();
         ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
-        let res = engine.execute(&query, &mut ctx).await.unwrap();
+        let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
         dbg!(&res);
 

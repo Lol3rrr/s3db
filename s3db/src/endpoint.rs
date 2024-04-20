@@ -162,6 +162,7 @@ pub mod postgres {
         let mut ctx = execution::Context::new();
 
         let mut arena = bumpalo::Bump::with_capacity(512 * 1024);
+        let mut execution_arena = bumpalo::Bump::with_capacity(512 * 1024);
 
         let mut prepared_statements = HashMap::new();
         let mut bound_statements = HashMap::new();
@@ -169,6 +170,7 @@ pub mod postgres {
         
         loop {
             arena.reset();
+            execution_arena.reset();
 
             tracing::trace!("Waiting for message");
 
@@ -235,6 +237,7 @@ pub mod postgres {
                                 .execute(
                                     &Query::BeginTransaction(sql::IsolationMode::Standard),
                                     &mut ctx,
+                                    &execution_arena
                                 )
                                 .await
                                 .unwrap();
@@ -309,7 +312,7 @@ pub mod postgres {
 
                             if implicit_transaction {
                                 engine
-                                    .execute(&Query::CommitTransaction, &mut ctx)
+                                    .execute(&Query::CommitTransaction, &mut ctx, &execution_arena)
                                     .await
                                     .unwrap();
                             }
@@ -329,7 +332,7 @@ pub mod postgres {
                             continue;
                         }
 
-                        let result = match engine.execute(&query, &mut ctx).await {
+                        let result = match engine.execute(&query, &mut ctx, &execution_arena).await {
                             Ok(r) => r,
                             Err(e) => {
                                 tracing::error!("Executing: {:?}", e);
@@ -357,7 +360,7 @@ pub mod postgres {
 
                         if implicit_transaction {
                             engine
-                                .execute(&Query::CommitTransaction, &mut ctx)
+                                .execute(&Query::CommitTransaction, &mut ctx, &arena)
                                 .await
                                 .unwrap();
                         }
@@ -574,7 +577,7 @@ pub mod postgres {
                         }
                     };
 
-                    let result = match engine.execute_bound(bound_statement, &mut ctx).await {
+                    let result = match engine.execute_bound(bound_statement, &mut ctx, &execution_arena).await {
                         Ok(r) => r,
                         Err(e) => {
                             tracing::error!("Executing Bound: {:?}", e);
