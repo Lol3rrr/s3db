@@ -17,6 +17,8 @@ use aggregate::AggregateState;
 
 mod pattern;
 
+mod condition;
+
 pub struct NaiveEngine<S> {
     storage: S,
 }
@@ -37,7 +39,7 @@ impl<S> algorithms::joins::EvaluateConditions<S::LoadingError> for NaiveEngineCo
                 condition: &ra::RaCondition,
                 row: &storage::Row,
             ) -> Result<bool, EvaulateRaError<S::LoadingError>> {
-        self.engine.evaluate_ra_cond(condition, row, self.columns, self.placeholders, self.ctes, self.outer, self.transaction, self.arena).await
+        condition::evaluate_ra_cond(&self.engine, condition, row, self.columns, self.placeholders, self.ctes, self.outer, self.transaction, self.arena).await
     }
 }
 
@@ -262,7 +264,7 @@ where
                         let stream = StreamExt::filter_map(rows, move |row| {
                             let inner_columns = inner_columns.clone();
                             async move {
-                                let result = self.evaluate_ra_cond(filter, &row, &inner_columns, placeholders, ctes, outer, transaction, &arena).await.unwrap(); // TODO
+                                let result = condition::evaluate_ra_cond(self, filter, &row, &inner_columns, placeholders, ctes, outer, transaction, &arena).await.unwrap(); // TODO
                                 if result {
                                     Some(row)
                                 } else {
@@ -540,66 +542,7 @@ where
 
             let result = results.pop().unwrap();
         Ok(result)
-    }
-
-    fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f, 'arena>(
-        &'s self,
-        condition: &'cond ra::RaCondition,
-        row: &'r storage::Row,
-        columns: &'col [(String, DataType, AttributeId)],
-        placeholders: &'p HashMap<usize, storage::Data>,
-        ctes: &'c HashMap<String, storage::EntireRelation>,
-        outer: &'o HashMap<AttributeId, storage::Data>,
-        transaction: &'t S::TransactionGuard,
-        arena: &'arena bumpalo::Bump
-    ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
-    where
-        's: 'f,
-        'cond: 'f,
-        'r: 'f,
-        'col: 'f,
-        'p: 'f,
-        'c: 'f,
-        'o: 'f,
-        't: 'f,
-        'arena: 'f
-    {
-        async move {
-            match condition {
-                ra::RaCondition::And(conditions) => {
-                    for andcond in conditions.iter() {
-                        if !self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction, &arena)
-                            .await?
-                        {
-                            return Ok(false);
-                        }
-                    }
-
-                    Ok(true)
-                }
-                ra::RaCondition::Or(conditions) => {
-                    for andcond in conditions.iter() {
-                        if self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction, &arena)
-                            .await?
-                        {
-                            return Ok(true);
-                        }
-                    }
-
-                    Ok(false)
-                }
-                ra::RaCondition::Value(value) => {
-                    let res = self
-                        .evaluate_ra_cond_val(value, row, columns, placeholders, ctes, outer,transaction, &arena)
-                        .await?;
-                    Ok(res)
-                }
-            }
-        }
-        .boxed_local()
-    }
+    } 
 
     fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f, 'arena>(
         &'s self,
@@ -1190,7 +1133,7 @@ where
         Ok(NaiveCopyState { table: table_name.into(), engine: &self.storage, schema: table, tx: ctx.transaction.as_ref().unwrap() })
     }
 
-    #[tracing::instrument(skip(self, query, ctx))]
+    #[tracing::instrument(skip(self, query, ctx, arena))]
     async fn execute_bound<'arena>(
         &self,
         query: &<Self::Prepared as PreparedStatement>::Bound,
@@ -1557,8 +1500,8 @@ where
                                 relation.parts.into_iter().flat_map(|p| p.rows.into_iter())
                             {
                                 let should_update = match condition.as_ref() {
-                                    Some(cond) => self
-                                        .evaluate_ra_cond(
+                                    Some(cond) => condition::evaluate_ra_cond(
+                                            self,
                                             cond,
                                             &row,
                                             &table_columns,
@@ -1706,8 +1649,8 @@ where
 
                         for row in relation.parts.into_iter().flat_map(|p| p.rows.into_iter()) {
                             if let Some(condition) = ra_delete.condition.as_ref() {
-                                let condition_result = self
-                                    .evaluate_ra_cond(
+                                let condition_result = condition::evaluate_ra_cond(
+                                        self,
                                         condition,
                                         &row,
                                         &table_columns,
