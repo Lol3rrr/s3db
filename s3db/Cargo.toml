@@ -19,8 +19,12 @@ bumpalo = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-criterion = "0.5.1"
+criterion = { version = "0.5.1", features = ["async_futures"] }
 
 [[bench]]
 name = "parse"
+harness = false
+
+[[bench]]
+name = "execute"
 harness = false

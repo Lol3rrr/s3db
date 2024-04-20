@@ -17,7 +17,7 @@ pub struct InMemoryStorage {
     latest_commit: AtomicU64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InMemoryTransactionGuard {
     id: u64,
     active: HashSet<u64>,
