@@ -1,5 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
+const ARENA_CAPACITY: usize = 512 * 1024;
+
 pub fn simple_select(c: &mut Criterion) {
     let input = "SELECT name FROM users";
 
@@ -7,7 +9,7 @@ pub fn simple_select(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(1));
     
     group.bench_function("simple_select", |b| {
-        let mut arena = bumpalo::Bump::new();
+        let mut arena = bumpalo::Bump::with_capacity(ARENA_CAPACITY);
         b.iter(|| {
             black_box(sql::Query::parse(input.as_bytes(), &arena));
             arena.reset();
@@ -22,7 +24,7 @@ pub fn simple_select(c: &mut Criterion) {
         let input = format!("SELECT {} FROM users", columns);
 
         group.bench_function(criterion::BenchmarkId::new("select_columns", parts), |b| {
-            let mut arena = bumpalo::Bump::new();
+            let mut arena = bumpalo::Bump::with_capacity(ARENA_CAPACITY);
             b.iter(|| {
                 black_box(sql::Query::parse(input.as_bytes(), &arena));
                 arena.reset();
@@ -44,7 +46,7 @@ pub fn select_conditions(c: &mut Criterion) {
         }
 
         group.bench_function(criterion::BenchmarkId::new("and_conditions", parts), |b| {
-            let mut arena = bumpalo::Bump::new();
+            let mut arena = bumpalo::Bump::with_capacity(ARENA_CAPACITY);
             b.iter(|| {
                 black_box(sql::Query::parse(input.as_bytes(), &arena));
                 arena.reset();
@@ -59,7 +61,7 @@ pub fn select_conditions(c: &mut Criterion) {
         }
 
         group.bench_function(criterion::BenchmarkId::new("or_conditions", parts), |b| {
-            let mut arena = bumpalo::Bump::new();
+            let mut arena = bumpalo::Bump::with_capacity(ARENA_CAPACITY);
             b.iter(|| {
                 black_box(sql::Query::parse(input.as_bytes(), &arena));
                 arena.reset();

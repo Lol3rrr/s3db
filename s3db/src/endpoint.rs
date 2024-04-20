@@ -161,7 +161,7 @@ pub mod postgres {
 
         let mut ctx = execution::Context::new();
 
-        let mut arena = bumpalo::Bump::new();
+        let mut arena = bumpalo::Bump::with_capacity(512 * 1024);
 
         let mut prepared_statements = HashMap::new();
         let mut bound_statements = HashMap::new();
