@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _, Select, ArenaParser};
+use crate::{CompatibleParser, Parser as _, Select, ArenaParser, arenas::Boxed};
 
 use super::{Identifier, Literal, ValueExpression};
 
@@ -31,7 +31,7 @@ macro_rules! function_call {
 #[derive(Debug, PartialEq)]
 pub enum FunctionCall<'s, 'a> {
     LPad {
-        base: Box<ValueExpression<'s, 'a>>,
+        base: Boxed<'a, ValueExpression<'s, 'a>>,
         length: Literal<'s>,
         padding: Literal<'s>,
     },
@@ -39,28 +39,28 @@ pub enum FunctionCall<'s, 'a> {
         values: crate::arenas::Vec<'a, ValueExpression<'s, 'a>>,
     },
     Exists {
-        query: Box<Select<'s, 'a>>,
+        query: Boxed<'a, Select<'s, 'a>>,
     },
     SetValue {
         sequence_name: Identifier<'s>,
-        value: Box<ValueExpression<'s, 'a>>,
+        value: Boxed<'a, ValueExpression<'s, 'a>>,
         is_called: bool,
     },
     Lower {
-        value: Box<ValueExpression<'s, 'a>>,
+        value: Boxed<'a, ValueExpression<'s, 'a>>,
     },
     Substr {
-        value: Box<ValueExpression<'s, 'a>>,
-        start: Box<ValueExpression<'s, 'a>>,
-        count: Option<Box<ValueExpression<'s, 'a>>>,
+        value: Boxed<'a, ValueExpression<'s, 'a>>,
+        start: Boxed<'a, ValueExpression<'s, 'a>>,
+        count: Option<Boxed<'a, ValueExpression<'s, 'a>>>,
     },
     CurrentTimestamp,
     CurrentSchemas {
         implicit: bool,
     },
     ArrayPosition {
-        array: Box<ValueExpression<'s, 'a>>,
-        target: Box<ValueExpression<'s, 'a>>,
+        array: Boxed<'a, ValueExpression<'s, 'a>>,
+        target: Boxed<'a, ValueExpression<'s, 'a>>,
     },
 }
 
@@ -103,7 +103,7 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
                 length,
                 padding,
             } => FunctionCall::LPad {
-                base: Box::new(base.to_static()),
+                base: base.to_static(),
                 length: length.to_static(),
                 padding: padding.to_static(),
             },
@@ -111,7 +111,7 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
                 values: crate::arenas::Vec::Heap(values.iter().map(|v| v.to_static()).collect()),
             },
             Self::Exists { query } => FunctionCall::Exists {
-                query: Box::new(query.to_static()),
+                query: query.to_static(),
             },
             Self::SetValue {
                 sequence_name,
@@ -119,28 +119,28 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
                 is_called,
             } => FunctionCall::SetValue {
                 sequence_name: sequence_name.to_static(),
-                value: Box::new(value.to_static()),
+                value: value.to_static(),
                 is_called: *is_called,
             },
             Self::Lower { value } => FunctionCall::Lower {
-                value: Box::new(value.to_static()),
+                value: value.to_static(),
             },
             Self::Substr {
                 value,
                 start,
                 count,
             } => FunctionCall::Substr {
-                value: Box::new(value.to_static()),
-                start: Box::new(start.to_static()),
-                count: count.as_ref().map(|c| Box::new(c.to_static())),
+                value: value.to_static(),
+                start: start.to_static(),
+                count: count.as_ref().map(|c| c.to_static()),
             },
             Self::CurrentTimestamp => FunctionCall::CurrentTimestamp,
             Self::CurrentSchemas { implicit } => FunctionCall::CurrentSchemas {
                 implicit: *implicit,
             },
             Self::ArrayPosition { array, target } => FunctionCall::ArrayPosition {
-                array: Box::new(array.to_static()),
-                target: Box::new(target.to_static()),
+                array: array.to_static(),
+                target: target.to_static(),
             },
         }
     }
@@ -178,7 +178,7 @@ pub fn function_call<'i, 'a>(
                 nom::bytes::complete::tag(")"),
             )),
             |(_, _, _, base, _, _, length, _, _, padding, _)| FunctionCall::LPad {
-                base: Box::new(base),
+                base: Boxed::arena(arena, base),
                 length,
                 padding,
             },
@@ -210,7 +210,7 @@ pub fn function_call<'i, 'a>(
                 nom::bytes::complete::tag(")"),
             )),
             |(_, _, _, query, _)| FunctionCall::Exists {
-                query: Box::new(query),
+                query: Boxed::arena(arena, query),
             },
         ),
         nom::combinator::map(
@@ -234,7 +234,7 @@ pub fn function_call<'i, 'a>(
 
                 FunctionCall::SetValue {
                     sequence_name: Identifier(name),
-                    value: Box::new(value),
+                    value: Boxed::arena(arena, value),
                     is_called: true,
                 }
             },
@@ -250,7 +250,7 @@ pub fn function_call<'i, 'a>(
                 nom::bytes::complete::tag(")"),
             )),
             |(_, _, _, _, val, _, _)| FunctionCall::Lower {
-                value: Box::new(val),
+                value: Boxed::arena(arena, val),
             },
         ),
         function_call!(
@@ -269,13 +269,13 @@ pub fn function_call<'i, 'a>(
                         ValueExpression::parse_arena(arena),
                         nom::character::complete::multispace0,
                     ))
-                    .map(|(_, _, v, _)| Box::new(v)),
+                    .map(|(_, _, v, _)| Boxed::arena(arena, v)),
                 )
             )),
             |(content, _, _, _, start, _, count)| {
                 FunctionCall::Substr {
-                    value: Box::new(content),
-                    start: Box::new(start),
+                    value: Boxed::arena(arena, content),
+                    start: Boxed::arena(arena, start),
                     count,
                 }
             }
@@ -302,8 +302,8 @@ pub fn function_call<'i, 'a>(
                 ValueExpression::parse_arena(arena),
             )),
             |(array, _, _, _, target)| FunctionCall::ArrayPosition {
-                array: Box::new(array),
-                target: Box::new(target)
+                array: Boxed::arena(arena, array),
+                target: Boxed::arena(arena, target)
             }
         ),
     ))(i)
@@ -340,7 +340,7 @@ mod tests {
             "setval('id', 123)",
             FunctionCall::SetValue {
                 sequence_name: Identifier("id".into()),
-                value: Box::new(ValueExpression::Literal(Literal::SmallInteger(123))),
+                value: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(123))),
                 is_called: true
             }
         );
@@ -353,9 +353,9 @@ mod tests {
             "setval('org_id_seq', (SELECT max(id) FROM org))",
             FunctionCall::SetValue {
                 sequence_name: Identifier("org_id_seq".into()),
-                value: Box::new(ValueExpression::SubQuery(Select {
+                value: Boxed::new(ValueExpression::SubQuery(Select {
                     values: vec![ValueExpression::AggregateExpression(
-                        AggregateExpression::Max(Box::new(ValueExpression::ColumnReference(
+                        AggregateExpression::Max(Boxed::new(ValueExpression::ColumnReference(
                             ColumnReference {
                                 relation: None,
                                 column: Identifier("id".into())
@@ -382,7 +382,7 @@ mod tests {
             FunctionCall,
             "lower($1)",
             FunctionCall::Lower {
-                value: Box::new(ValueExpression::Placeholder(1)),
+                value: Boxed::new(ValueExpression::Placeholder(1)),
             }
         );
     }
@@ -393,8 +393,8 @@ mod tests {
             FunctionCall,
             "substr('content', 4)",
             FunctionCall::Substr {
-                value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
-                start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
+                value: Boxed::new(ValueExpression::Literal(Literal::Str("content".into()))),
+                start: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(4))),
                 count: None
             }
         );
@@ -406,9 +406,9 @@ mod tests {
             FunctionCall,
             "substr('content', 4, 2)",
             FunctionCall::Substr {
-                value: Box::new(ValueExpression::Literal(Literal::Str("content".into()))),
-                start: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
-                count: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(2))))
+                value: Boxed::new(ValueExpression::Literal(Literal::Str("content".into()))),
+                start: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(4))),
+                count: Some(Boxed::new(ValueExpression::Literal(Literal::SmallInteger(2))))
             }
         );
     }
@@ -428,10 +428,10 @@ mod tests {
             FunctionCall,
             "array_position('this is wrong but anyway', 'first')",
             FunctionCall::ArrayPosition {
-                array: Box::new(ValueExpression::Literal(Literal::Str(
+                array: Boxed::new(ValueExpression::Literal(Literal::Str(
                     "this is wrong but anyway".into()
                 ))),
-                target: Box::new(ValueExpression::Literal(Literal::Str("first".into())))
+                target: Boxed::new(ValueExpression::Literal(Literal::Str("first".into())))
             }
         );
     }

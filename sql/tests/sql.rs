@@ -4,7 +4,7 @@ use sql::{
     AggregateExpression, BinaryOperator, ColumnReference, Condition, ConflictHandling, Delete,
     FunctionCall, GroupAttribute, Identifier, Insert, InsertValues, JoinKind, Literal,
     NullOrdering, OrderAttribute, OrderBy, Ordering, Query, Select, SelectLimit, TableExpression,
-    ValueExpression, CompatibleParser
+    ValueExpression, CompatibleParser, arenas::Boxed
 };
 
 #[test]
@@ -53,11 +53,11 @@ fn insert_with_on_conflict() {
                 table: Some(TableExpression::Relation(Identifier("dashboard".into()))),
                 where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("is_folder".into())
                         })),
-                        second: Box::new(ValueExpression::Literal(Literal::Bool(true))),
+                        second: Boxed::new(ValueExpression::Literal(Literal::Bool(true))),
                         operator: BinaryOperator::Equal
                     }
                 ).into())].into())),
@@ -112,21 +112,21 @@ fn delete_test() {
     assert_eq!(
         Delete {
             table: Identifier("folder".into()),
-            condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                ValueExpression::Not(Box::new(ValueExpression::FunctionCall(
+            condition: Some(Condition::And(vec![Condition::Value(Boxed::new(
+                ValueExpression::Not(Boxed::new(ValueExpression::FunctionCall(
                     FunctionCall::Exists {
-                        query: Box::new(Select {
+                        query: Boxed::new(Select {
                             values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                             table: Some(TableExpression::Relation(Identifier("dashboard".into()))),
                             where_condition: Some(Condition::And(vec![
                                 Condition::Value(Box::new(ValueExpression::Operator {
-                                    first: Box::new(ValueExpression::ColumnReference(
+                                    first: Boxed::new(ValueExpression::ColumnReference(
                                         ColumnReference {
                                             relation: Some(Identifier("dashboard".into())),
                                             column: Identifier("uid".into())
                                         }
                                     )),
-                                    second: Box::new(ValueExpression::ColumnReference(
+                                    second: Boxed::new(ValueExpression::ColumnReference(
                                         ColumnReference {
                                             relation: Some(Identifier("folder".into())),
                                             column: Identifier("uid".into())
@@ -134,14 +134,14 @@ fn delete_test() {
                                     )),
                                     operator: BinaryOperator::Equal
                                 }).into()),
-                                Condition::Value(Box::new(ValueExpression::Operator {
-                                    first: Box::new(ValueExpression::ColumnReference(
+                                Condition::Value(Boxed::new(ValueExpression::Operator {
+                                    first: Boxed::new(ValueExpression::ColumnReference(
                                         ColumnReference {
                                             relation: Some(Identifier("dashboard".into())),
                                             column: Identifier("org_id".into())
                                         }
                                     )),
-                                    second: Box::new(ValueExpression::ColumnReference(
+                                    second: Boxed::new(ValueExpression::ColumnReference(
                                         ColumnReference {
                                             relation: Some(Identifier("folder".into())),
                                             column: Identifier("org_id".into())
@@ -150,13 +150,13 @@ fn delete_test() {
                                     operator: BinaryOperator::Equal
                                 }).into()),
                                 Condition::Value(Box::new(ValueExpression::Operator {
-                                    first: Box::new(ValueExpression::ColumnReference(
+                                    first: Boxed::new(ValueExpression::ColumnReference(
                                         ColumnReference {
                                             relation: Some(Identifier("dashboard".into())),
                                             column: Identifier("is_folder".into())
                                         }
                                     )),
-                                    second: Box::new(ValueExpression::Literal(Literal::Bool(true))),
+                                    second: Boxed::new(ValueExpression::Literal(Literal::Bool(true))),
                                     operator: BinaryOperator::Equal
                                 }).into())
                             ].into())),
@@ -273,28 +273,28 @@ fn something() {
             where_condition: Some(Condition::And(vec![Condition::Or(vec![
                 Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
-                            value: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: "email".into()
                             }))
                         })),
-                        second: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
-                            value: Box::new(ValueExpression::Placeholder(1))
+                        second: Boxed::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Boxed::new(ValueExpression::Placeholder(1))
                         })),
                         operator: BinaryOperator::Equal
                     }
                 ).into()),].into()),
                 Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
-                            value: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: "login".into()
                             }))
                         })),
-                        second: Box::new(ValueExpression::FunctionCall(FunctionCall::Lower {
-                            value: Box::new(ValueExpression::Placeholder(2))
+                        second: Boxed::new(ValueExpression::FunctionCall(FunctionCall::Lower {
+                            value: Boxed::new(ValueExpression::Placeholder(2))
                         })),
                         operator: BinaryOperator::Equal
                     }
@@ -332,11 +332,11 @@ fn select_for_update() {
             table: Some(TableExpression::Relation(Identifier("server_lock".into()))),
             where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                 ValueExpression::Operator {
-                    first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: Identifier("operation_uid".into())
                     })),
-                    second: Box::new(ValueExpression::Placeholder(1)),
+                    second: Boxed::new(ValueExpression::Placeholder(1)),
                     operator: BinaryOperator::Equal
                 }
             ).into())].into())),
@@ -409,11 +409,11 @@ fn select_limit_offset() {
             ))),
             where_condition: Some(Condition::And(vec![Condition::And(vec![
                 Condition::Value(Box::new(ValueExpression::Operator {
-                    first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: Identifier("org_id".into())
                     })),
-                    second: Box::new(ValueExpression::Placeholder(1)),
+                    second: Boxed::new(ValueExpression::Placeholder(1)),
                     operator: BinaryOperator::Equal
                 }).into())
             ].into())].into())),
@@ -478,21 +478,21 @@ fn select_something() {
             where_condition: Some(Condition::And(vec![
                 Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("namespace".into())
                         })),
-                        second: Box::new(ValueExpression::Placeholder(1)),
+                        second: Boxed::new(ValueExpression::Placeholder(1)),
                         operator: BinaryOperator::Equal
                     }
                 ).into())].into()),
                 Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("key".into())
                         })),
-                        second: Box::new(ValueExpression::Placeholder(2)),
+                        second: Boxed::new(ValueExpression::Placeholder(2)),
                         operator: BinaryOperator::Like
                     }
                 ).into())].into())
@@ -568,17 +568,17 @@ INNER JOIN (
                 })
             ].into(),
             table: Some(TableExpression::Join {
-                left: Box::new(TableExpression::Join {
-                    left: Box::new(TableExpression::Relation("permission".into())),
-                    right: Box::new(TableExpression::Relation("role".into())),
+                left: Boxed::new(TableExpression::Join {
+                    left: Boxed::new(TableExpression::Relation("permission".into())),
+                    right: Boxed::new(TableExpression::Relation("role".into())),
                     kind: JoinKind::Inner,
                     condition: Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some("role".into()),
                                 column: "id".into(),
                             })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some("permission".into()),
                                 column: "role_id".into(),
                             })),
@@ -587,26 +587,26 @@ INNER JOIN (
                     ).into())].into()), 
                     lateral: false,
                 }),
-                right: Box::new(TableExpression::Renamed {
-                    inner: Box::new(TableExpression::SubQuery(Box::new(Select {
+                right: Boxed::new(TableExpression::Renamed {
+                    inner: Boxed::new(TableExpression::SubQuery(Boxed::new(Select {
                         values: vec![ValueExpression::ColumnReference(ColumnReference {
                             relation: Some("br".into()),
                             column: "role_id".into(),
                         })].into(),
                         table: Some(TableExpression::Renamed {
-                            inner: Box::new(TableExpression::Relation("builtin_role".into())),
+                            inner: Boxed::new(TableExpression::Relation("builtin_role".into())),
                             name: "br".into(),
                             column_rename: None,
                         }),
                         where_condition: Some(Condition::And(vec![
                             Condition::Value(Box::new(ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some("br".into()),
                                         column: "role".into(),
                                     }
                                 )),
-                                second: Box::new(ValueExpression::List(vec![
+                                second: Boxed::new(ValueExpression::List(vec![
                                     ValueExpression::Placeholder(1)
                                 ].into())),
                                 operator: BinaryOperator::In
@@ -614,25 +614,25 @@ INNER JOIN (
                             Condition::Or(vec![
                                 Condition::And(vec![Condition::Value(Box::new(
                                     ValueExpression::Operator {
-                                        first: Box::new(ValueExpression::ColumnReference(
+                                        first: Boxed::new(ValueExpression::ColumnReference(
                                             ColumnReference {
                                                 relation: Some("br".into()),
                                                 column: "org_id".into()
                                             }
                                         )),
-                                        second: Box::new(ValueExpression::Placeholder(2)),
+                                        second: Boxed::new(ValueExpression::Placeholder(2)),
                                         operator: BinaryOperator::Equal,
                                     }
                                 ).into())].into()),
                                 Condition::And(vec![Condition::Value(Box::new(
                                     ValueExpression::Operator {
-                                        first: Box::new(ValueExpression::ColumnReference(
+                                        first: Boxed::new(ValueExpression::ColumnReference(
                                             ColumnReference {
                                                 relation: Some("br".into()),
                                                 column: "org_id".into()
                                             }
                                         )),
-                                        second: Box::new(ValueExpression::Placeholder(3)),
+                                        second: Boxed::new(ValueExpression::Placeholder(3)),
                                         operator: BinaryOperator::Equal,
                                     }
                                 ).into())].into())
@@ -651,11 +651,11 @@ INNER JOIN (
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: Some("role".into()),
                             column: "id".into(),
                         })),
-                        second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: Some("all_role".into()),
                             column: "role_id".into(),
                         })),
@@ -695,37 +695,37 @@ fn testing_subquery() {
                 column: "role_id".into()
             })].into(),
             table: Some(TableExpression::Renamed {
-                inner: Box::new(TableExpression::Relation("builtin_role".into())),
+                inner: Boxed::new(TableExpression::Relation("builtin_role".into())),
                 name: "br".into(),
                 column_rename: None,
             }),
             where_condition: Some(Condition::And(vec![
                 Condition::Value(Box::new(ValueExpression::Operator {
-                    first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: Some("br".into()),
                         column: "role".into()
                     })),
-                    second: Box::new(ValueExpression::List(vec![ValueExpression::Placeholder(1)].into())),
+                    second: Boxed::new(ValueExpression::List(vec![ValueExpression::Placeholder(1)].into())),
                     operator: BinaryOperator::In,
                 }).into()),
                 Condition::Or(vec![
                     Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some("br".into()),
                                 column: "org_id".into()
                             })),
-                            second: Box::new(ValueExpression::Placeholder(2)),
+                            second: Boxed::new(ValueExpression::Placeholder(2)),
                             operator: BinaryOperator::Equal,
                         }
                     ).into())].into()),
                     Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some("br".into()),
                                 column: "org_id".into()
                             })),
-                            second: Box::new(ValueExpression::Placeholder(3)),
+                            second: Boxed::new(ValueExpression::Placeholder(3)),
                             operator: BinaryOperator::Equal,
                         }
                     ).into())].into())
@@ -780,15 +780,15 @@ fn select_aggregate_with_operator() {
     assert_eq!(
         Select {
             values: vec![ValueExpression::Operator {
-                first: Box::new(ValueExpression::AggregateExpression(
-                    AggregateExpression::Sum(Box::new(ValueExpression::ColumnReference(
+                first: Boxed::new(ValueExpression::AggregateExpression(
+                    AggregateExpression::Sum(Boxed::new(ValueExpression::ColumnReference(
                         ColumnReference {
                             relation: None,
                             column: "total_sales".into()
                         }
                     )))
                 )),
-                second: Box::new(ValueExpression::Literal(Literal::SmallInteger(10))),
+                second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(10))),
                 operator: BinaryOperator::Divide,
             }].into(),
             table: Some(TableExpression::Relation("regional_sales".into())),
@@ -800,7 +800,7 @@ fn select_aggregate_with_operator() {
             for_update: None,
             combine: None
         },
-        select
+        select.to_static()
     );
 }
 
@@ -817,7 +817,7 @@ fn select_group_by_number() {
     assert_eq!(
         Select {
             values: vec![
-                ValueExpression::AggregateExpression(AggregateExpression::Max(Box::new(
+                ValueExpression::AggregateExpression(AggregateExpression::Max(Boxed::new(
                     ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "balance".into()
@@ -837,6 +837,6 @@ fn select_group_by_number() {
             for_update: None,
             combine: None
         },
-        select
+        select.to_static()
     );
 }

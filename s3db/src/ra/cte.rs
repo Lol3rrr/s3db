@@ -163,7 +163,7 @@ mod tests {
     use crate::ra::{Attribute, AttributeId};
     use sql::{
         BinaryOperator, ColumnReference, Combination, Literal, Select, TableExpression,
-        ValueExpression,
+        ValueExpression, arenas::Boxed
     };
 
     use super::*;
@@ -235,13 +235,13 @@ mod tests {
                         Combination::Union,
                         Box::new(Select {
                             values: vec![ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: None,
                                         column: "n".into(),
                                     },
                                 )),
-                                second: Box::new(ValueExpression::Literal(Literal::SmallInteger(
+                                second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(
                                     1,
                                 ))),
                                 operator: BinaryOperator::Add,
@@ -254,7 +254,7 @@ mod tests {
                             limit: None,
                             for_update: None,
                             combine: None,
-                        }),
+                        }).into(),
                     )),
                 }),
                 columns: Some(vec!["n".into()].into()),

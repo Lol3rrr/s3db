@@ -124,7 +124,7 @@ pub fn with_ctes<'i, 'a>(
 mod tests {
     use crate::{
         BinaryOperator, ColumnReference, Combination, Condition, Literal, Select, TableExpression,
-        ValueExpression, macros::arena_parser_parse,
+        ValueExpression, macros::arena_parser_parse, arenas::Boxed
     };
 
     use super::*;
@@ -226,13 +226,13 @@ WITH regional_sales AS (
                             Combination::Union,
                             Box::new(Select {
                                 values: vec![ValueExpression::Operator {
-                                    first: Box::new(ValueExpression::ColumnReference(
+                                    first: Boxed::new(ValueExpression::ColumnReference(
                                         ColumnReference {
                                             relation: None,
                                             column: "n".into(),
                                         }
                                     )),
-                                    second: Box::new(ValueExpression::Literal(
+                                    second: Boxed::new(ValueExpression::Literal(
                                         Literal::SmallInteger(1)
                                     )),
                                     operator: BinaryOperator::Add,
@@ -240,13 +240,13 @@ WITH regional_sales AS (
                                 table: Some(TableExpression::Relation("cte".into())),
                                 where_condition: Some(Condition::And(vec![Condition::Value(
                                     Box::new(ValueExpression::Operator {
-                                        first: Box::new(ValueExpression::ColumnReference(
+                                        first: Boxed::new(ValueExpression::ColumnReference(
                                             ColumnReference {
                                                 relation: None,
                                                 column: "n".into()
                                             }
                                         )),
-                                        second: Box::new(ValueExpression::Literal(
+                                        second: Boxed::new(ValueExpression::Literal(
                                             Literal::SmallInteger(2)
                                         )),
                                         operator: BinaryOperator::Less
@@ -258,7 +258,7 @@ WITH regional_sales AS (
                                 limit: None,
                                 for_update: None,
                                 combine: None
-                            })
+                            }).into()
                         ))
                     }),
                     columns: Some(vec!["n".into()].into()),

@@ -155,7 +155,7 @@ mod tests {
 
     use crate::{
         common::FunctionCall, macros::arena_parser_parse, BinaryOperator, ColumnReference, DataType,
-        Literal,
+        Literal, arenas::Boxed
     };
 
     use super::*;
@@ -173,11 +173,11 @@ mod tests {
                 )].into(),
                 condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("name".into()),
                         })),
-                        second: Box::new(ValueExpression::Literal(Literal::Str("other".into()))),
+                        second: Boxed::new(ValueExpression::Literal(Literal::Str("other".into()))),
                         operator: BinaryOperator::Equal
                     }
                 ).into())].into())),
@@ -204,25 +204,25 @@ mod tests {
                     )
                 ].into(),
                 condition: Some(Condition::And(vec![
-                    Condition::Value(Box::new(ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    Condition::Value(Boxed::new(ValueExpression::Operator {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("created".into())
                         })),
-                        second: Box::new(ValueExpression::Literal(Literal::Str("0".into()))),
+                        second: Boxed::new(ValueExpression::Literal(Literal::Str("0".into()))),
                         operator: BinaryOperator::Equal
                     }).into()),
-                    Condition::Value(Box::new(ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    Condition::Value(Boxed::new(ValueExpression::Operator {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("status".into())
                         })),
-                        second: Box::new(ValueExpression::List(vec![
+                        second: Boxed::new(ValueExpression::List(vec![
                             ValueExpression::Literal(Literal::Str("SignUpStarted".into())),
                             ValueExpression::Literal(Literal::Str("InvitePending".into()))
                         ].into())),
                         operator: BinaryOperator::In
-                    }).into()),
+                    })),
                 ].into())),
                 from: None,
             }
@@ -239,10 +239,10 @@ mod tests {
                 fields: vec![(
                     Identifier("uid".into()),
                     ValueExpression::FunctionCall(FunctionCall::LPad {
-                        base: Box::new(ValueExpression::Operator {
-                            first: Box::new(ValueExpression::Literal(Literal::Str("".into()))),
-                            second: Box::new(ValueExpression::TypeCast {
-                                base: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        base: Boxed::new(ValueExpression::Operator {
+                            first: Boxed::new(ValueExpression::Literal(Literal::Str("".into()))),
+                            second: Boxed::new(ValueExpression::TypeCast {
+                                base: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                     relation: None,
                                     column: Identifier("id".into())
                                 })),
@@ -256,11 +256,11 @@ mod tests {
                 )].into(),
                 condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("uid".into())
                         })),
-                        second: Box::new(ValueExpression::Null),
+                        second: Boxed::new(ValueExpression::Null),
                         operator: BinaryOperator::Is
                     }
                 ).into())].into())),
@@ -285,22 +285,22 @@ mod tests {
                 )].into(),
                 condition: Some(Condition::And(vec![
                     Condition::Value(Box::new(ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: Some(Identifier("dashboard".into())),
                             column: Identifier("folder_id".into())
                         })),
-                        second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: Some(Identifier("folder".into())),
                             column: Identifier("id".into())
                         })),
                         operator: BinaryOperator::Equal
                     }).into()),
                     Condition::Value(Box::new(ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: Some(Identifier("dashboard".into())),
                             column: Identifier("is_folder".into())
                         })),
-                        second: Box::new(ValueExpression::Placeholder(1)),
+                        second: Boxed::new(ValueExpression::Placeholder(1)),
                         operator: BinaryOperator::Equal
                     }).into())
                 ].into())),

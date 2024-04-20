@@ -89,7 +89,7 @@ pub trait ArenaParser<'i, 'a>: Sized + CompatibleParser {
 pub enum Query<'s, 'a> {
     WithCTE {
         cte: WithCTEs<'s, 'a>,
-        query: Box<Self>,
+        query: crate::arenas::Boxed<'a, Self>,
     },
     Prepare(prepare::Prepare<'s, 'a>),
     Select(select::Select<'s, 'a>),
@@ -162,7 +162,7 @@ impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
         match self {
             Self::WithCTE { cte, query } => Query::WithCTE {
                 cte: cte.to_static(),
-                query: Box::new(query.to_static()),
+                query: query.to_static(),
             },
             Self::Prepare(prepare) => Query::Prepare(prepare.to_static()),
             Self::Select(s) => Query::Select(s.to_static()),
@@ -284,7 +284,7 @@ fn query<'i, 'a>(
     let result = match ctes {
         Some(cte) => Query::WithCTE {
             cte,
-            query: Box::new(inner),
+            query: crate::arenas::Boxed::arena(arena, inner),
         },
         None => inner,
     };
@@ -369,6 +369,7 @@ mod tests {
     use crate::{
         macros::arena_parser_parse,
         select::{GroupAttribute, OrderAttribute},
+        arenas::Boxed
     };
 
     use super::*;
@@ -503,7 +504,7 @@ mod tests {
                     column: Identifier("name".into())
                 })].into(),
                 table: Some(TableExpression::Renamed {
-                    inner: Box::new(TableExpression::Relation(Identifier("permission".into()))),
+                    inner: Boxed::new(TableExpression::Relation(Identifier("permission".into()))),
                     name: Identifier("p".into()),
                     column_rename: None,
                 }),
@@ -525,7 +526,7 @@ mod tests {
             "SELECT name AS pname FROM permission",
             Query::Select(Select {
                 values: vec![ValueExpression::Renamed {
-                    inner: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    inner: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: Identifier("name".into())
                     })),
@@ -560,16 +561,16 @@ mod tests {
                     })
                 ].into(),
                 table: Some(TableExpression::Join {
-                    left: Box::new(TableExpression::Relation(Identifier("user".into()))),
-                    right: Box::new(TableExpression::Relation(Identifier("password".into()))),
+                    left: Boxed::new(TableExpression::Relation(Identifier("user".into()))),
+                    right: Boxed::new(TableExpression::Relation(Identifier("password".into()))),
                     kind: JoinKind::Inner,
                     condition: Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("user".into())),
                                 column: Identifier("id".into()),
                             })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("password".into())),
                                 column: Identifier("uid".into())
                             })),

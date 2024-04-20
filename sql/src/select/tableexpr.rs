@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Condition, Identifier, Parser as _, ArenaParser};
+use crate::{CompatibleParser, Condition, Identifier, Parser as _, ArenaParser, arenas::Boxed};
 
 use super::Select;
 
@@ -8,18 +8,18 @@ use super::Select;
 pub enum TableExpression<'s, 'a> {
     Relation(Identifier<'s>),
     Renamed {
-        inner: Box<TableExpression<'s, 'a>>,
+        inner: Boxed<'a, TableExpression<'s, 'a>>,
         name: Identifier<'s>,
         column_rename: Option<crate::arenas::Vec<'a, Identifier<'s>>>,
     },
     Join {
-        left: Box<TableExpression<'s, 'a>>,
-        right: Box<TableExpression<'s, 'a>>,
+        left: Boxed<'a, TableExpression<'s, 'a>>,
+        right: Boxed<'a, TableExpression<'s, 'a>>,
         kind: JoinKind,
         condition: Condition<'s, 'a>,
         lateral: bool,
     },
-    SubQuery(Box<Select<'s, 'a>>),
+    SubQuery(Boxed<'a, Select<'s, 'a>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -60,7 +60,7 @@ impl<'i, 'a> CompatibleParser for TableExpression<'i, 'a> {
                 name,
                 column_rename,
             } => TableExpression::Renamed {
-                inner: Box::new(inner.to_static()),
+                inner: inner.to_static(),
                 name: name.to_static(),
                 column_rename: column_rename
                     .as_ref()
@@ -73,13 +73,13 @@ impl<'i, 'a> CompatibleParser for TableExpression<'i, 'a> {
                 condition,
                 lateral,
             } => TableExpression::Join {
-                left: Box::new(left.to_static()),
-                right: Box::new(right.to_static()),
+                left: left.to_static(),
+                right: right.to_static(),
                 kind: kind.clone(),
                 condition: condition.to_static(),
                 lateral: *lateral,
             },
-            Self::SubQuery(inner) => TableExpression::SubQuery(Box::new(inner.to_static())),
+            Self::SubQuery(inner) => TableExpression::SubQuery(inner.to_static()),
         }
     }
 }
@@ -109,7 +109,7 @@ pub fn table_expression<'i, 'a>(
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(")"),
             ))
-            .map(|(_, _, query, _, _)| TableExpression::SubQuery(Box::new(query))),
+            .map(|(_, _, query, _, _)| TableExpression::SubQuery(Boxed::arena(arena, query))),
             nom::sequence::tuple((
                 Identifier::parse(),
                 nom::bytes::complete::tag("."),
@@ -164,7 +164,7 @@ pub fn table_expression<'i, 'a>(
             Ok((remaining, (name, columns))) => Ok((
                 remaining,
                 TableExpression::Renamed {
-                    inner: Box::new(table),
+                    inner: Boxed::arena(arena, table),
                     name,
                     column_rename: columns,
                 },
@@ -251,8 +251,8 @@ pub fn table_expression<'i, 'a>(
 
                 outer_remaining = remaining;
                 table = TableExpression::Join {
-                    left: Box::new(table),
-                    right: Box::new(other_table),
+                    left: Boxed::arena(arena, table),
+                    right: Boxed::arena(arena, other_table),
                     kind: join_kind,
                     condition,
                     lateral: is_lateral,
@@ -265,8 +265,8 @@ pub fn table_expression<'i, 'a>(
                 outer_remaining = remaining;
 
                 table = TableExpression::Join {
-                    left: Box::new(table),
-                    right: Box::new(other_table),
+                    left: Boxed::arena(arena, table),
+                    right: Boxed::arena(arena, other_table),
                     kind: join_kind,
                     condition: Condition::And(crate::arenas::Vec::arena(arena)),
                     lateral: is_lateral,
@@ -294,7 +294,7 @@ mod tests {
             TableExpression,
             "first INNER JOIN (SELECT name FROM second)",
             TableExpression::Join {
-                left: Box::new(TableExpression::Relation("first".into())),
+                left: Box::new(TableExpression::Relation("first".into())).into(),
                 right: Box::new(TableExpression::SubQuery(Box::new(Select {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
@@ -308,7 +308,7 @@ mod tests {
                     limit: None,
                     for_update: None,
                     combine: None
-                }))),
+                }).into())).into(),
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![].into()),
                 lateral: false,
@@ -322,7 +322,7 @@ mod tests {
             TableExpression,
             "something as o(n)",
             TableExpression::Renamed {
-                inner: Box::new(TableExpression::Relation(Identifier("something".into()))),
+                inner: Box::new(TableExpression::Relation(Identifier("something".into()))).into(),
                 name: "o".into(),
                 column_rename: Some(vec![Identifier("n".into())].into())
             }
@@ -335,8 +335,8 @@ mod tests {
             TableExpression,
             "first INNER JOIN LATERAL (SELECT name FROM second)",
             TableExpression::Join {
-                left: Box::new(TableExpression::Relation("first".into())),
-                right: Box::new(TableExpression::SubQuery(Box::new(Select {
+                left: Boxed::new(TableExpression::Relation("first".into())),
+                right: Boxed::new(TableExpression::SubQuery(Boxed::new(Select {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "name".into(),

@@ -1,13 +1,13 @@
 use nom::{IResult, Parser};
 
 use super::ValueExpression;
-use crate::{ArenaParser, CompatibleParser};
+use crate::{ArenaParser, CompatibleParser, arenas::Boxed};
 
 #[derive(Debug, PartialEq)]
 pub enum Condition<'s, 'a> {
     And(crate::arenas::Vec<'a, Condition<'s, 'a>>),
     Or(crate::arenas::Vec<'a, Condition<'s, 'a>>),
-    Value(crate::arenas::Boxed<'a, ValueExpression<'s, 'a>>),
+    Value(Boxed<'a, ValueExpression<'s, 'a>>),
 }
 
 impl<'s, 'a> Condition<'s, 'a> {
@@ -31,11 +31,7 @@ impl<'s, 'a> CompatibleParser for Condition<'s, 'a> {
         match self {
             Self::And(parts) => Condition::And(crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())),
             Self::Or(parts) => Condition::Or(crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())),
-            Self::Value(v) => Condition::Value({
-                let tmp: &ValueExpression<'s, 'a> = v;
-                let tmps: ValueExpression<'static, 'static> = tmp.to_static();
-                crate::arenas::Boxed::Heap(Box::new(tmps))
-            }),
+            Self::Value(v) => Condition::Value(v.to_static()),
         }
     }
 }
@@ -167,20 +163,20 @@ mod tests {
             Condition,
             "name = 'first' AND id = 132",
             Condition::And(vec![
-                Condition::Value(Box::new(ValueExpression::Operator {
-                    first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                Condition::Value(Boxed::new(ValueExpression::Operator {
+                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: Identifier("name".into())
                     })),
-                    second: Box::new(ValueExpression::Literal(Literal::Str("first".into()))),
+                    second: Boxed::new(ValueExpression::Literal(Literal::Str("first".into()))),
                     operator: BinaryOperator::Equal
                 }).into()),
-                Condition::Value(Box::new(ValueExpression::Operator {
-                    first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                Condition::Value(Boxed::new(ValueExpression::Operator {
+                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: Identifier("id".into())
                     })),
-                    second: Box::new(ValueExpression::Literal(Literal::SmallInteger(132))),
+                    second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(132))),
                     operator: BinaryOperator::Equal
                 }).into())
             ].into())
@@ -194,30 +190,30 @@ mod tests {
             "(org_id = $2 AND configuration_hash = $3) AND (CTID IN (SELECT CTID FROM \"alert_configuration_history\" ORDER BY \"id\" DESC LIMIT 1))",
             Condition::And(vec![
                 Condition::And(vec![
-                    Condition::Value(Box::new(ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    Condition::Value(Boxed::new(ValueExpression::Operator {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("org_id".into())
                         })),
-                        second: Box::new(ValueExpression::Placeholder(2)),
+                        second: Boxed::new(ValueExpression::Placeholder(2)),
                         operator: BinaryOperator::Equal
                     }).into()),
-                    Condition::Value(Box::new(ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    Condition::Value(Boxed::new(ValueExpression::Operator {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("configuration_hash".into())
                         })),
-                        second: Box::new(ValueExpression::Placeholder(3)),
+                        second: Boxed::new(ValueExpression::Placeholder(3)),
                         operator: BinaryOperator::Equal
                     }).into())
                 ].into()),
-                Condition::And(vec![Condition::Value(Box::new(
+                Condition::And(vec![Condition::Value(Boxed::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("CTID".into())
                         })),
-                        second: Box::new(ValueExpression::SubQuery(Select {
+                        second: Boxed::new(ValueExpression::SubQuery(Select {
                             values: vec![ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: Identifier("CTID".into()),
@@ -276,13 +272,13 @@ mod tests {
         arena_parser_parse!(
             Condition,
             "customer.ID=orders.customer INNER",
-            Condition::And(vec![Condition::Value(Box::new(
+            Condition::And(vec![Condition::Value(Boxed::new(
                 ValueExpression::Operator {
-                    first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: Some(Identifier("customer".into())),
                         column: Identifier("ID".into())
                     })),
-                    second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                    second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                         relation: Some(Identifier("orders".into())),
                         column: Identifier("customer".into())
                     })),
@@ -298,8 +294,8 @@ mod tests {
         arena_parser_parse!(
             Condition,
             "NOT table.field",
-            Condition::And(vec![Condition::Value(Box::new(ValueExpression::Not(
-                Box::new(ValueExpression::ColumnReference(ColumnReference {
+            Condition::And(vec![Condition::Value(Boxed::new(ValueExpression::Not(
+                Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: Some("table".into()),
                     column: "field".into()
                 }))

@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{Parser as _, CompatibleParser};
+use crate::{Parser as _, CompatibleParser, arenas::Boxed};
 
 use super::{query, DataType, Identifier, Query};
 
@@ -8,7 +8,7 @@ use super::{query, DataType, Identifier, Query};
 pub struct Prepare<'s, 'a> {
     pub name: Identifier<'s>,
     pub params: crate::arenas::Vec<'a, DataType>,
-    pub query: Box<Query<'s, 'a>>,
+    pub query: Boxed<'a, Query<'s, 'a>>,
 }
 
 impl<'i, 'a> crate::ArenaParser<'i, 'a> for Prepare<'i, 'a>
@@ -34,7 +34,7 @@ impl<'s, 'a> CompatibleParser for Prepare<'s, 'a> {
         Prepare {
             name: self.name.to_static(),
             params: self.params.clone_to_heap(),
-            query: Box::new(self.query.to_static()),
+            query: self.query.to_static(),
         }
     }
 }
@@ -80,7 +80,7 @@ pub fn parse<'i, 'a>(
         |(name, params, _, _, _, q)| Prepare {
             name,
             params: params.unwrap_or(crate::arenas::Vec::arena(arena)),
-            query: Box::new(q),
+            query: crate::arenas::Boxed::arena(arena, q),
         },
     )(i)?;
 
@@ -114,7 +114,7 @@ mod tests {
                     limit: None,
                     for_update: None,
                     combine: None,
-                }))
+                })).into()
             }
         );
     }
@@ -132,11 +132,11 @@ mod tests {
                     table: Some(TableExpression::Relation("users".into())),
                     where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: "id".into(),
                             })),
-                            second: Box::new(ValueExpression::Placeholder(1)),
+                            second: Boxed::new(ValueExpression::Placeholder(1)),
                             operator: BinaryOperator::Equal
                         }
                     ).into())].into())),
@@ -146,7 +146,7 @@ mod tests {
                     limit: None,
                     for_update: None,
                     combine: None,
-                }))
+                })).into()
             }
         );
     }

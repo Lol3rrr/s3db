@@ -76,7 +76,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        BinaryOperator, ColumnReference, Literal, Select, TableExpression, ValueExpression, macros::arena_parser_parse
+        BinaryOperator, ColumnReference, Literal, Select, TableExpression, ValueExpression, macros::arena_parser_parse, arenas::Boxed
     };
 
     use super::*;
@@ -102,11 +102,11 @@ mod tests {
                 table: Identifier("dashboard_tag".into()),
                 condition: Some(Condition::And(vec![Condition::Value(crate::arenas::Boxed::Heap(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("name".into())
                         })),
-                        second: Box::new(ValueExpression::Literal(Literal::Str(
+                        second: Boxed::new(ValueExpression::Literal(Literal::Str(
                             "something".into()
                         ))),
                         operator: BinaryOperator::Equal
@@ -123,13 +123,13 @@ mod tests {
             "DELETE FROM dashboard_tag WHERE dashboard_id NOT IN (SELECT id FROM dashboard)",
             Delete {
                 table: Identifier("dashboard_tag".into()),
-                condition: Some(Condition::And(vec![Condition::Value(Box::new(
+                condition: Some(Condition::And(vec![Condition::Value(Boxed::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("dashboard_id".into())
                         })),
-                        second: Box::new(ValueExpression::SubQuery(Select {
+                        second: Boxed::new(ValueExpression::SubQuery(Select {
                             values: vec![ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: Identifier("id".into())
@@ -145,7 +145,7 @@ mod tests {
                         })),
                         operator: BinaryOperator::NotIn
                     }
-                ).into())].into())),
+                ))].into())),
             }
         );
     }
@@ -160,21 +160,21 @@ mod tests {
                 condition: Some(Condition::Or(vec![
                     Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: Identifier("created_at".into())
                             })),
-                            second: Box::new(ValueExpression::Placeholder(1)),
+                            second: Boxed::new(ValueExpression::Placeholder(1)),
                             operator: BinaryOperator::LessEqual
                         }
                     ).into())].into()),
                     Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: Identifier("rotated_at".into())
                             })),
-                            second: Box::new(ValueExpression::Placeholder(2)),
+                            second: Boxed::new(ValueExpression::Placeholder(2)),
                             operator: BinaryOperator::LessEqual
                         }
                     ).into())].into())

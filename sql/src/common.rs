@@ -14,7 +14,7 @@ pub use datatype::DataType;
 mod value;
 pub use value::ValueExpression;
 
-use crate::{Parser as _Parser, ArenaParser, CompatibleParser};
+use crate::{Parser as _Parser, ArenaParser, CompatibleParser, arenas::Boxed};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOperator {
@@ -171,10 +171,10 @@ where
 
 #[derive(Debug, PartialEq)]
 pub enum AggregateExpression<'i, 'a> {
-    Count(Box<ValueExpression<'i, 'a>>),
-    Sum(Box<ValueExpression<'i, 'a>>),
-    AnyValue(Box<ValueExpression<'i, 'a>>),
-    Max(Box<ValueExpression<'i, 'a>>),
+    Count(Boxed<'a, ValueExpression<'i, 'a>>),
+    Sum(Boxed<'a, ValueExpression<'i, 'a>>),
+    AnyValue(Boxed<'a, ValueExpression<'i, 'a>>),
+    Max(Boxed<'a, ValueExpression<'i, 'a>>),
 }
 
 impl<'i, 'a> CompatibleParser for AggregateExpression<'i, 'a> {
@@ -182,10 +182,10 @@ impl<'i, 'a> CompatibleParser for AggregateExpression<'i, 'a> {
 
     fn to_static(&self) -> Self::StaticVersion {
         match self {
-            Self::Count(c) => AggregateExpression::Count(Box::new(c.to_static())),
-            Self::Sum(s) => AggregateExpression::Sum(Box::new(s.to_static())),
-            Self::AnyValue(v) => AggregateExpression::AnyValue(Box::new(v.to_static())),
-            Self::Max(m) => AggregateExpression::Max(Box::new(m.to_static()))
+            Self::Count(c) => AggregateExpression::Count(c.to_static()),
+            Self::Sum(s) => AggregateExpression::Sum(s.to_static()),
+            Self::AnyValue(v) => AggregateExpression::AnyValue(v.to_static()),
+            Self::Max(m) => AggregateExpression::Max(m.to_static())
         }
     }
 
@@ -227,7 +227,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::Count(Box::new(exp)),
+            |exp| AggregateExpression::Count(Boxed::arena(arena, exp)),
         ),
         nom::combinator::map(
             nom::sequence::delimited(
@@ -242,7 +242,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::Sum(Box::new(exp)),
+            |exp| AggregateExpression::Sum(Boxed::arena(arena, exp)),
         ),
         nom::combinator::map(
             nom::sequence::delimited(
@@ -257,7 +257,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::AnyValue(Box::new(exp)),
+            |exp| AggregateExpression::AnyValue(Boxed::arena(arena, exp)),
         ),
         nom::combinator::map(
             nom::sequence::delimited(
@@ -272,7 +272,7 @@ fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8],
                     nom::bytes::complete::tag(")"),
                 )),
             ),
-            |exp| AggregateExpression::Max(Box::new(exp)),
+            |exp| AggregateExpression::Max(Boxed::arena(arena, exp)),
         ),
     ))(i)
 }
@@ -334,7 +334,7 @@ pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier, nom::error::Verbo
 mod tests {
     use crate::select::{Select, TableExpression};
 
-    use crate::{macros::parser_parse, macros::arena_parser_parse, Condition};
+    use crate::{macros::parser_parse, macros::arena_parser_parse, Condition, arenas::Boxed};
 
     use super::*;
 
@@ -390,11 +390,11 @@ mod tests {
             ValueExpression,
             "name in ('first', 'second')",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("name".into())
                 })),
-                second: Box::new(ValueExpression::List(vec![
+                second: Boxed::new(ValueExpression::List(vec![
                     ValueExpression::Literal(Literal::Str("first".into())),
                     ValueExpression::Literal(Literal::Str("second".into()))
                 ].into())),
@@ -409,7 +409,7 @@ mod tests {
             ValueExpression,
             "lpad('123', 5, '0')",
             ValueExpression::FunctionCall(FunctionCall::LPad {
-                base: Box::new(ValueExpression::Literal(Literal::Str("123".into()))),
+                base: Boxed::new(ValueExpression::Literal(Literal::Str("123".into()))),
                 length: Literal::SmallInteger(5),
                 padding: Literal::Str("0".into())
             })
@@ -422,7 +422,7 @@ mod tests {
             ValueExpression,
             "id::text",
             ValueExpression::TypeCast {
-                base: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                base: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
                 })),
@@ -437,8 +437,8 @@ mod tests {
             ValueExpression,
             "'first' || 'second'",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::Literal(Literal::Str("first".into()))),
-                second: Box::new(ValueExpression::Literal(Literal::Str("second".into()))),
+                first: Boxed::new(ValueExpression::Literal(Literal::Str("first".into()))),
+                second: Boxed::new(ValueExpression::Literal(Literal::Str("second".into()))),
                 operator: BinaryOperator::Concat
             }
         );
@@ -450,11 +450,11 @@ mod tests {
             ValueExpression,
             "test > 0",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("test".into())
                 })),
-                second: Box::new(ValueExpression::Literal(Literal::SmallInteger(0))),
+                second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(0))),
                 operator: BinaryOperator::Greater
             }
         );
@@ -466,11 +466,11 @@ mod tests {
             ValueExpression,
             "(epoch * 1000)",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("epoch".into())
                 })),
-                second: Box::new(ValueExpression::Literal(Literal::SmallInteger(1000))),
+                second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(1000))),
                 operator: BinaryOperator::Multiply
             }
         );
@@ -492,7 +492,7 @@ mod tests {
         arena_parser_parse!(
             ValueExpression,
             "max(testing)",
-            ValueExpression::AggregateExpression(AggregateExpression::Max(Box::new(
+            ValueExpression::AggregateExpression(AggregateExpression::Max(Boxed::new(
                 ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("testing".into())
@@ -507,20 +507,20 @@ mod tests {
             ValueExpression,
             "(EXISTS (SELECT 1 FROM alert_rule a WHERE d.uid = a.namespace_uid))",
             ValueExpression::FunctionCall(FunctionCall::Exists {
-                query: Box::new(Select {
+                query: Boxed::new(Select {
                     values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                     table: Some(TableExpression::Renamed {
-                        inner: Box::new(TableExpression::Relation("alert_rule".into())),
+                        inner: Boxed::new(TableExpression::Relation("alert_rule".into())),
                         name: "a".into(),
                         column_rename: None,
                     }),
                     where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some("d".into()),
                                 column: "uid".into()
                             })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some("a".into()),
                                 column: "namespace_uid".into()
                             })),
@@ -544,11 +544,11 @@ mod tests {
             ValueExpression,
             "service_account_id IS NOT NULL",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("service_account_id".into())
                 })),
-                second: Box::new(ValueExpression::Null),
+                second: Boxed::new(ValueExpression::Null),
                 operator: BinaryOperator::IsNot
             }
         );
@@ -560,11 +560,11 @@ mod tests {
             ValueExpression,
             "column <= $1",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("column".into())
                 })),
-                second: Box::new(ValueExpression::Placeholder(1)),
+                second: Boxed::new(ValueExpression::Placeholder(1)),
                 operator: BinaryOperator::LessEqual,
             }
         );
@@ -576,11 +576,11 @@ mod tests {
             ValueExpression,
             "column = $1 INNER",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("column".into())
                 })),
-                second: Box::new(ValueExpression::Placeholder(1)),
+                second: Boxed::new(ValueExpression::Placeholder(1)),
                 operator: BinaryOperator::Equal,
             },
             " INNER".as_bytes()
@@ -593,11 +593,11 @@ mod tests {
             ValueExpression,
             "something IN ( SELECT name FROM users )",
             ValueExpression::Operator {
-                first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: "something".into(),
                 })),
-                second: Box::new(ValueExpression::SubQuery(Select {
+                second: Boxed::new(ValueExpression::SubQuery(Select {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "name".into(),
@@ -623,7 +623,7 @@ mod tests {
             ValueExpression,
             "CASE field WHEN 'first' THEN 123 WHEN 'second' THEN 234 ELSE 0 END",
             ValueExpression::Case {
-                matched_value: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                matched_value: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: "field".into()
                 })),
@@ -637,7 +637,7 @@ mod tests {
                         ValueExpression::Literal(Literal::SmallInteger(234))
                     )
                 ].into(),
-                else_case: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(0)))),
+                else_case: Some(Boxed::new(ValueExpression::Literal(Literal::SmallInteger(0)))),
             }
         );
     }
@@ -657,13 +657,13 @@ mod tests {
             ValueExpression,
             "(3*4) + 5 AS testing",
             ValueExpression::Renamed {
-                inner: Box::new(ValueExpression::Operator {
-                    first: Box::new(ValueExpression::Operator {
-                        first: Box::new(ValueExpression::Literal(Literal::SmallInteger(3))),
-                        second: Box::new(ValueExpression::Literal(Literal::SmallInteger(4))),
+                inner: Boxed::new(ValueExpression::Operator {
+                    first: Boxed::new(ValueExpression::Operator {
+                        first: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(3))),
+                        second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(4))),
                         operator: BinaryOperator::Multiply,
                     }),
-                    second: Box::new(ValueExpression::Literal(Literal::SmallInteger(5))),
+                    second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(5))),
                     operator: BinaryOperator::Add
                 }),
                 name: "testing".into()

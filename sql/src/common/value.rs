@@ -1,6 +1,6 @@
 use crate::{
     select, AggregateExpression, BinaryOperator, ColumnReference, CompatibleParser, DataType,
-    FunctionCall, Identifier, Literal, Parser as _, ArenaParser
+    FunctionCall, Identifier, Literal, Parser as _, ArenaParser, arenas::Boxed,
 };
 
 use nom::{IResult, Parser};
@@ -16,22 +16,22 @@ pub enum ValueExpression<'s, 'a> {
     Null,
     ColumnReference(ColumnReference<'s>),
     Renamed {
-        inner: Box<ValueExpression<'s, 'a>>,
+        inner: Boxed<'a, ValueExpression<'s, 'a>>,
         name: Identifier<'s>,
     },
     PositionalParameterReference,
     SubscriptedExpression,
     FieldSelectionExpression,
     Operator {
-        first: Box<ValueExpression<'s, 'a>>,
-        second: Box<ValueExpression<'s, 'a>>,
+        first: Boxed<'a, ValueExpression<'s, 'a>>,
+        second: Boxed<'a, ValueExpression<'s, 'a>>,
         operator: BinaryOperator,
     },
     FunctionCall(FunctionCall<'s, 'a>),
     AggregateExpression(AggregateExpression<'s, 'a>),
     WindowFunctionCall,
     TypeCast {
-        base: Box<ValueExpression<'s, 'a>>,
+        base: Boxed<'a, ValueExpression<'s, 'a>>,
         target_ty: DataType,
     },
     CollationExpression,
@@ -42,11 +42,11 @@ pub enum ValueExpression<'s, 'a> {
     Placeholder(usize),
     List(crate::arenas::Vec<'a, ValueExpression<'s, 'a>>),
     SubQuery(select::Select<'s, 'a>),
-    Not(Box<ValueExpression<'s, 'a>>),
+    Not(Boxed<'a, ValueExpression<'s, 'a>>),
     Case {
-        matched_value: Box<ValueExpression<'s,'a>>,
+        matched_value: Boxed<'a, ValueExpression<'s,'a>>,
         cases: crate::arenas::Vec<'a, (crate::arenas::Vec<'a, ValueExpression<'s, 'a>>, ValueExpression<'s, 'a>)>,
-        else_case: Option<Box<ValueExpression<'s, 'a>>>,
+        else_case: Option<Boxed<'a, ValueExpression<'s, 'a>>>,
     },
 }
 
@@ -96,7 +96,7 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
             Self::Null => ValueExpression::Null,
             Self::ColumnReference(cr) => ValueExpression::ColumnReference(cr.to_static()),
             Self::Renamed { inner, name } => ValueExpression::Renamed {
-                inner: Box::new(inner.to_static()),
+                inner: inner.to_static(),
                 name: name.to_static(),
             },
             Self::PositionalParameterReference => ValueExpression::PositionalParameterReference,
@@ -107,15 +107,15 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
                 second,
                 operator,
             } => ValueExpression::Operator {
-                first: Box::new(first.to_static()),
-                second: Box::new(second.to_static()),
+                first: first.to_static(),
+                second: second.to_static(),
                 operator: operator.clone(),
             },
             Self::FunctionCall(fc) => ValueExpression::FunctionCall(fc.to_static()),
             Self::AggregateExpression(ae) => ValueExpression::AggregateExpression(ae.to_static()),
             Self::WindowFunctionCall => ValueExpression::WindowFunctionCall,
             Self::TypeCast { base, target_ty } => ValueExpression::TypeCast {
-                base: Box::new(base.to_static()),
+                base: base.to_static(),
                 target_ty: target_ty.clone(),
             },
             Self::CollationExpression => ValueExpression::CollationExpression,
@@ -126,13 +126,13 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
             Self::Placeholder(p) => ValueExpression::Placeholder(*p),
             Self::List(vals) => ValueExpression::List(crate::arenas::Vec::Heap(vals.iter().map(|v| v.to_static()).collect())),
             Self::SubQuery(s) => ValueExpression::SubQuery(s.to_static()),
-            Self::Not(v) => ValueExpression::Not(Box::new(v.to_static())),
+            Self::Not(v) => ValueExpression::Not(v.to_static()),
             Self::Case {
                 matched_value,
                 cases,
                 else_case,
             } => ValueExpression::Case {
-                matched_value: Box::new(matched_value.to_static()),
+                matched_value: matched_value.to_static(),
                 cases: crate::arenas::Vec::Heap(cases
                     .iter()
                     .map(|(matching, value)| {
@@ -142,7 +142,7 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
                         )
                     })
                     .collect()),
-                else_case: else_case.as_ref().map(|c| Box::new(c.to_static())),
+                else_case: else_case.as_ref().map(|c| c.to_static()),
             },
         }
     }
@@ -241,7 +241,7 @@ pub fn value_expression<'i, 'a>(
             nom::character::complete::multispace1,
             ValueExpression::parse_arena(arena),
         ))
-        .map(|(_, _, value)| ValueExpression::Not(Box::new(value))),
+        .map(|(_, _, value)| ValueExpression::Not(Boxed::arena(arena, value))),
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("CASE"),
             nom::character::complete::multispace1,
@@ -282,9 +282,9 @@ pub fn value_expression<'i, 'a>(
         ))
         .map(
             |(_, _, matched_value, cases, else_case, _, _)| ValueExpression::Case {
-                matched_value: Box::new(matched_value),
+                matched_value: Boxed::arena(arena, matched_value),
                 cases,
-                else_case: else_case.map(Box::new),
+                else_case: else_case.map(|v| Boxed::arena(arena, v)),
             },
         ),
         nom::combinator::map(
@@ -312,7 +312,7 @@ pub fn value_expression<'i, 'a>(
                 DataType::parse(),
             )),
             |(cr, _, ty)| ValueExpression::TypeCast {
-                base: Box::new(ValueExpression::ColumnReference(cr)),
+                base: Boxed::arena(arena, ValueExpression::ColumnReference(cr)),
                 target_ty: ty,
             },
         ),
@@ -347,7 +347,7 @@ pub fn value_expression<'i, 'a>(
         Ok((remaining, (_, _, _, name))) => (
             remaining,
             ValueExpression::Renamed {
-                inner: Box::new(parsed),
+                inner: Boxed::arena(arena, parsed),
                 name,
             },
         ),
@@ -404,16 +404,16 @@ pub fn value_expression<'i, 'a>(
 
     let result = match second {
         ValueExpression::Renamed { inner, name } => ValueExpression::Renamed {
-            inner: Box::new(ValueExpression::Operator {
-                first: Box::new(parsed),
-                second: Box::new(*inner),
+            inner: Boxed::arena(arena, ValueExpression::Operator {
+                first: Boxed::arena(arena, parsed),
+                second: Boxed::arena(arena, Boxed::into_inner(inner)),
                 operator,
             }),
             name,
         },
         other => ValueExpression::Operator {
-            first: Box::new(parsed),
-            second: Box::new(other),
+            first: Boxed::arena(arena, parsed),
+            second: Boxed::arena(arena, other),
             operator,
         },
     };

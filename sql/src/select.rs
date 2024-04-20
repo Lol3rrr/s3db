@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{ArenaParser as _, CompatibleParser, Parser as _};
+use crate::{ArenaParser as _, CompatibleParser, Parser as _, arenas::Boxed};
 
 use super::{common::ValueExpression, condition::Condition};
 
@@ -33,7 +33,7 @@ pub struct Select<'s, 'a> {
     pub having: Option<Condition<'s, 'a>>,
     pub limit: Option<SelectLimit>,
     pub for_update: Option<()>,
-    pub combine: Option<(Combination, Box<Select<'s, 'a>>)>,
+    pub combine: Option<(Combination, Boxed<'a, Select<'s, 'a>>)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -75,7 +75,7 @@ impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
             combine: self
                 .combine
                 .as_ref()
-                .map(|(c, s)| (c.clone(), Box::new(s.to_static()))),
+                .map(|(c, s)| (c.clone(), s.to_static())),
         }
     }
 
@@ -184,7 +184,7 @@ pub fn select<'i, 'a>(
                     nom::character::complete::multispace1,
                     Select::parse_arena(a),
                 ))
-                .map(|(_, c, _, s)| (c, Box::new(s))),
+                .map(|(_, c, _, s)| (c, crate::arenas::Boxed::arena(a, s))),
             ),
             nom::combinator::opt(
                 nom::sequence::tuple((
@@ -322,7 +322,7 @@ mod tests {
                     column: Identifier("name".into())
                 })].into(),
                 table: Some(TableExpression::Renamed {
-                    inner: Box::new(TableExpression::Relation(Identifier("user".into()))),
+                    inner: Boxed::new(TableExpression::Relation(Identifier("user".into()))),
                     name: Identifier("u".into()),
                     column_rename: None,
                 }),
@@ -344,16 +344,16 @@ mod tests {
             "SELECT COUNT(*) FROM \"api_key\"WHERE service_account_id IS NOT NULL",
             Select {
                 values: vec![ValueExpression::AggregateExpression(
-                    AggregateExpression::Count(Box::new(ValueExpression::All))
+                    AggregateExpression::Count(Boxed::new(ValueExpression::All))
                 )].into(),
                 table: Some(TableExpression::Relation(Identifier("api_key".into()))),
                 where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("service_account_id".into())
                         })),
-                        second: Box::new(ValueExpression::Null),
+                        second: Boxed::new(ValueExpression::Null),
                         operator: sql::BinaryOperator::IsNot
                     }
                 ).into())].into())),
@@ -375,19 +375,19 @@ mod tests {
             Select {
                 values: vec![ValueExpression::All].into(),
                 table: Some(TableExpression::Join {
-                    left: Box::new(TableExpression::Join {
-                        left: Box::new(TableExpression::Relation(Identifier("customer".into()))),
-                        right: Box::new(TableExpression::Relation(Identifier("orders".into()))),
+                    left: Boxed::new(TableExpression::Join {
+                        left: Boxed::new(TableExpression::Relation(Identifier("customer".into()))),
+                        right: Boxed::new(TableExpression::Relation(Identifier("orders".into()))),
                         kind: JoinKind::Inner,
                         condition: Condition::And(vec![Condition::Value(Box::new(
                             ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("customer".into())),
                                         column: Identifier("ID".into())
                                     }
                                 )),
-                                second: Box::new(ValueExpression::ColumnReference(
+                                second: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("orders".into())),
                                         column: Identifier("customer".into())
@@ -398,15 +398,15 @@ mod tests {
                         ).into())].into()),
                         lateral: false,
                     }),
-                    right: Box::new(TableExpression::Relation(Identifier("products".into()))),
+                    right: Boxed::new(TableExpression::Relation(Identifier("products".into()))),
                     kind: JoinKind::Inner,
                     condition: Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("orders".into())),
                                 column: Identifier("product".into())
                             })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("products".into())),
                                 column: Identifier("ID".into())
                             })),
@@ -434,19 +434,19 @@ mod tests {
             Select {
                 values: vec![ValueExpression::All].into(),
                 table: Some(TableExpression::Join {
-                    left: Box::new(TableExpression::Join {
-                        left: Box::new(TableExpression::Relation(Identifier("customer".into()))),
-                        right: Box::new(TableExpression::Relation(Identifier("orders".into()))),
+                    left: Boxed::new(TableExpression::Join {
+                        left: Boxed::new(TableExpression::Relation(Identifier("customer".into()))),
+                        right: Boxed::new(TableExpression::Relation(Identifier("orders".into()))),
                         kind: JoinKind::Inner,
                         condition: Condition::And(vec![Condition::Value(Box::new(
                             ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("customer".into())),
                                         column: Identifier("ID".into())
                                     }
                                 )),
-                                second: Box::new(ValueExpression::ColumnReference(
+                                second: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("orders".into())),
                                         column: Identifier("customer".into())
@@ -457,15 +457,15 @@ mod tests {
                         ).into())].into()),
                         lateral: false,
                     }),
-                    right: Box::new(TableExpression::Relation(Identifier("products".into()))),
+                    right: Boxed::new(TableExpression::Relation(Identifier("products".into()))),
                     kind: JoinKind::Inner,
                     condition: Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("orders".into())),
                                 column: Identifier("product".into())
                             })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("products".into())),
                                 column: Identifier("ID".into())
                             })),
@@ -532,11 +532,11 @@ mod tests {
                     Combination::Union,
                     Box::new(Select {
                         values: vec![ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: "n".into()
                             })),
-                            second: Box::new(ValueExpression::Literal(sql::Literal::SmallInteger(
+                            second: Boxed::new(ValueExpression::Literal(sql::Literal::SmallInteger(
                                 1
                             ))),
                             operator: BinaryOperator::Add,
@@ -544,13 +544,13 @@ mod tests {
                         table: Some(TableExpression::Relation("cte".into())),
                         where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                             ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: None,
                                         column: "n".into()
                                     }
                                 )),
-                                second: Box::new(ValueExpression::Literal(
+                                second: Boxed::new(ValueExpression::Literal(
                                     sql::Literal::SmallInteger(2)
                                 )),
                                 operator: BinaryOperator::Less
@@ -562,7 +562,7 @@ mod tests {
                         limit: None,
                         for_update: None,
                         combine: None
-                    })
+                    }).into()
                 )),
             }
         );
@@ -575,7 +575,7 @@ mod tests {
             "SELECT count(*) FROM orders GROUP BY uid HAVING uid > 0",
             Select {
                 values: vec![ValueExpression::AggregateExpression(
-                    AggregateExpression::Count(Box::new(ValueExpression::All))
+                    AggregateExpression::Count(Boxed::new(ValueExpression::All))
                 )].into(),
                 table: Some(TableExpression::Relation("orders".into())),
                 where_condition: None,
@@ -586,11 +586,11 @@ mod tests {
                 })].into()),
                 having: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: "uid".into(),
                         })),
-                        second: Box::new(ValueExpression::Literal(Literal::SmallInteger(0))),
+                        second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(0))),
                         operator: BinaryOperator::Greater
                     }
                 ).into())].into())),
