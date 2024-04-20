@@ -152,7 +152,7 @@ where
                 };
             }
 
-            let mut results: Vec<storage::EntireRelation> = Vec::with_capacity(expression_stack.len());
+            let mut results: bumpalo::collections::Vec<'_, storage::EntireRelation> = bumpalo::collections::Vec::with_capacity_in(expression_stack.len(), arena);
             for stacked_expr in expression_stack.into_iter().rev() {
                 let expr = stacked_expr.expr;
 
