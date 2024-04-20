@@ -84,6 +84,13 @@ pub trait Storage {
         transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<EntireRelation, Self::LoadingError>>;
 
+    fn stream_relation<'own, 'name, 'transaction, 'stream>(
+        &'own self,
+        name: &'name str,
+        transaction: &'transaction Self::TransactionGuard
+    ) -> impl Future<Output = Result<(TableSchema, futures::stream::LocalBoxStream<'stream, Row>), Self::LoadingError>>
+    where 'own: 'stream, 'name: 'stream, 'transaction: 'stream;
+
     fn relation_exists(
         &self,
         name: &str,

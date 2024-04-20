@@ -1,3 +1,5 @@
+use futures::stream::StreamExt;
+
 use crate::{execution::naive::EvaulateRaError, storage};
 
 use super::{EvaluateConditions, Join, JoinArguments, JoinContext};
@@ -12,29 +14,31 @@ where
         true
     }
 
-    async fn execute(
+    async fn execute<'lr, 'rr>(
         &self,
         args: JoinArguments<'_>,
         _ctx: JoinContext,
-        result_columns: Vec<(String, sql::DataType, Vec<sql::TypeModifier>)>,
-        left_result: storage::EntireRelation,
-        right_result: storage::EntireRelation,
+        result_columns: Vec<storage::ColumnSchema>,
+        mut left_result: futures::stream::LocalBoxStream<'lr, storage::Row>,
+        right_result: futures::stream::LocalBoxStream<'rr, storage::Row>,
         condition_eval: &CE,
-    ) -> Result<storage::EntireRelation, EvaulateRaError<SE>> {
+    ) -> Result<(storage::TableSchema, futures::stream::BoxStream<storage::Row>), EvaulateRaError<SE>> {
         assert!(
             <Self as Join<CE, SE>>::compatible(self, &args, &_ctx),
             "Not compatible"
         );
 
+        let right_rows: Vec<_> = right_result.collect().await;
+
+        let result_schema = storage::TableSchema {
+            rows: result_columns,
+        };
+
         match args.kind {
             sql::JoinKind::Inner => {
                 let mut result_rows = Vec::new();
-                for left_row in left_result
-                    .parts
-                    .into_iter()
-                    .flat_map(|p| p.rows.into_iter())
-                {
-                    for right_row in right_result.parts.iter().flat_map(|p| p.rows.iter()) {
+                while let Some(left_row) = left_result.next().await {
+                    for right_row in right_rows.iter() {
                         let joined_row_data = {
                             let mut tmp = left_row.data.clone();
                             tmp.extend(right_row.data.clone());
@@ -48,21 +52,14 @@ where
                     }
                 }
 
-                Ok(storage::EntireRelation {
-                    columns: result_columns,
-                    parts: vec![storage::PartialRelation { rows: result_rows }],
-                })
+                Ok((result_schema, futures::stream::iter(result_rows).boxed()))
             }
             sql::JoinKind::LeftOuter => {
                 let mut result_rows = Vec::new();
-                for left_row in left_result
-                    .parts
-                    .into_iter()
-                    .flat_map(|p| p.rows.into_iter())
-                {
+                while let Some(left_row) = left_result.next().await {
                     let mut included = false;
 
-                    for right_row in right_result.parts.iter().flat_map(|p| p.rows.iter()) {
+                    for right_row in right_rows.iter() {
                         let joined_row_data = {
                             let mut tmp = left_row.data.clone();
                             tmp.extend(right_row.data.clone());
@@ -81,7 +78,7 @@ where
                         let joined_row_data = {
                             let mut tmp = left_row.data.clone();
                             tmp.extend(
-                                (0..(result_columns.len() - tmp.len()))
+                                (0..(result_schema.rows.len() - tmp.len()))
                                     .map(|_| storage::Data::Null),
                             );
                             tmp
@@ -93,10 +90,7 @@ where
                     }
                 }
 
-                Ok(storage::EntireRelation {
-                    columns: result_columns,
-                    parts: vec![storage::PartialRelation { rows: result_rows }],
-                })
+                Ok((result_schema, futures::stream::iter(result_rows).boxed()))
             }
             other => {
                 dbg!(other);
