@@ -98,11 +98,11 @@ pub enum Query<'s, 'a> {
     Copy_(copy_::Copy_<'s>),
     Delete(delete::Delete<'s, 'a>),
     CreateTable(create::CreateTable<'s, 'a>),
-    CreateIndex(create::CreateIndex<'s>),
+    CreateIndex(create::CreateIndex<'s, 'a>),
     AlterTable(alter::AlterTable<'s, 'a>),
     DropIndex(drop::DropIndex<'s>),
-    DropTable(drop::DropTable<'s>),
-    TruncateTable(truncate::TruncateTable<'s>),
+    DropTable(drop::DropTable<'s, 'a>),
+    TruncateTable(truncate::TruncateTable<'s, 'a>),
     Configuration(set_config::Configuration),
     BeginTransaction(transactions::IsolationMode),
     CommitTransaction,
@@ -111,7 +111,15 @@ pub enum Query<'s, 'a> {
 }
 
 #[derive(Debug)]
-pub struct ParseQueryError {}
+pub enum ParseQueryError<'i> {
+    NotEverythingWasParsed {
+        remaining: &'i [u8],
+    },
+    ParserError {
+        error: nom::Err<nom::error::VerboseError<&'i [u8]>>
+    },
+    Other,
+}
 
 impl<'i, 'a> ArenaParser<'i, 'a> for Query<'i, 'a>
 {
@@ -177,25 +185,13 @@ impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
     }
 }
 
-impl<'i, 'a> ArenaParser<'i, 'a> for Vec<Query<'i, 'a>> {
+impl<'i, 'a> ArenaParser<'i, 'a> for arenas::Vec<'a, Query<'i, 'a>> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
-            nom::multi::many1(move |i| query(i, a))(i)
+            crate::nom_util::bump_many1(a, move |i| query(i, a))(i)
         }
-    }
-}
-
-impl<'s, 'a> CompatibleParser for Vec<Query<'s, 'a>> {
-    type StaticVersion = Vec<Query<'static, 'static>>;
-
-    fn parameter_count(&self) -> usize {
-        self.iter().map(|q| q.parameter_count()).max().unwrap_or(0)
-    }
-
-    fn to_static(&self) -> Self::StaticVersion {
-        self.iter().map(|q| q.to_static()).collect()
     }
 }
 
@@ -203,19 +199,21 @@ impl<'s, 'a> Query<'s, 'a> {
     pub fn parse<'r, 'outer_a>(
         raw: &'r [u8],
         arena: &'outer_a bumpalo::Bump,
-    ) -> Result<Self, ParseQueryError>
+    ) -> Result<Self, ParseQueryError<'s>>
     where
         'r: 's,
         'outer_a: 'a,
     {
         let (remaining, query) = Query::parse_arena(arena)(raw).map_err(|e| {
-            dbg!(&e);
-            ParseQueryError {}
+            ParseQueryError::ParserError {
+                error: e
+            }
         })?;
 
         if !remaining.is_empty() {
-            let _ = dbg!(core::str::from_utf8(remaining));
-            return Err(ParseQueryError {});
+            return Err(ParseQueryError::NotEverythingWasParsed {
+                remaining
+            });
         }
 
         Ok(query)
@@ -224,20 +222,22 @@ impl<'s, 'a> Query<'s, 'a> {
     pub fn parse_multiple<'r, 'outer_a>(
         raw: &'r [u8],
         arena: &'outer_a bumpalo::Bump,
-    ) -> Result<Vec<Self>, ParseQueryError>
+    ) -> Result<crate::arenas::Vec<'outer_a, Self>, ParseQueryError<'s>>
     where
         'r: 's,
         'outer_a: 'a,
     {
         let (remaining, queries) =
-            nom::multi::many1(move |i| query(i, arena))(raw).map_err(|e| {
-                dbg!(e);
-                ParseQueryError {}
+            crate::nom_util::bump_many1(arena, move |i| query(i, arena))(raw).map_err(|e| {
+                ParseQueryError::ParserError {
+                    error: e
+                }
             })?;
 
         if !remaining.is_empty() {
-            let _ = dbg!(core::str::from_utf8(remaining));
-            return Err(ParseQueryError {});
+            return Err(ParseQueryError::NotEverythingWasParsed {
+                remaining,
+            });
         }
 
         Ok(queries)
@@ -265,11 +265,11 @@ fn query<'i, 'a>(
                 nom::combinator::map(CommitTransaction::parse(), |_| Query::CommitTransaction),
                 nom::combinator::map(AbortTransaction::parse(), |_| Query::RollbackTransaction),
                 nom::combinator::map(CreateTable::parse_arena(arena), Query::CreateTable),
-                nom::combinator::map(CreateIndex::parse(), Query::CreateIndex),
+                nom::combinator::map(CreateIndex::parse_arena(arena), Query::CreateIndex),
                 nom::combinator::map(AlterTable::parse_arena(arena), Query::AlterTable),
                 nom::combinator::map(DropIndex::parse(), Query::DropIndex),
-                nom::combinator::map(DropTable::parse(), Query::DropTable),
-                nom::combinator::map(TruncateTable::parse(), Query::TruncateTable),
+                nom::combinator::map(DropTable::parse_arena(arena), Query::DropTable),
+                nom::combinator::map(TruncateTable::parse_arena(arena), Query::TruncateTable),
                 nom::combinator::map(Configuration::parse(), Query::Configuration),
                 nom::combinator::map(Prepare::parse_arena(arena), Query::Prepare),
                 nom::combinator::map(Vacuum::parse(), Query::Vacuum),
@@ -320,7 +320,7 @@ pub(crate) mod macros {
                 "{:?}",
                 core::str::from_utf8(remaining).unwrap()
             );
-            assert_eq!($expected, result.to_static());
+            assert_eq!(<$target_ty>::from($expected), result.to_static());
         }};
     }
     pub(crate) use arena_parser_parse;
@@ -479,7 +479,7 @@ mod tests {
     #[test]
     fn multiple_queries() {
         arena_parser_parse!(
-            Vec<Query>,
+            crate::arenas::Vec<'_, Query>,
             "ALTER TABLE alert_rule ALTER COLUMN is_paused SET DEFAULT false;\nUPDATE alert_rule SET is_paused = false;"
         );
     }
@@ -624,7 +624,7 @@ mod tests {
                     }),
                     order: OrderBy::Ascending,
                     nulls: NullOrdering::Last
-                }]),
+                }].into()),
                 group_by: None,
                 having: None,
                 limit: None,
@@ -650,7 +650,7 @@ mod tests {
                 group_by: Some(vec![GroupAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
-                })]),
+                })].into()),
                 having: None,
                 limit: None,
                 for_update: None,

@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{ColumnReference, Literal, Parser as _};
+use crate::{ColumnReference, Literal, Parser as _, CompatibleParser};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum GroupAttribute<'s> {
@@ -8,29 +8,34 @@ pub enum GroupAttribute<'s> {
     ColumnIndex(usize),
 }
 
-impl<'s> GroupAttribute<'s> {
-    pub fn to_static(&self) -> GroupAttribute<'static> {
+impl<'i> CompatibleParser for GroupAttribute<'i> {
+    type StaticVersion = GroupAttribute<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
         match self {
             Self::ColumnRef(c) => GroupAttribute::ColumnRef(c.to_static()),
             Self::ColumnIndex(i) => GroupAttribute::ColumnIndex(*i),
         }
     }
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
 }
 
-impl<'i, 's> crate::Parser<'i> for Vec<GroupAttribute<'s>>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for crate::arenas::Vec<'a, GroupAttribute<'i>> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
-            parse(i)
+            parse(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn parse(i: &[u8]) -> IResult<&[u8], Vec<GroupAttribute<'_>>, nom::error::VerboseError<&[u8]>> {
+pub fn parse<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], crate::arenas::Vec<'a, GroupAttribute<'i>>, nom::error::VerboseError<&'i [u8]>> {
     let (rem, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("GROUP"),
         nom::character::complete::multispace1,
@@ -38,7 +43,8 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Vec<GroupAttribute<'_>>, nom::error::Ve
         nom::character::complete::multispace1,
     ))(i)?;
 
-    let (rem, tmp) = nom::multi::separated_list1(
+    let (rem, tmp) = crate::nom_util::bump_separated_list1(
+        arena,
         nom::sequence::tuple((
             nom::character::complete::multispace0,
             nom::bytes::complete::tag(","),
@@ -62,12 +68,12 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Vec<GroupAttribute<'_>>, nom::error::Ve
 mod tests {
     use super::*;
 
-    use crate::macros::parser_parse;
+    use crate::macros::arena_parser_parse;
 
     #[test]
     fn single_attribute() {
-        parser_parse!(
-            Vec<GroupAttribute<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<'_, GroupAttribute<'_>>,
             "group by first",
             vec![GroupAttribute::ColumnRef(ColumnReference {
                 relation: None,
@@ -78,8 +84,8 @@ mod tests {
 
     #[test]
     fn column_index() {
-        parser_parse!(
-            Vec<GroupAttribute<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<'_, GroupAttribute<'_>>,
             "group by 1",
             vec![GroupAttribute::ColumnIndex(1)]
         );

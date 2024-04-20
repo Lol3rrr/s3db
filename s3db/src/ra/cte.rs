@@ -187,7 +187,7 @@ mod tests {
                     combine: None,
                 }),
                 columns: None,
-            }],
+            }].into(),
             recursive: false,
         };
 
@@ -257,8 +257,8 @@ mod tests {
                         }),
                     )),
                 }),
-                columns: Some(vec!["n".into()]),
-            }],
+                columns: Some(vec!["n".into()].into()),
+            }].into(),
             recursive: true,
         };
 

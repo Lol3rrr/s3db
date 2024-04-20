@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{ColumnReference, Literal, Parser as _};
+use crate::{ColumnReference, Literal, Parser as _, CompatibleParser};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Ordering<'s> {
@@ -27,20 +27,38 @@ pub enum NullOrdering {
     Last,
 }
 
-impl<'i, 's> crate::Parser<'i> for Vec<Ordering<'s>>
-where
-    'i: 's,
-{
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i> CompatibleParser for Ordering<'i> {
+    type StaticVersion = Ordering<'static>;
+
+    fn to_static(&self) -> Self::StaticVersion {
+        Ordering {
+            column: match &self.column {
+                OrderAttribute::ColumnRef(cr) => OrderAttribute::ColumnRef(cr.to_static()),
+                OrderAttribute::ColumnIndex(idx) => OrderAttribute::ColumnIndex(*idx),
+            },
+            order: self.order.clone(),
+            nulls: self.nulls.clone(),
+        }
+    }
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+}
+
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for crate::arenas::Vec<'a, Ordering<'i>> {
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
-            order_by(i)
+            order_by(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::VerboseError<&[u8]>> {
+pub fn order_by<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], crate::arenas::Vec<'a, Ordering<'i>>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("ORDER"),
         nom::character::complete::multispace1,
@@ -50,7 +68,8 @@ pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::Verbo
 
     let (remaining, tmp) = nom::combinator::cut(nom::error::context(
         "ORDER BY",
-        nom::multi::separated_list1(
+        crate::nom_util::bump_separated_list1(
+            arena,
             nom::sequence::tuple((
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
@@ -108,13 +127,13 @@ pub fn order_by(i: &[u8]) -> IResult<&[u8], Vec<Ordering<'_>>, nom::error::Verbo
 mod tests {
     use super::*;
 
-    use crate::macros::parser_parse;
+    use crate::macros::{arena_parser_parse, arena_parser_parse_err};
     use pretty_assertions::assert_eq;
 
     #[test]
     fn order_by_column() {
-        parser_parse!(
-            Vec<Ordering<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<Ordering<'_>>,
             "ORDER BY something",
             vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
@@ -129,8 +148,8 @@ mod tests {
 
     #[test]
     fn order_by_column_asc() {
-        parser_parse!(
-            Vec<Ordering<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<Ordering<'_>>,
             "ORDER BY something ASC",
             vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
@@ -145,8 +164,8 @@ mod tests {
 
     #[test]
     fn orderings() {
-        parser_parse!(
-            Vec<Ordering<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<Ordering<'_>>,
             "ORDER BY something DESC",
             vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
@@ -158,8 +177,8 @@ mod tests {
             }]
         );
 
-        parser_parse!(
-            Vec<Ordering<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<Ordering<'_>>,
             "ORDER BY something DESC NULLS LAST",
             vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
@@ -171,8 +190,8 @@ mod tests {
             }]
         );
 
-        parser_parse!(
-            Vec<Ordering<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<Ordering<'_>>,
             "ORDER BY something ASC NULLS FIRST",
             vec![Ordering {
                 column: OrderAttribute::ColumnRef(ColumnReference {
@@ -187,19 +206,16 @@ mod tests {
 
     #[test]
     fn error() {
-        #[allow(deprecated)]
-        let test = order_by("ORDER BY ".as_bytes()).unwrap_err();
-        assert!(
-            matches!(test, nom::Err::Failure(_)),
-            "Expected Failure error, got {:?}",
-            test
+        arena_parser_parse_err!(
+            crate::arenas::Vec<'_, Ordering<'_>>,
+            "ORDER BY "
         );
     }
 
     #[test]
     fn order_by_index() {
-        parser_parse!(
-            Vec<Ordering<'_>>,
+        arena_parser_parse!(
+            crate::arenas::Vec<'_, Ordering<'_>>,
             "order by 1",
             vec![Ordering {
                 column: OrderAttribute::ColumnIndex(1),

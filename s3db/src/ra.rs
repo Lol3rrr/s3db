@@ -706,7 +706,7 @@ impl RaExpression {
         // FIXME
         // This is currently the wrong way around, however this should yield the same result at
         // least at the moment
-        let ordered_ra = select::parse_order(where_ra, &query.order_by)?;
+        let ordered_ra = select::parse_order(where_ra, query.order_by.as_deref())?;
         let selected_ra = select::parse_aggregate(ordered_ra, &query, scope, placeholders, outer)?;
 
         let limited_ra = match &query.limit {

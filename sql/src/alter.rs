@@ -69,7 +69,7 @@ impl<'s, 'a> CompatibleParser for AlterTable<'s, 'a> {
                 columns: crate::arenas::Vec::Heap(columns
                     .iter()
                     .map(|(cn, ct)| (cn.to_static(), ct.clone()))
-                    .collect::<Vec<_>>()),
+                    .collect()),
             },
             Self::AtlerColumnDropNotNull { table, column } => AlterTable::AtlerColumnDropNotNull {
                 table: table.to_static(),

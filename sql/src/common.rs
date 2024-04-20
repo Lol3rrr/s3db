@@ -397,7 +397,7 @@ mod tests {
                 second: Box::new(ValueExpression::List(vec![
                     ValueExpression::Literal(Literal::Str("first".into())),
                     ValueExpression::Literal(Literal::Str("second".into()))
-                ])),
+                ].into())),
                 operator: BinaryOperator::In
             }
         );
@@ -629,14 +629,14 @@ mod tests {
                 })),
                 cases: vec![
                     (
-                        vec![ValueExpression::Literal(Literal::Str("first".into()))],
+                        vec![ValueExpression::Literal(Literal::Str("first".into()))].into(),
                         ValueExpression::Literal(Literal::SmallInteger(123))
                     ),
                     (
-                        vec![ValueExpression::Literal(Literal::Str("second".into()))],
+                        vec![ValueExpression::Literal(Literal::Str("second".into()))].into(),
                         ValueExpression::Literal(Literal::SmallInteger(234))
                     )
-                ],
+                ].into(),
                 else_case: Some(Box::new(ValueExpression::Literal(Literal::SmallInteger(0)))),
             }
         );

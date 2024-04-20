@@ -10,7 +10,7 @@ pub enum TableExpression<'s, 'a> {
     Renamed {
         inner: Box<TableExpression<'s, 'a>>,
         name: Identifier<'s>,
-        column_rename: Option<Vec<Identifier<'s>>>,
+        column_rename: Option<crate::arenas::Vec<'a, Identifier<'s>>>,
     },
     Join {
         left: Box<TableExpression<'s, 'a>>,
@@ -64,7 +64,7 @@ impl<'i, 'a> CompatibleParser for TableExpression<'i, 'a> {
                 name: name.to_static(),
                 column_rename: column_rename
                     .as_ref()
-                    .map(|c| c.iter().map(|c| c.to_static()).collect()),
+                    .map(|c| crate::arenas::Vec::Heap(c.iter().map(|c| c.to_static()).collect())),
             },
             Self::Join {
                 left,
@@ -129,7 +129,8 @@ pub fn table_expression<'i, 'a>(
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                     nom::character::complete::multispace0,
-                    nom::multi::separated_list1(
+                    crate::nom_util::bump_separated_list1(
+                        arena,
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag(","),
@@ -267,7 +268,7 @@ pub fn table_expression<'i, 'a>(
                     left: Box::new(table),
                     right: Box::new(other_table),
                     kind: join_kind,
-                    condition: Condition::And(vec![].into()),
+                    condition: Condition::And(crate::arenas::Vec::arena(arena)),
                     lateral: is_lateral,
                 };
             }
@@ -323,7 +324,7 @@ mod tests {
             TableExpression::Renamed {
                 inner: Box::new(TableExpression::Relation(Identifier("something".into()))),
                 name: "o".into(),
-                column_rename: Some(vec![Identifier("n".into())])
+                column_rename: Some(vec![Identifier("n".into())].into())
             }
         );
     }

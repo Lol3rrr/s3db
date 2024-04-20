@@ -22,6 +22,31 @@ where
     }
 }
 
+pub fn bump_many1<'a, P, I, O, E>(
+    arena: &'a bumpalo::Bump,
+    mut parser: P,
+) -> impl FnMut(I) -> nom::IResult<I, crate::arenas::Vec<'a, O>, E>
+where
+    P: nom::Parser<I, O, E>,
+    I: Copy,
+{
+    move |i| {
+        let mut result = bumpalo::collections::Vec::new_in(arena);
+        let mut remaining = i;
+
+        loop {
+            match nom::Parser::parse(&mut parser, remaining) {
+                Ok((rem_tmp, res_tmp)) => {
+                    result.push(res_tmp);
+                    remaining = rem_tmp;
+                }
+                Err(e) if result.is_empty() => return Err(e),
+                Err(_) => return Ok((remaining, crate::arenas::Vec::Arena(result))),
+            };
+        }
+    }
+}
+
 pub fn bump_separated_list0<'a, S, P, I, O, SO, E>(arena: &'a bumpalo::Bump, mut seperator: S, mut parser: P) -> impl FnMut(I) -> nom::IResult<I, crate::arenas::Vec<'a, O>, E>
 where
     P: nom::Parser<I, O, E>,

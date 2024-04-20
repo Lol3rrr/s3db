@@ -6,12 +6,12 @@ use crate::{query, Identifier, Parser as _, Query, CompatibleParser};
 pub struct WithCTE<'s, 'a> {
     pub name: Identifier<'s>,
     pub query: Query<'s, 'a>,
-    pub columns: Option<Vec<Identifier<'s>>>,
+    pub columns: Option<crate::arenas::Vec<'a, Identifier<'s>>>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct WithCTEs<'s, 'a> {
-    pub parts: Vec<WithCTE<'s, 'a>>,
+    pub parts: crate::arenas::Vec<'a, WithCTE<'s, 'a>>,
     pub recursive: bool,
 }
 
@@ -34,7 +34,7 @@ impl<'s, 'a> CompatibleParser for WithCTEs<'s, 'a> {
 
     fn to_static(&self) -> Self::StaticVersion {
         WithCTEs {
-            parts: self
+            parts: crate::arenas::Vec::Heap(self
                 .parts
                 .iter()
                 .map(|p| WithCTE {
@@ -43,9 +43,9 @@ impl<'s, 'a> CompatibleParser for WithCTEs<'s, 'a> {
                     columns: p
                         .columns
                         .as_ref()
-                        .map(|cs| cs.iter().map(|c| c.to_static()).collect()),
+                        .map(|cs| crate::arenas::Vec::Heap(cs.iter().map(|c| c.to_static()).collect())),
                 })
-                .collect(),
+                .collect()),
             recursive: self.recursive,
         }
     }
@@ -66,7 +66,8 @@ pub fn with_ctes<'i, 'a>(
         ))),
     ))(i)?;
 
-    let (remaining, parts) = nom::multi::separated_list1(
+    let (remaining, parts) = crate::nom_util::bump_separated_list1(
+        arena,
         nom::sequence::tuple((
             nom::character::complete::multispace0,
             nom::bytes::complete::tag(","),
@@ -80,7 +81,8 @@ pub fn with_ctes<'i, 'a>(
                     nom::bytes::complete::tag("("),
                     nom::character::complete::multispace0,
                 )),
-                nom::multi::separated_list0(
+                crate::nom_util::bump_separated_list0(
+                    arena,
                     nom::sequence::tuple((
                         nom::character::complete::multispace0,
                         nom::bytes::complete::tag(","),
@@ -149,7 +151,7 @@ mod tests {
                         combine: None
                     }),
                     columns: None,
-                }],
+                }].into(),
                 recursive: false,
             }
         );
@@ -197,7 +199,7 @@ WITH regional_sales AS (
                         }),
                         columns: None,
                     }
-                ],
+                ].into(),
                 recursive: false,
             }
         );
@@ -259,8 +261,8 @@ WITH regional_sales AS (
                             })
                         ))
                     }),
-                    columns: Some(vec!["n".into()]),
-                }],
+                    columns: Some(vec!["n".into()].into()),
+                }].into(),
                 recursive: true
             }
         );

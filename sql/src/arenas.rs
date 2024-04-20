@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_types)]
+
 #[derive(Debug)]
 pub enum Boxed<'a, T> {
     Arena(bumpalo::boxed::Box<'a, T>),
@@ -67,6 +69,17 @@ impl<'a, T> Vec<'a, T> {
             Self::Heap(heaped) => Vec::Heap(heaped),
         }
     }
+
+    pub fn push(&mut self, data: T) {
+        match self {
+            Self::Arena(v) => {
+                v.push(data);
+            }
+            Self::Heap(v) => {
+                v.push(data);
+            }
+        };
+    }
 }
 
 impl<'a, T> From<bumpalo::collections::Vec<'a, T>> for Vec<'a, T> {
@@ -96,5 +109,54 @@ impl<'a, 'b, X, Y> PartialEq<Vec<'b, Y>> for Vec<'a, X> where X: PartialEq<Y> {
         let first: &[X] = self;
         let second: &[Y] = other;
         first.eq(second)
+    }
+}
+
+impl<'a, T> IntoIterator for Vec<'a, T> {
+    type IntoIter = ArenaVecIterator<'a, T>;
+    type Item = T;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Self::Heap(h) => ArenaVecIterator::Heap(h.into_iter()),
+            Self::Arena(a) => ArenaVecIterator::Arena(a.into_iter()),
+        }
+    }
+}
+
+impl<'r,'a, T> IntoIterator for &'r Vec<'a, T> {
+    type Item = &'r T;
+    type IntoIter = core::slice::Iter<'r, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+pub enum ArenaVecIterator<'a, T> {
+    Heap(std::vec::IntoIter<T>),
+    Arena(bumpalo::collections::vec::IntoIter<'a, T>),
+}
+
+impl<'a, T> Iterator for ArenaVecIterator<'a, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Heap(iter) => iter.next(),
+            Self::Arena(iter) => iter.next(),
+        }
+    }
+}
+
+impl<'a, T> crate::CompatibleParser for Vec<'a, T> where T: crate::CompatibleParser {
+    type StaticVersion = Vec<'static, T::StaticVersion>;
+
+    fn to_static(&self) -> Self::StaticVersion {
+        Vec::Heap(self.iter().map(|v| v.to_static()).collect())
+    }
+
+    fn parameter_count(&self) -> usize {
+        self.iter().map(|v| v.parameter_count()).max().unwrap_or(0)
     }
 }

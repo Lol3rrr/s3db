@@ -7,7 +7,7 @@ use super::{common::Identifier, ColumnReference, Select, ValueExpression};
 #[derive(Debug, PartialEq)]
 pub struct Insert<'s, 'a> {
     pub table: Identifier<'s>,
-    pub fields: Vec<Identifier<'s>>,
+    pub fields: crate::arenas::Vec<'a, Identifier<'s>>,
     pub values: InsertValues<'s, 'a>,
     pub returning: Option<Identifier<'s>>,
     pub on_conflict: Option<ConflictHandling<'s, 'a>>,
@@ -15,30 +15,30 @@ pub struct Insert<'s, 'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct ConflictHandling<'s, 'a> {
-    pub attributes: Vec<Identifier<'s>>,
-    pub update: Vec<(ColumnReference<'s>, ValueExpression<'s, 'a>)>,
+    pub attributes: crate::arenas::Vec<'a, Identifier<'s>>,
+    pub update: crate::arenas::Vec<'a, (ColumnReference<'s>, ValueExpression<'s, 'a>)>,
 }
 
 impl<'s,'a> ConflictHandling<'s, 'a> {
     pub fn to_static(&self) -> ConflictHandling<'static, 'static> {
         ConflictHandling {
-            attributes: self
+            attributes: crate::arenas::Vec::Heap(self
                 .attributes
                 .iter()
                 .map(|ident| ident.to_static())
-                .collect(),
-            update: self
+                .collect()),
+            update: crate::arenas::Vec::Heap(self
                 .update
                 .iter()
                 .map(|(cr, val)| (cr.to_static(), val.to_static()))
-                .collect(),
+                .collect()),
         }
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum InsertValues<'s, 'a> {
-    Values(Vec<Vec<ValueExpression<'s, 'a>>>),
+    Values(crate::arenas::Vec<'a, crate::arenas::Vec<'a, ValueExpression<'s, 'a>>>),
     Select(Select<'s, 'a>),
 }
 
@@ -48,9 +48,9 @@ impl<'i, 'a> CompatibleParser for InsertValues<'i, 'a> {
     fn to_static(&self) -> Self::StaticVersion {
         match self {
             Self::Values(vs) => InsertValues::Values(
-                vs.iter()
-                    .map(|row| row.iter().map(|v| v.to_static()).collect())
-                    .collect(),
+                crate::arenas::Vec::Heap(vs.iter()
+                    .map(|row| crate::arenas::Vec::Heap(row.iter().map(|v| v.to_static()).collect()))
+                    .collect()),
             ),
             Self::Select(s) => InsertValues::Select(s.to_static()),
         }
@@ -82,7 +82,7 @@ impl<'i, 'a> CompatibleParser for Insert<'i, 'a> {
     fn to_static(&self) -> Self::StaticVersion {
         Insert {
             table: self.table.to_static(),
-            fields: self.fields.iter().map(|f| f.to_static()).collect(),
+            fields: crate::arenas::Vec::Heap(self.fields.iter().map(|f| f.to_static()).collect()),
             values: self.values.to_static(),
             returning: self.returning.as_ref().map(|r| r.to_static()),
             on_conflict: self.on_conflict.as_ref().map(|c| c.to_static()),
@@ -114,7 +114,8 @@ pub fn insert<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8]
             Identifier::parse(),
             nom::character::complete::multispace0,
             nom::bytes::complete::tag("("),
-            nom::multi::separated_list1(
+            crate::nom_util::bump_separated_list1(
+                arena,
                 nom::bytes::complete::tag(","),
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
@@ -145,7 +146,8 @@ pub fn insert<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8]
                         nom::character::complete::multispace0,
                     )),
                     nom::bytes::complete::tag("("),
-                    nom::multi::separated_list1(
+                    crate::nom_util::bump_separated_list1(
+                        arena,
                         nom::bytes::complete::tag(","),
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
@@ -164,7 +166,8 @@ pub fn insert<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8]
                         nom::bytes::complete::tag_no_case("SET"),
                         nom::character::complete::multispace1,
                     )),
-                    nom::multi::separated_list1(
+                    crate::nom_util::bump_separated_list1(
+                        arena,    
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag(","),
@@ -207,7 +210,8 @@ fn insert_values<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [
                     nom::bytes::complete::tag_no_case("VALUES"),
                     nom::character::complete::multispace0,
                 )),
-                nom::multi::separated_list1(
+                crate::nom_util::bump_separated_list1(
+                    arena,
                     nom::sequence::tuple((
                         nom::character::complete::multispace0,
                         nom::bytes::complete::tag(","),
@@ -215,7 +219,8 @@ fn insert_values<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [
                     )),
                     nom::sequence::tuple((
                         nom::bytes::complete::tag("("),
-                        nom::multi::separated_list1(
+                        crate::nom_util::bump_separated_list1(
+                            arena,
                             nom::bytes::complete::tag(","),
                             nom::sequence::tuple((
                                 nom::character::complete::multispace0,
@@ -250,11 +255,11 @@ mod tests {
             "INSERT INTO testing (first, second) VALUES ('fval', 'sval')",
             Insert {
                 table: Identifier("testing".into()),
-                fields: vec![Identifier("first".into()), Identifier("second".into())],
+                fields: vec![Identifier("first".into()), Identifier("second".into())].into(),
                 values: InsertValues::Values(vec![vec![
                     ValueExpression::Literal(Literal::Str("fval".into())),
                     ValueExpression::Literal(Literal::Str("sval".into()))
-                ]]),
+                ].into()].into()),
                 returning: None,
                 on_conflict: None,
             }
@@ -268,17 +273,17 @@ mod tests {
             "INSERT INTO testing (first, second) VALUES ('fval', 'sval'), ('fval2', 'sval2')",
             Insert {
                 table: Identifier("testing".into()),
-                fields: vec![Identifier("first".into()), Identifier("second".into())],
+                fields: vec![Identifier("first".into()), Identifier("second".into())].into(),
                 values: InsertValues::Values(vec![
                     vec![
                         ValueExpression::Literal(Literal::Str("fval".into())),
                         ValueExpression::Literal(Literal::Str("sval".into()))
-                    ],
+                    ].into(),
                     vec![
                         ValueExpression::Literal(Literal::Str("fval2".into())),
                         ValueExpression::Literal(Literal::Str("sval2".into()))
-                    ]
-                ]),
+                    ].into()
+                ].into()),
                 returning: None,
                 on_conflict: None,
             }
@@ -298,14 +303,14 @@ mod tests {
                     "success".into(),
                     "error".into(),
                     "timestamp".into()
-                ],
+                ].into(),
                 values: InsertValues::Values(vec![vec![
                     ValueExpression::Placeholder(1),
                     ValueExpression::Placeholder(2),
                     ValueExpression::Placeholder(3),
                     ValueExpression::Placeholder(4),
                     ValueExpression::Placeholder(5),
-                ]]),
+                ].into()].into()),
                 returning: Some("id".into()),
                 on_conflict: None,
             }

@@ -26,7 +26,7 @@ fn insert_with_on_conflict() {
                 Identifier("title".into()),
                 Identifier("created".into()),
                 Identifier("updated".into())
-            ],
+            ].into(),
             values: InsertValues::Select(Select {
                 values: vec![
                     ValueExpression::ColumnReference(ColumnReference {
@@ -70,7 +70,7 @@ fn insert_with_on_conflict() {
             }),
             returning: None,
             on_conflict: Some(ConflictHandling {
-                attributes: vec![Identifier("uid".into()), Identifier("org_id".into())],
+                attributes: vec![Identifier("uid".into()), Identifier("org_id".into())].into(),
                 update: vec![
                     (
                         ColumnReference {
@@ -92,7 +92,7 @@ fn insert_with_on_conflict() {
                             column: Identifier("updated".into())
                         })
                     )
-                ]
+                ].into()
             })
         },
         insert_query.to_static()
@@ -434,7 +434,7 @@ fn select_limit_offset() {
                     order: OrderBy::Ascending,
                     nulls: NullOrdering::Last
                 }
-            ]),
+            ].into()),
             group_by: None,
             having: None,
             limit: Some(SelectLimit {
@@ -608,7 +608,7 @@ INNER JOIN (
                                 )),
                                 second: Box::new(ValueExpression::List(vec![
                                     ValueExpression::Placeholder(1)
-                                ])),
+                                ].into())),
                                 operator: BinaryOperator::In
                             }).into()),
                             Condition::Or(vec![
@@ -705,7 +705,7 @@ fn testing_subquery() {
                         relation: Some("br".into()),
                         column: "role".into()
                     })),
-                    second: Box::new(ValueExpression::List(vec![ValueExpression::Placeholder(1)])),
+                    second: Box::new(ValueExpression::List(vec![ValueExpression::Placeholder(1)].into())),
                     operator: BinaryOperator::In,
                 }).into()),
                 Condition::Or(vec![
@@ -831,7 +831,7 @@ fn select_group_by_number() {
             table: Some(TableExpression::Relation("users".into())),
             where_condition: None,
             order_by: None,
-            group_by: Some(vec![GroupAttribute::ColumnIndex(2)]),
+            group_by: Some(vec![GroupAttribute::ColumnIndex(2)].into()),
             having: None,
             limit: None,
             for_update: None,

@@ -7,7 +7,7 @@ use super::{Condition, Identifier, ValueExpression};
 #[derive(Debug, PartialEq)]
 pub struct Update<'s, 'a> {
     pub table: Identifier<'s>,
-    pub fields: Vec<(Identifier<'s>, ValueExpression<'s, 'a>)>,
+    pub fields: crate::arenas::Vec<'a, (Identifier<'s>, ValueExpression<'s, 'a>)>,
     pub condition: Option<Condition<'s, 'a>>,
     pub from: Option<UpdateFrom<'s>>,
 }
@@ -27,11 +27,11 @@ impl<'s, 'a> CompatibleParser for Update<'s, 'a> {
     fn to_static(&self) -> Self::StaticVersion {
         Update {
             table: self.table.to_static(),
-            fields: self
+            fields: crate::arenas::Vec::Heap(self
                 .fields
                 .iter()
                 .map(|f| (f.0.to_static(), f.1.to_static()))
-                .collect(),
+                .collect()),
             condition: self.condition.as_ref().map(|c| c.to_static()),
             from: self.from.as_ref().map(|f| f.to_static()),
         }
@@ -87,7 +87,8 @@ pub fn update<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8]
         nom::character::complete::multispace1,
         nom::bytes::complete::tag_no_case("SET"),
         nom::character::complete::multispace1,
-        nom::multi::separated_list1(
+        crate::nom_util::bump_separated_list1(
+            arena,
             nom::sequence::tuple((
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag(","),
@@ -169,7 +170,7 @@ mod tests {
                 fields: vec![(
                     Identifier("name".into()),
                     ValueExpression::Literal(Literal::Str("changed".into()))
-                )],
+                )].into(),
                 condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -201,7 +202,7 @@ mod tests {
                         Identifier("updated".into()),
                         ValueExpression::Placeholder(2)
                     )
-                ],
+                ].into(),
                 condition: Some(Condition::And(vec![
                     Condition::Value(Box::new(ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -219,7 +220,7 @@ mod tests {
                         second: Box::new(ValueExpression::List(vec![
                             ValueExpression::Literal(Literal::Str("SignUpStarted".into())),
                             ValueExpression::Literal(Literal::Str("InvitePending".into()))
-                        ])),
+                        ].into())),
                         operator: BinaryOperator::In
                     }).into()),
                 ].into())),
@@ -252,7 +253,7 @@ mod tests {
                         length: Literal::SmallInteger(9),
                         padding: Literal::Str("0".into())
                     })
-                )],
+                )].into(),
                 condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {
@@ -281,7 +282,7 @@ mod tests {
                         relation: Some(Identifier("folder".into())),
                         column: Identifier("uid".into())
                     })
-                )],
+                )].into(),
                 condition: Some(Condition::And(vec![
                     Condition::Value(Box::new(ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {

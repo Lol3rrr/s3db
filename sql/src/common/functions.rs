@@ -36,7 +36,7 @@ pub enum FunctionCall<'s, 'a> {
         padding: Literal<'s>,
     },
     Coalesce {
-        values: Vec<ValueExpression<'s, 'a>>,
+        values: crate::arenas::Vec<'a, ValueExpression<'s, 'a>>,
     },
     Exists {
         query: Box<Select<'s, 'a>>,
@@ -108,7 +108,7 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
                 padding: padding.to_static(),
             },
             Self::Coalesce { values } => FunctionCall::Coalesce {
-                values: values.iter().map(|v| v.to_static()).collect(),
+                values: crate::arenas::Vec::Heap(values.iter().map(|v| v.to_static()).collect()),
             },
             Self::Exists { query } => FunctionCall::Exists {
                 query: Box::new(query.to_static()),
@@ -188,7 +188,8 @@ pub fn function_call<'i, 'a>(
                 nom::bytes::complete::tag("COALESCE"),
                 nom::character::complete::multispace0,
                 nom::bytes::complete::tag("("),
-                nom::multi::separated_list1(
+                crate::nom_util::bump_separated_list1(
+                    arena,
                     nom::sequence::tuple((
                         nom::character::complete::multispace0,
                         nom::bytes::complete::tag(","),
@@ -327,7 +328,7 @@ mod tests {
                         column: Identifier("updated_by".into()),
                     }),
                     ValueExpression::Literal(Literal::SmallInteger(-1))
-                ]
+                ].into()
             }
         );
     }

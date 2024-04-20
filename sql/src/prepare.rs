@@ -7,7 +7,7 @@ use super::{query, DataType, Identifier, Query};
 #[derive(Debug, PartialEq)]
 pub struct Prepare<'s, 'a> {
     pub name: Identifier<'s>,
-    pub params: Vec<DataType>,
+    pub params: crate::arenas::Vec<'a, DataType>,
     pub query: Box<Query<'s, 'a>>,
 }
 
@@ -33,7 +33,7 @@ impl<'s, 'a> CompatibleParser for Prepare<'s, 'a> {
     fn to_static(&self) -> Self::StaticVersion {
         Prepare {
             name: self.name.to_static(),
-            params: self.params.clone(),
+            params: self.params.clone_to_heap(),
             query: Box::new(self.query.to_static()),
         }
     }
@@ -58,7 +58,8 @@ pub fn parse<'i, 'a>(
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                     nom::character::complete::multispace0,
-                    nom::multi::separated_list1(
+                    crate::nom_util::bump_separated_list1(
+                        arena,
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag(","),
@@ -78,7 +79,7 @@ pub fn parse<'i, 'a>(
         )),
         |(name, params, _, _, _, q)| Prepare {
             name,
-            params: params.unwrap_or(Vec::new()),
+            params: params.unwrap_or(crate::arenas::Vec::arena(arena)),
             query: Box::new(q),
         },
     )(i)?;
@@ -102,7 +103,7 @@ mod tests {
             "PREPARE testing as SELECT * FROM users",
             Prepare {
                 name: "testing".into(),
-                params: vec![],
+                params: vec![].into(),
                 query: Box::new(Query::Select(Select {
                     values: vec![ValueExpression::All].into(),
                     table: Some(TableExpression::Relation("users".into())),
@@ -125,7 +126,7 @@ mod tests {
             "PREPARE testing(integer) as SELECT * FROM users WHERE id = $1",
             Prepare {
                 name: "testing".into(),
-                params: vec![DataType::Integer],
+                params: vec![DataType::Integer].into(),
                 query: Box::new(Query::Select(Select {
                     values: vec![ValueExpression::All].into(),
                     table: Some(TableExpression::Relation("users".into())),

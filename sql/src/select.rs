@@ -28,8 +28,8 @@ pub struct Select<'s, 'a> {
     pub table: Option<TableExpression<'s, 'a>>,
     /// A condition to filter out unwanted queries
     pub where_condition: Option<Condition<'s, 'a>>,
-    pub order_by: Option<Vec<Ordering<'s>>>,
-    pub group_by: Option<Vec<GroupAttribute<'s>>>,
+    pub order_by: Option<crate::arenas::Vec<'a, Ordering<'s>>>,
+    pub group_by: Option<crate::arenas::Vec<'a, GroupAttribute<'s>>>,
     pub having: Option<Condition<'s, 'a>>,
     pub limit: Option<SelectLimit>,
     pub for_update: Option<()>,
@@ -51,7 +51,7 @@ impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
             table: self.table.as_ref().map(|t| t.to_static()),
             where_condition: self.where_condition.as_ref().map(|c| c.to_static()),
             order_by: self.order_by.as_ref().map(|orders| {
-                orders
+                crate::arenas::Vec::Heap(orders
                     .iter()
                     .map(|order| Ordering {
                         column: match &order.column {
@@ -63,12 +63,12 @@ impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
                         order: order.order.clone(),
                         nulls: order.nulls.clone(),
                     })
-                    .collect()
+                    .collect())
             }),
             group_by: self
                 .group_by
                 .as_ref()
-                .map(|idents| idents.iter().map(|i| i.to_static()).collect()),
+                .map(|idents| crate::arenas::Vec::Heap(idents.iter().map(|i| i.to_static()).collect())),
             having: self.having.as_ref().map(|h| h.to_static()),
             limit: self.limit.clone(),
             for_update: self.for_update,
@@ -189,14 +189,14 @@ pub fn select<'i, 'a>(
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace1,
-                    <Vec<GroupAttribute<'_>>>::parse(),
+                    <crate::arenas::Vec<'a, GroupAttribute<'_>>>::parse_arena(a),
                 ))
                 .map(|(_, attributes)| attributes),
             ),
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace1,
-                    <Vec<Ordering<'_>>>::parse(),
+                    <crate::arenas::Vec<'a, Ordering<'_>>>::parse_arena(a),
                 ))
                 .map(|(_, order)| order),
             ),
@@ -504,7 +504,7 @@ mod tests {
                     }),
                     order: OrderBy::Ascending,
                     nulls: NullOrdering::Last
-                }]),
+                }].into()),
                 group_by: None,
                 having: None,
                 limit: None,
@@ -583,7 +583,7 @@ mod tests {
                 group_by: Some(vec![GroupAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "uid".into(),
-                })]),
+                })].into()),
                 having: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
                         first: Box::new(ValueExpression::ColumnReference(ColumnReference {

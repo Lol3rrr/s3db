@@ -30,7 +30,7 @@ pub fn parse_condition(
 
 pub fn parse_order(
     base: RaExpression,
-    order: &Option<Vec<Ordering<'_>>>,
+    order: Option<&[Ordering<'_>]>,
 ) -> Result<RaExpression, ParseSelectError> {
     match order {
         Some(orders) => {

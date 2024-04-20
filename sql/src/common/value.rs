@@ -40,12 +40,12 @@ pub enum ValueExpression<'s, 'a> {
     RowConstructor,
     ParenedExpression,
     Placeholder(usize),
-    List(Vec<ValueExpression<'s, 'a>>),
+    List(crate::arenas::Vec<'a, ValueExpression<'s, 'a>>),
     SubQuery(select::Select<'s, 'a>),
     Not(Box<ValueExpression<'s, 'a>>),
     Case {
         matched_value: Box<ValueExpression<'s,'a>>,
-        cases: Vec<(Vec<ValueExpression<'s, 'a>>, ValueExpression<'s, 'a>)>,
+        cases: crate::arenas::Vec<'a, (crate::arenas::Vec<'a, ValueExpression<'s, 'a>>, ValueExpression<'s, 'a>)>,
         else_case: Option<Box<ValueExpression<'s, 'a>>>,
     },
 }
@@ -80,30 +80,6 @@ impl<'s, 'a> ValueExpression<'s, 'a> {
             Self::Not(v) => v.is_aggregate(),
             Self::Case { .. } => false, // TODO is this actually correct?
         }
-    }
-}
-
-impl<'i, 'a> CompatibleParser for Vec<ValueExpression<'i, 'a>> {
-    type StaticVersion = Vec<ValueExpression<'static, 'static>>;
-
-    fn to_static(&self) -> Self::StaticVersion {
-        self.iter().map(|p| p.to_static()).collect()
-    }
-
-    fn parameter_count(&self) -> usize {
-        self.iter().map(|p| p.parameter_count()).max().unwrap_or(0)
-    }
-}
-
-impl<'i, 'a> CompatibleParser for crate::arenas::Vec<'a, ValueExpression<'i, 'a>> {
-    type StaticVersion = crate::arenas::Vec<'static,ValueExpression<'static, 'static>>;
-
-    fn to_static(&self) -> Self::StaticVersion {
-        crate::arenas::Vec::Heap(self.iter().map(|p| p.to_static()).collect())
-    }
-
-    fn parameter_count(&self) -> usize {
-        self.iter().map(|p| p.parameter_count()).max().unwrap_or(0)
     }
 }
 
@@ -148,7 +124,7 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
             Self::RowConstructor => ValueExpression::RowConstructor,
             Self::ParenedExpression => ValueExpression::ParenedExpression,
             Self::Placeholder(p) => ValueExpression::Placeholder(*p),
-            Self::List(vals) => ValueExpression::List(vals.iter().map(|v| v.to_static()).collect()),
+            Self::List(vals) => ValueExpression::List(crate::arenas::Vec::Heap(vals.iter().map(|v| v.to_static()).collect())),
             Self::SubQuery(s) => ValueExpression::SubQuery(s.to_static()),
             Self::Not(v) => ValueExpression::Not(Box::new(v.to_static())),
             Self::Case {
@@ -157,15 +133,15 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
                 else_case,
             } => ValueExpression::Case {
                 matched_value: Box::new(matched_value.to_static()),
-                cases: cases
+                cases: crate::arenas::Vec::Heap(cases
                     .iter()
                     .map(|(matching, value)| {
                         (
-                            matching.iter().map(|v| v.to_static()).collect(),
+                            crate::arenas::Vec::Heap(matching.iter().map(|v| v.to_static()).collect()),
                             value.to_static(),
                         )
                     })
-                    .collect(),
+                    .collect()),
                 else_case: else_case.as_ref().map(|c| Box::new(c.to_static())),
             },
         }
@@ -232,24 +208,6 @@ impl<'i, 'a> ArenaParser<'i, 'a> for ValueExpression<'i, 'a> {
     }
 }
 
-impl<'i, 'a> ArenaParser<'i, 'a> for Vec<ValueExpression<'i, 'a>> {
-    fn parse_arena(
-        a: &'a bumpalo::Bump,
-    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            nom::multi::separated_list1(
-                nom::bytes::complete::tag(","),
-                nom::sequence::delimited(
-                    nom::character::complete::multispace0,
-                    ValueExpression::parse_arena(a),
-                    nom::character::complete::multispace0,
-                ),
-            )(i)
-        }
-    }
-}
-
-
 impl<'i, 'a> ArenaParser<'i, 'a> for crate::arenas::Vec<'a, ValueExpression<'i, 'a>> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
@@ -288,12 +246,14 @@ pub fn value_expression<'i, 'a>(
             nom::bytes::complete::tag_no_case("CASE"),
             nom::character::complete::multispace1,
             ValueExpression::parse_arena(arena),
-            nom::multi::many1(
+            crate::nom_util::bump_many1(
+                arena,
                 nom::sequence::tuple((
                     nom::character::complete::multispace1,
                     nom::bytes::complete::tag_no_case("WHEN"),
                     nom::character::complete::multispace1,
-                    nom::multi::separated_list1(
+                    crate::nom_util::bump_separated_list1(
+                        arena,
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag(","),
@@ -414,7 +374,8 @@ pub fn value_expression<'i, 'a>(
             nom::combinator::map(
                 nom::sequence::tuple((
                     nom::bytes::complete::tag("("),
-                    nom::multi::separated_list1(
+                    crate::nom_util::bump_separated_list1(
+                        arena,
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag(","),

@@ -71,8 +71,8 @@ pub fn condition<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [
         ValueExpression::parse_arena(arena).map(|v| Condition::Value(crate::arenas::Boxed::arena(arena, v))),
     ))(i)?;
 
-    let mut conditions = vec![tmp];
-    let mut connectors = vec![];
+    let mut conditions = bumpalo::vec![in arena; tmp];
+    let mut connectors = bumpalo::collections::Vec::new_in(arena);
 
     loop {
         let (rem, connector) = match nom::branch::alt::<_, _, nom::error::Error<&[u8]>, _>((
@@ -233,7 +233,7 @@ mod tests {
                                 }),
                                 order: OrderBy::Descending,
                                 nulls: NullOrdering::First,
-                            }]),
+                            }].into()),
                             group_by: None,
                             having: None,
                             limit: Some(SelectLimit {
