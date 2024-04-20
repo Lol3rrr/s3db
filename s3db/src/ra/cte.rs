@@ -31,7 +31,7 @@ pub enum CTEQuery {
 }
 
 pub fn parse_ctes(
-    raw: &WithCTEs<'_>,
+    raw: &WithCTEs<'_, '_>,
     schemas: &Schemas,
 ) -> Result<(Vec<CTE>, HashMap<usize, DataType>), ParseSelectError> {
     let mut scope = Scope::new(schemas);
@@ -47,8 +47,8 @@ pub fn parse_ctes(
 }
 
 impl CTE {
-    fn parse_internal(
-        raw: &WithCTE<'_>,
+    fn parse_internal<'i, 'a>(
+        raw: &WithCTE<'i, 'a>,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         recursive: bool,
@@ -63,7 +63,8 @@ impl CTE {
                     }
 
                     let base_select = {
-                        let mut c = s.clone();
+                        use sql::CompatibleParser;
+                        let mut c = s.to_static();
                         c.combine = None;
                         c
                     };
@@ -162,7 +163,7 @@ mod tests {
     use crate::ra::{Attribute, AttributeId};
     use sql::{
         BinaryOperator, ColumnReference, Combination, Literal, Select, TableExpression,
-        ValueExpression,
+        ValueExpression, arenas::Boxed
     };
 
     use super::*;
@@ -175,7 +176,7 @@ mod tests {
             parts: vec![WithCTE {
                 name: "something".into(),
                 query: Query::Select(Select {
-                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                     table: None,
                     where_condition: None,
                     order_by: None,
@@ -186,7 +187,7 @@ mod tests {
                     combine: None,
                 }),
                 columns: None,
-            }],
+            }].into(),
             recursive: false,
         };
 
@@ -222,7 +223,7 @@ mod tests {
             parts: vec![WithCTE {
                 name: "something".into(),
                 query: Query::Select(Select {
-                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))],
+                    values: vec![ValueExpression::Literal(Literal::SmallInteger(1))].into(),
                     table: None,
                     where_condition: None,
                     order_by: None,
@@ -234,17 +235,17 @@ mod tests {
                         Combination::Union,
                         Box::new(Select {
                             values: vec![ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: None,
                                         column: "n".into(),
                                     },
                                 )),
-                                second: Box::new(ValueExpression::Literal(Literal::SmallInteger(
+                                second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(
                                     1,
                                 ))),
                                 operator: BinaryOperator::Add,
-                            }],
+                            }].into(),
                             table: Some(TableExpression::Relation("something".into())),
                             where_condition: None,
                             order_by: None,
@@ -253,11 +254,11 @@ mod tests {
                             limit: None,
                             for_update: None,
                             combine: None,
-                        }),
+                        }).into(),
                     )),
                 }),
-                columns: Some(vec!["n".into()]),
-            }],
+                columns: Some(vec!["n".into()].into()),
+            }].into(),
             recursive: true,
         };
 

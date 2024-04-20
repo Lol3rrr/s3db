@@ -1,4 +1,5 @@
 use pretty_assertions::{assert_eq, assert_str_eq};
+use bumpalo::Bump;
 
 use s3db::{
     execution::{naive::NaiveEngine, Context, Execute, ExecuteResult},
@@ -49,8 +50,10 @@ async fn basic_select() {
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
 
-    let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let arena = bumpalo::Bump::new();
+
+    let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -59,12 +62,12 @@ async fn basic_select() {
 
     assert_eq!(0, content.parts.iter().flat_map(|p| p.rows.iter()).count());
 
-    let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
     assert!(matches!(res, ExecuteResult::Create), "{:?}", res);
 
-    let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -83,8 +86,10 @@ async fn select_with_literal_return() {
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
 
-    let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let arena = bumpalo::Bump::new();
+
+    let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -100,12 +105,12 @@ async fn select_with_literal_return() {
     );
     assert_eq!(0, content.parts.iter().flat_map(|p| p.rows.iter()).count());
 
-    let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
     assert!(matches!(res, ExecuteResult::Create), "{:?}", res);
 
-    let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
     dbg!(&res);
 
     let content = match res {
@@ -153,10 +158,12 @@ async fn execute_inner_join() {
     let transaction = storage.start_transaction().await.unwrap();
     let engine = NaiveEngine::new(storage);
 
-    let query = Query::parse(query.as_bytes()).unwrap();
+    let arena = bumpalo::Bump::new();
+
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -244,8 +251,10 @@ async fn left_outer_join() {
     };
     let engine = NaiveEngine::new(storage);
 
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let arena = bumpalo::Bump::new();
+
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut Context::new(), &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -275,9 +284,10 @@ async fn left_outer_join() {
 
 #[tokio::test]
 async fn group_by_single_attribute() {
+    let arena = Bump::new();
     let query_str = "SELECT role FROM user GROUP BY role";
 
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "user",
@@ -310,7 +320,7 @@ async fn group_by_single_attribute() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     dbg!(&res);
 
@@ -334,8 +344,9 @@ async fn group_by_single_attribute() {
 
 #[tokio::test]
 async fn select_count_all() {
+    let arena = Bump::new();
     let query = "SELECT COUNT(*) FROM table";
-    let query = Query::parse(query.as_bytes()).unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "table",
@@ -348,7 +359,7 @@ async fn select_count_all() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -366,8 +377,9 @@ async fn select_count_all() {
 
 #[tokio::test]
 async fn select_count_attribute() {
+    let arena = Bump::new();
     let query = "SELECT COUNT(id) FROM table";
-    let query = Query::parse(query.as_bytes()).unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "table",
@@ -384,7 +396,7 @@ async fn select_count_attribute() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -402,8 +414,9 @@ async fn select_count_attribute() {
 
 #[tokio::test]
 async fn select_with_limit() {
+    let arena = Bump::new();
     let query = "SELECT name FROM users LIMIT 1";
-    let query = Query::parse(query.as_bytes()).unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "users",
@@ -419,7 +432,7 @@ async fn select_with_limit() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -437,8 +450,9 @@ async fn select_with_limit() {
 
 #[tokio::test]
 async fn select_with_order() {
+    let arena = Bump::new();
     let query = "SELECT id, name FROM users ORDER BY id ASC";
-    let query = Query::parse(query.as_bytes()).unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
 
     dbg!(&query);
 
@@ -460,7 +474,7 @@ async fn select_with_order() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -483,8 +497,8 @@ async fn select_with_order() {
     );
 
     let query = "SELECT id, name FROM users ORDER BY id DESC";
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -507,8 +521,8 @@ async fn select_with_order() {
     );
 
     let query = "SELECT id, name FROM users ORDER BY id";
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -533,8 +547,9 @@ async fn select_with_order() {
 
 #[tokio::test]
 async fn update_basic() {
+    let arena = Bump::new();
     let query = "UPDATE orders SET completed = true WHERE orders.id = 12";
-    let query = Query::parse(query.as_bytes()).unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!(
         (
@@ -581,7 +596,7 @@ async fn update_basic() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(ExecuteResult::Update { updated_rows: 1 }, res);
 
@@ -631,6 +646,7 @@ async fn update_basic() {
 #[tokio::test]
 #[ignore = "TODO"]
 async fn update_with_from() {
+    let arena = Bump::new();
     let storage = storage_setup!(
         (
             "orders",
@@ -673,16 +689,17 @@ async fn update_with_from() {
     let engine = NaiveEngine::new(storage);
 
     let query = "UPDATE orders SET completed = deliveries.delivered FROM deliveries WHERE orders.id = deliveries.order_id";
-    let query = Query::parse(query.as_bytes()).unwrap();
-    let res = engine.execute(&query, &mut Context::new()).await.unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
+    let res = engine.execute(&query, &mut Context::new(), &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(ExecuteResult::Update { updated_rows: 1 }, res);
 }
 
 #[tokio::test]
 async fn delete_with_placeholders() {
+    let arena = Bump::new();
     let query_str = "DELETE FROM server_lock WHERE operation_uid=$1";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "users",
@@ -709,9 +726,10 @@ async fn delete_with_placeholders() {
 
 #[tokio::test]
 async fn select_with_standard_cte() {
+    let arena = Bump::new();
     let query_str =
         "WITH users_cte AS (SELECT name FROM users WHERE id < 100) SELECT name FROM users_cte";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "users",
@@ -727,7 +745,7 @@ async fn select_with_standard_cte() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -743,9 +761,10 @@ async fn select_with_standard_cte() {
 
 #[tokio::test]
 async fn select_with_recursive_cte() {
+    let arena = Bump::new();
     let query_str =
         "WITH RECURSIVE count (n) AS (SELECT 1 UNION SELECT n + 1 FROM count WHERE n < 5) SELECT n FROM count";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!();
 
@@ -754,7 +773,7 @@ async fn select_with_recursive_cte() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -778,8 +797,9 @@ async fn select_with_recursive_cte() {
 
 #[tokio::test]
 async fn select_all() {
+    let arena = Bump::new();
     let query = "SELECT * FROM user";
-    let query = Query::parse(query.as_bytes()).unwrap();
+    let query = Query::parse(query.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "user",
@@ -798,7 +818,7 @@ async fn select_all() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -828,8 +848,9 @@ async fn select_all() {
 
 #[tokio::test]
 async fn select_1() {
+    let arena = Bump::new();
     let query_str = "SELECT 1";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = InMemoryStorage::new();
     let transaction = storage.start_transaction().await.unwrap();
@@ -837,7 +858,7 @@ async fn select_1() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -855,8 +876,9 @@ async fn select_1() {
 
 #[tokio::test]
 async fn setval() {
+    let arena = Bump::new();
     let query_str = "SELECT setval('org_id_seq', (SELECT max(id) FROM org))";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "org",
@@ -869,7 +891,7 @@ async fn setval() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -887,8 +909,9 @@ async fn setval() {
 
 #[tokio::test]
 async fn like_operation() {
+    let arena = Bump::new();
     let query_str = "SELECT name FROM org WHERE name LIKE 'test%'";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "org",
@@ -907,7 +930,7 @@ async fn like_operation() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -925,8 +948,9 @@ async fn like_operation() {
 
 #[tokio::test]
 async fn select_subquery_as_value() {
+    let arena = Bump::new();
     let query_str = "SELECT (SELECT count(*) FROM users)";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "users",
@@ -946,7 +970,7 @@ async fn select_subquery_as_value() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     dbg!(&res);
 
@@ -966,8 +990,9 @@ async fn select_subquery_as_value() {
 
 #[tokio::test]
 async fn select_with_in_filter() {
+    let arena = Bump::new();
     let query_str = "SELECT name from users WHERE name IN ('other', 'something')";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "users",
@@ -987,7 +1012,7 @@ async fn select_with_in_filter() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     dbg!(&res);
 
@@ -1010,8 +1035,9 @@ async fn select_with_in_filter() {
 
 #[tokio::test]
 async fn select_with_table_column_rename() {
+    let arena = Bump::new();
     let query_str = "SELECT n from (SELECT name from users) AS u(n)";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "users",
@@ -1031,7 +1057,7 @@ async fn select_with_table_column_rename() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     dbg!(&res);
 
@@ -1056,8 +1082,9 @@ async fn select_with_table_column_rename() {
 #[tokio::test]
 #[ignore = "Testing"]
 async fn lateral_join() {
+    let arena = Bump::new();
     let query_str = "SELECT users.name, v.value FROM users JOIN LATERAL (SELECT (users.value + 5) AS value) AS v ON true";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "users",
@@ -1090,7 +1117,7 @@ async fn lateral_join() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     dbg!(&res);
 
@@ -1117,13 +1144,14 @@ async fn lateral_join() {
 
 #[tokio::test]
 async fn lateral_join_online_example() {
+    let arena = Bump::new();
     let query_str = "
 select
     (pledged / fx_rate) as pledged_usd,
     ((pledged / fx_rate) / backers_count) as avg_pledge_usd,
     ((goal / fx_rate) - (pledged / fx_rate)) as amt_from_goal
 from kickstarter_data;";
-    let query = Query::parse(query_str.as_bytes()).unwrap();
+    let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
     let storage = storage_setup!((
         "kickstarter_data",
@@ -1146,7 +1174,7 @@ from kickstarter_data;";
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx).await.unwrap();
+    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -1178,9 +1206,9 @@ from kickstarter_data
     join lateral (select (pledged_usd / backers_count) as avg_pledge_usd) apu ON true
     join lateral (select (goal / fx_rate) as goal_usd) gu ON true
     join lateral (select (goal_usd - pledged_usd) as amt_from_goal) ufg ON true;";
-    let lateral_query = Query::parse(lateral_query_str.as_bytes()).unwrap();
+    let lateral_query = Query::parse(lateral_query_str.as_bytes(), &arena).unwrap();
 
-    let lateral_res = engine.execute(&lateral_query, &mut ctx).await.unwrap();
+    let lateral_res = engine.execute(&lateral_query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
     assert_eq!(res, lateral_res);
 }

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use pretty_assertions::assert_eq;
 
+use bumpalo::Bump;
+
 use s3db::{
     ra::{
         self, AggregateExpression, AggregationCondition, Attribute, AttributeId, CTEQuery,
@@ -19,7 +21,8 @@ use sql::{
 fn count_all_rows() {
     let query_str = "SELECT count(*) FROM users";
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let arena = Bump::new();
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(select)) => select,
         other => panic!("{:?}", other),
     };
@@ -68,7 +71,8 @@ fn count_all_rows() {
 fn group_by() {
     let query_str = "SELECT role FROM users GROUP BY role";
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let arena = Bump::new();
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(select)) => select,
         other => panic!("{:?}", other),
     };
@@ -129,7 +133,8 @@ fn group_by() {
 fn count_values() {
     let query_str = "SELECT count(role) FROM users";
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let arena = Bump::new();
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(select)) => select,
         other => panic!("{:?}", other),
     };
@@ -188,7 +193,8 @@ fn count_values() {
 fn count_with_rename() {
     let query_str = "SELECT count(role) as role_count FROM users";
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let arena = Bump::new();
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(select)) => select,
         other => panic!("{:?}", other),
     };
@@ -248,9 +254,10 @@ fn count_with_rename() {
 
 #[test]
 fn select_from_subquery() {
+    let arena = Bump::new();
     let query_str = "SELECT role_name FROM (SELECT role as role_name FROM users)";
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(select)) => select,
         other => panic!("{:?}", other),
     };
@@ -308,10 +315,11 @@ fn select_from_subquery() {
 
 #[test]
 fn delete_with_exist() {
+    let arena = Bump::new();
     let query_str =
         "DELETE FROM users WHERE NOT EXISTS (SELECT 1 FROM deleted_users WHERE name = 'something')";
 
-    let delete_query = match Query::parse(query_str.as_bytes()) {
+    let delete_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Delete(delete)) => delete,
         other => panic!("{:?}", other),
     };
@@ -344,9 +352,10 @@ fn delete_with_exist() {
 
 #[test]
 fn select_with_lpad_concat_cast() {
+    let arena = Bump::new();
     let query_str = "SELECT lpad('' || id::text, 5, '0') FROM users";
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -402,9 +411,10 @@ fn select_with_lpad_concat_cast() {
 
 #[test]
 fn update_fields_using_parameters() {
+    let arena = Bump::new();
     let query_str = "UPDATE user SET last_login = $1 WHERE name = $2";
 
-    let update_query = match Query::parse(query_str.as_bytes()) {
+    let update_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Update(u)) => u,
         other => panic!("{:?}", other),
     };
@@ -452,9 +462,10 @@ fn update_fields_using_parameters() {
 
 #[test]
 fn inner_join() {
+    let arena = Bump::new();
     let query = "SELECT user.name, password.hash FROM user JOIN password ON user.id = password.uid";
 
-    let query = match Query::parse(query.as_bytes()) {
+    let query = match Query::parse(query.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -547,6 +558,7 @@ fn group_by_primary_key() {
     // By statement and are not Aggregate Expressions, they can clearly be identified as it gets
     // grouped by the primary key of their table and therefore only the values from that one row
     // are present
+    let arena = Bump::new();
     let query_str = "
         SELECT dashboard.id, dashboard.uid, dashboard.is_folder, dashboard.org_id, count(dashboard_acl.id) as count
         FROM dashboard
@@ -558,7 +570,7 @@ fn group_by_primary_key() {
 
     dbg!(query_str);
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(u)) => u,
         other => panic!("{:?}", other),
     };
@@ -622,6 +634,7 @@ fn group_by_primary_key() {
 
 #[test]
 fn select_with_lower_paramater() {
+    let arena = Bump::new();
     let query_str = "
         SELECT user.name
         FROM user
@@ -630,7 +643,7 @@ fn select_with_lower_paramater() {
 
     dbg!(query_str);
 
-    let select_query = match Query::parse(query_str.as_bytes()) {
+    let select_query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(u)) => u,
         other => panic!("{:?}", other),
     };
@@ -652,9 +665,10 @@ fn select_with_lower_paramater() {
 #[test]
 #[ignore = "Something"]
 fn select_something() {
+    let arena = Bump::new();
     let query_str = "SELECT d.uid, d.title FROM \"dashboard\" AS \"d\" WHERE (is_folder = $1) AND (EXISTS (SELECT 1 FROM alert_rule a WHERE d.uid = a.namespace_uid))";
 
-    let tmp = match Query::parse(query_str.as_bytes()) {
+    let tmp = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -666,10 +680,11 @@ fn select_something() {
 
 #[test]
 fn select_with_subqueries() {
+    let arena = Bump::new();
     let query_str = "SELECT
         (SELECT COUNT(*) FROM users) as user_count";
 
-    let query = match Query::parse(query_str.as_bytes()) {
+    let query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -712,7 +727,7 @@ fn parse_with_context_cte() {
         values: vec![ValueExpression::ColumnReference(ColumnReference {
             relation: None,
             column: "name".into(),
-        })],
+        })].into(),
         table: Some(sql::TableExpression::Relation("cte".into())),
         where_condition: None,
         order_by: None,
@@ -754,9 +769,10 @@ fn parse_with_context_cte() {
 #[test]
 #[ignore = "Testing"]
 fn setval() {
+    let arena = Bump::new();
     let query_str = "SELECT setval('org_id_seq', (SELECT max(id) FROM org))";
 
-    let query = match Query::parse(query_str.as_bytes()) {
+    let query = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -782,6 +798,7 @@ fn setval() {
 #[test]
 #[ignore = "TODO"]
 fn something_else() {
+    let arena = Bump::new();
     let query_str = "SELECT
         dashboard.id, dashboard.uid, dashboard.title, dashboard.slug, dashboard_tag.term, dashboard.is_folder, dashboard.folder_id, folder.uid AS folder_uid,\n\t\t\n\t\t\tfolder.slug AS folder_slug,\n\t\t\tfolder.title AS folder_title
         FROM ( SELECT dashboard.id FROM dashboard WHERE (NOT dashboard.is_folder OR dashboard.is_folder) AND dashboard.org_id=$1 ORDER BY dashboard.title ASC NULLS FIRST LIMIT 30 OFFSET 0) AS ids\n\t\t
@@ -790,7 +807,7 @@ fn something_else() {
         LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id\n
         ORDER BY dashboard.title ASC NULLS FIRST";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -824,6 +841,7 @@ fn something_else() {
 
 #[test]
 fn select_as_single_value() {
+    let arena = Bump::new();
     let query_str = "SELECT
 (
     SELECT COUNT(*)
@@ -841,7 +859,7 @@ fn select_as_single_value() {
     WHERE u.is_disabled = false AND u.is_service_account = true AND ou.role=$1
 ) AS serviceaccounts_with_no_role";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };
@@ -875,9 +893,10 @@ fn select_as_single_value() {
 
 #[test]
 fn select_group_by_number() {
+    let arena =Bump::new();
     let query_str = "SELECT COUNT(balance), plz FROM users GROUP BY 2";
 
-    let select = match Query::parse(query_str.as_bytes()) {
+    let select = match Query::parse(query_str.as_bytes(), &arena) {
         Ok(Query::Select(s)) => s,
         other => panic!("{:?}", other),
     };

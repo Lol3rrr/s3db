@@ -13,7 +13,7 @@ pub struct RaDelete {
 
 impl RaDelete {
     pub fn parse(
-        query: &Delete<'_>,
+        query: &Delete<'_, '_>,
         schemas: &Schemas,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
         let mut scope = Scope::new(schemas);
@@ -73,6 +73,7 @@ mod tests {
         RaExpression, RaValueExpression,
     };
     use sql::{Literal, Query};
+    use bumpalo::Bump;
 
     use super::*;
 
@@ -80,9 +81,10 @@ mod tests {
 
     #[test]
     fn parse_with_subquery() {
+        let arena = Bump::new();
         let query = "DELETE FROM dashboard_acl WHERE dashboard_id NOT IN (SELECT id FROM dashboard) AND dashboard_id != -1";
 
-        let query = Query::parse(query.as_bytes()).unwrap();
+        let query = Query::parse(query.as_bytes(), &arena).unwrap();
         let delete = match query {
             Query::Delete(d) => d,
             other => panic!("{:#?}", other),

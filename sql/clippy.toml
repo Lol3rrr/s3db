@@ -1,0 +1,4 @@
+disallowed-types = [
+  { path = "std::vec::Vec", reason = "we have our custom bump allocator vec, which should be used by default" },
+  { path = "std::boxed::Box", reason = "we have our custom bump allocator box" }
+]

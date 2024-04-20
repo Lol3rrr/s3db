@@ -72,6 +72,7 @@ impl AggregateState {
         row: &storage::Row,
         outer: &HashMap<AttributeId, storage::Data>,
         transaction: &S::TransactionGuard,
+        arena: &bumpalo::Bump,
     ) -> Result<(), EvaulateRaError<S::LoadingError>>
     where
         S: Storage,
@@ -123,6 +124,7 @@ impl AggregateState {
                         &HashMap::new(),
                         outer,
                         transaction,
+                        arena,
                     )
                     .await?;
 

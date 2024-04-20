@@ -41,7 +41,10 @@ impl<'s> Literal<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Literal<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Literal<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]

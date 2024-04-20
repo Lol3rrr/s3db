@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Identifier, Parser as _};
+use crate::{CompatibleParser, Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct Copy_<'s> {
@@ -13,7 +13,7 @@ pub enum CopyInputSource {
     Stdin,
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Copy_<'s> {
+impl<'s> CompatibleParser for Copy_<'s> {
     type StaticVersion = Copy_<'static>;
 
     fn to_static(&self) -> Self::StaticVersion {
@@ -28,7 +28,10 @@ impl<'s> CompatibleParser<dialects::Postgres> for Copy_<'s> {
     }
 }
 
-impl<'i, 's> crate::Parser<'i> for Copy_<'s> where 'i: 's {
+impl<'i, 's> crate::Parser<'i> for Copy_<'s>
+where
+    'i: 's,
+{
     fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]

@@ -1,11 +1,11 @@
 use nom::IResult;
 
-use crate::{dialects, CompatibleParser, Identifier, Parser as _};
+use crate::{CompatibleParser, Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct Vacuum {}
 
-impl CompatibleParser<dialects::Postgres> for Vacuum {
+impl CompatibleParser for Vacuum {
     type StaticVersion = Vacuum;
 
     fn to_static(&self) -> Self::StaticVersion {

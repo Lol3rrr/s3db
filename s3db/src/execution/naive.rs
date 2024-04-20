@@ -21,35 +21,36 @@ pub struct NaiveEngine<S> {
     storage: S,
 }
 
-pub struct NaiveEngineConditionEval<'engine, 'columns, 'placeholders, 'ctes, 'outer, 'transaction,S, TG> {
+pub struct NaiveEngineConditionEval<'engine, 'columns, 'placeholders, 'ctes, 'outer, 'transaction, 'arena, S, TG> {
     engine: &'engine NaiveEngine<S>,
     columns: &'columns [(String, DataType, AttributeId)],
     placeholders: &'placeholders HashMap<usize, Data>,
     ctes: &'ctes HashMap<String, storage::EntireRelation>,
     outer: &'outer HashMap<AttributeId, storage::Data>,
     transaction: &'transaction TG,
+    arena: &'arena bumpalo::Bump,
 }
 
-impl<S> algorithms::joins::EvaluateConditions<S::LoadingError> for NaiveEngineConditionEval<'_, '_, '_, '_, '_, '_, S, S::TransactionGuard> where S: Storage {
+impl<S> algorithms::joins::EvaluateConditions<S::LoadingError> for NaiveEngineConditionEval<'_, '_, '_, '_, '_, '_, '_, S, S::TransactionGuard> where S: Storage {
     async fn evaluate(
                 &self,
                 condition: &ra::RaCondition,
                 row: &storage::Row,
             ) -> Result<bool, EvaulateRaError<S::LoadingError>> {
-        self.engine.evaluate_ra_cond(condition, row, self.columns, self.placeholders, self.ctes, self.outer, self.transaction).await
+        self.engine.evaluate_ra_cond(condition, row, self.columns, self.placeholders, self.ctes, self.outer, self.transaction, self.arena).await
     }
 }
 
 #[derive(Debug)]
 pub struct NaivePrepared {
-    query: Query<'static>,
+    query: Query<'static, 'static>,
     expected_parameters: Vec<DataType>,
     columns: Vec<(String, DataType)>,
 }
 
 #[derive(Debug)]
 pub struct NaiveBound {
-    query: Query<'static>,
+    query: Query<'static, 'static>,
     expected_parameters: Vec<DataType>,
     values: Vec<Vec<u8>>,
     result_columns: Vec<FormatCode>,
@@ -90,13 +91,14 @@ impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
 {
-    fn evaluate_ra<'s, 'p, 'f, 'o, 'c, 't>(
+    fn evaluate_ra<'s, 'p, 'f, 'o, 'c, 't, 'arena>(
         &'s self,
         expr: ra::RaExpression,
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
         transaction: &'t S::TransactionGuard,
+        arena: &'arena bumpalo::Bump,
     ) -> LocalBoxFuture<'f, Result<storage::EntireRelation, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -104,10 +106,11 @@ where
         'c: 'f,
         'o: 'f,
         't: 'f,
+        'arena: 'f,
     {
         async move {
-            let mut pending: Vec<&RaExpression> = vec![&expr];
-            let mut expression_stack: Vec<StackedExpr> = Vec::new();
+            let mut pending: bumpalo::collections::Vec<'_, &RaExpression> = bumpalo::vec![in arena; &expr];
+            let mut expression_stack: bumpalo::collections::Vec<'_, StackedExpr> = bumpalo::collections::Vec::new_in(arena);
             while let Some(tmp) = pending.pop() {
                 expression_stack.push(StackedExpr {
                     expr: tmp,
@@ -149,7 +152,7 @@ where
                 };
             }
 
-            let mut results: Vec<storage::EntireRelation> = Vec::with_capacity(expression_stack.len());
+            let mut results: bumpalo::collections::Vec<'_, storage::EntireRelation> = bumpalo::collections::Vec::with_capacity_in(expression_stack.len(), arena);
             for stacked_expr in expression_stack.into_iter().rev() {
                 let expr = stacked_expr.expr;
 
@@ -181,9 +184,7 @@ where
                         }).collect() }
                     }
                     ra::RaExpression::Projection { inner, attributes } => {
-                        let input = results.pop().unwrap();
-
-                        
+                        let input = results.pop().unwrap(); 
 
                         let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
 
@@ -210,7 +211,7 @@ where
                         for row in input.into_rows() {
                             let mut data = Vec::new();
                             for attribute in attributes.iter() {
-                                let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, &outer, transaction).await?;
+                                let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, &outer, transaction, &arena).await?;
 
                                 // TODO
                                 // This is not a good fix
@@ -238,53 +239,38 @@ where
 
                         let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
 
-                    assert_eq!(
-                        inner_columns
-                            .iter()
-                            .map(|(n, t, _)| (n, t))
-                            .collect::<Vec<_>>(),
-                        input
-                            .columns
-                            .iter()
-                            .map(|(n, t, _)| (n, t))
-                            .collect::<Vec<_>>()
-                    );
+                        assert_eq!(
+                            inner_columns
+                                .iter()
+                                .map(|(n, t, _)| (n, t))
+                                .collect::<Vec<_>>(),
+                            input
+                                .columns
+                                .iter()
+                                .map(|(n, t, _)| (n, t))
+                                .collect::<Vec<_>>()
+                        );
 
-                    let result = {
-                        let mut tmp = Vec::new();
+                        let mut input_parts = input.parts;
 
-                        for row in input
-                            .parts
-                            .into_iter()
-                            .flat_map(|i| i.rows.into_iter())
-                        {
-                            // TODO
-                            tracing::trace!("Row: {:?}", row);
-
-                            let include_row = self
-                                .evaluate_ra_cond(
-                                    filter,
-                                    &row,
-                                    &inner_columns,
-                                    placeholders,
-                                    ctes,
-                                    outer,
-                                    transaction
-                                )
-                                .await?;
-
-                            if include_row {
-                                tmp.push(row);
+                        let mut retain_mask = Vec::new();
+                        for part in input_parts.iter_mut() {
+                            retain_mask.reserve(part.rows.len());
+                            for row in part.rows.iter().rev() {
+                                let result = self.evaluate_ra_cond(filter, row, &inner_columns, placeholders, ctes, outer, transaction, &arena).await?;
+                                retain_mask.push(result);
                             }
+
+                            part.rows.retain(|_| {
+                                retain_mask.pop().expect("We push a value for every Row and only pop one per Row, so this should always work")
+                            });
                         }
 
-                        tmp
-                    };
 
-                    storage::EntireRelation {
-                        columns: input.columns,
-                        parts: vec![storage::PartialRelation { rows: result }],
-                    }
+                        storage::EntireRelation {
+                            columns: input.columns,
+                            parts: input_parts,
+                        }
                     }
                     ra::RaExpression::Aggregation { inner, attributes, aggregation_condition } => {
                         let input = results.pop().unwrap();
@@ -309,7 +295,7 @@ where
                                 .flat_map(|p| p.rows.into_iter())
                             {
                                 for state in states.iter_mut() {
-                                    state.update(self, &row, outer, transaction).await?;
+                                    state.update(self, &row, outer, transaction, &arena).await?;
                                 }
                             }
 
@@ -365,7 +351,7 @@ where
 
                                 for row in group {
                                     for state in states.iter_mut() {
-                                        state.update(self, &row, outer, transaction).await?;
+                                        state.update(self, &row, outer, transaction, &arena).await?;
                                     }
                                 }
 
@@ -472,7 +458,8 @@ where
                             placeholders,
                             ctes,
                             outer,
-                            transaction
+                            transaction,
+                            arena
                         }).await? 
                     }
                     ra::RaExpression::LateralJoin { left, right, kind, condition } => {
@@ -497,7 +484,7 @@ where
 
                             let mut outer = outer.clone();
                             outer.extend(left_columns.iter().map(|(_, _, _, id)|*id).zip(row.data.iter().cloned()));
-                            let right_result = self.evaluate_ra(RaExpression::clone(&right), placeholders, ctes, &outer, transaction).await?;
+                            let right_result = self.evaluate_ra(RaExpression::clone(&right), placeholders, ctes, &outer, transaction, &arena).await?;
                            
                             let result_columns = {
                             let mut tmp = left_result_columns.clone();
@@ -522,7 +509,8 @@ where
                                 placeholders,
                                 ctes,
                                 outer: &outer,
-                                transaction
+                                transaction,
+                                arena
                             }).await?;
 
                             match total_result.as_mut() {
@@ -564,7 +552,7 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f>(
+    fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f, 'arena>(
         &'s self,
         condition: &'cond ra::RaCondition,
         row: &'r storage::Row,
@@ -572,7 +560,8 @@ where
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
-        transaction: &'t S::TransactionGuard
+        transaction: &'t S::TransactionGuard,
+        arena: &'arena bumpalo::Bump
     ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -583,13 +572,14 @@ where
         'c: 'f,
         'o: 'f,
         't: 'f,
+        'arena: 'f
     {
         async move {
             match condition {
                 ra::RaCondition::And(conditions) => {
                     for andcond in conditions.iter() {
                         if !self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction)
+                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction, &arena)
                             .await?
                         {
                             return Ok(false);
@@ -601,7 +591,7 @@ where
                 ra::RaCondition::Or(conditions) => {
                     for andcond in conditions.iter() {
                         if self
-                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction)
+                            .evaluate_ra_cond(andcond, row, columns, placeholders, ctes, outer, transaction, &arena)
                             .await?
                         {
                             return Ok(true);
@@ -612,7 +602,7 @@ where
                 }
                 ra::RaCondition::Value(value) => {
                     let res = self
-                        .evaluate_ra_cond_val(value, row, columns, placeholders, ctes, outer,transaction)
+                        .evaluate_ra_cond_val(value, row, columns, placeholders, ctes, outer,transaction, &arena)
                         .await?;
                     Ok(res)
                 }
@@ -621,7 +611,7 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f>(
+    fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f, 'arena>(
         &'s self,
         condition: &'cond ra::RaConditionValue,
         row: &'r storage::Row,
@@ -629,7 +619,8 @@ where
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
-        transaction: &'t S::TransactionGuard
+        transaction: &'t S::TransactionGuard,
+        arena: &'arena bumpalo::Bump
     ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -640,6 +631,7 @@ where
         'c: 'f,
         'o: 'f,
         't: 'f,
+        'arena: 'f
     {
         async move {
             match condition {
@@ -663,10 +655,10 @@ where
                     comparison,
                 } => {
                     let first_value = self
-                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer, transaction )
+                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer, transaction, &arena)
                         .await?;
                     let second_value = self
-                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer, transaction)
+                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer, transaction, &arena)
                         .await?;
 
                     match comparison {
@@ -738,7 +730,7 @@ where
                 }
                 ra::RaConditionValue::Negation { inner } => {
                     let inner_result = self
-                        .evaluate_ra_cond_val(inner, row, columns, placeholders, ctes, outer, transaction)
+                        .evaluate_ra_cond_val(inner, row, columns, placeholders, ctes, outer, transaction, &arena)
                         .await?;
 
                     Ok(!inner_result)
@@ -750,7 +742,7 @@ where
                         tmp
                     };
 
-                    match self.evaluate_ra(*query.clone(), placeholders, ctes, &n_tmp, transaction).await {
+                    match self.evaluate_ra(*query.clone(), placeholders, ctes, &n_tmp, transaction, &arena).await {
                         Ok(res) => Ok(res
                             .parts
                             .into_iter()
@@ -764,7 +756,7 @@ where
         .boxed_local()
     }
 
-    fn evaluate_ra_value<'s, 'rve, 'row, 'columns, 'placeholders, 'c, 'o, 't, 'f>(
+    fn evaluate_ra_value<'s, 'rve, 'row, 'columns, 'placeholders, 'c, 'o, 't, 'f, 'arena>(
         &'s self,
         expr: &'rve ra::RaValueExpression,
         row: &'row storage::Row,
@@ -772,7 +764,8 @@ where
         placeholders: &'placeholders HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
-        transaction: &'t S::TransactionGuard
+        transaction: &'t S::TransactionGuard,
+        arena: &'arena bumpalo::Bump,
     ) -> LocalBoxFuture<'f, Result<storage::Data, EvaulateRaError<S::LoadingError>>>
     where
         's: 'f,
@@ -783,6 +776,7 @@ where
         'c: 'f,
         'o: 'f,
         't: 'f,
+        'arena: 'f
     {
         async move {
             match expr {
@@ -817,7 +811,7 @@ where
 
                     for part in elems.iter() {
                         let tmp = self
-                            .evaluate_ra_value(part, row, columns, placeholders, ctes, outer, transaction )
+                            .evaluate_ra_value(part, row, columns, placeholders, ctes, outer, transaction, &arena)
                             .await?;
                         result.push(tmp);
                     }
@@ -831,7 +825,7 @@ where
                         // dbg!(columns, row);
                         tmp
                     };
-                    let result = self.evaluate_ra(query.clone(), placeholders, ctes, &n_outer, transaction).await?;
+                    let result = self.evaluate_ra(query.clone(), placeholders, ctes, &n_outer, transaction, &arena).await?;
 
                     let parts: Vec<_> = result
                         .parts
@@ -844,7 +838,7 @@ where
                 }
                 ra::RaValueExpression::Cast { inner, target } => {
                     let result = self
-                        .evaluate_ra_value(inner, row, columns, placeholders, ctes,outer, transaction)
+                        .evaluate_ra_value(inner, row, columns, placeholders, ctes,outer, transaction, &arena)
                         .await?;
 
                     result
@@ -860,10 +854,10 @@ where
                     operator,
                 } => {
                     let first_value = self
-                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer, transaction)
+                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer, transaction, &arena)
                         .await?;
                     let second_value = self
-                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer, transaction)
+                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer, transaction, &arena)
                         .await?;
 
                     match operator {
@@ -919,7 +913,7 @@ where
                         dbg!(&name, &value, &is_called);
 
                         let value_res = self
-                            .evaluate_ra_value(value, row, columns, placeholders, ctes, outer, transaction)
+                            .evaluate_ra_value(value, row, columns, placeholders, ctes, outer, transaction, &arena)
                             .await?;
                         dbg!(&value_res);
 
@@ -945,7 +939,7 @@ where
                         dbg!(&val);
 
                         let data = self
-                            .evaluate_ra_value(val, row, columns, placeholders, ctes, outer, transaction )
+                            .evaluate_ra_value(val, row, columns, placeholders, ctes, outer, transaction, &arena)
                             .await?;
 
                         match data {
@@ -964,15 +958,15 @@ where
                         dbg!(&str_value, &start);
 
                         let str_value = self
-                            .evaluate_ra_value(str_value, row, columns, placeholders, ctes, outer, transaction )
+                            .evaluate_ra_value(str_value, row, columns, placeholders, ctes, outer, transaction, &arena)
                             .await?;
                         let start_value = self
-                            .evaluate_ra_value(start, row, columns, placeholders, ctes, outer, transaction)
+                            .evaluate_ra_value(start, row, columns, placeholders, ctes, outer, transaction, &arena)
                             .await?;
                         let count_value = match count.as_ref() {
                             Some(c) => {
                                 let val = self
-                                    .evaluate_ra_value(c, row, columns, placeholders, ctes, outer, transaction)
+                                    .evaluate_ra_value(c, row, columns, placeholders, ctes, outer, transaction, &arena)
                                     .await?;
                                 Some(val)
                             }
@@ -1004,20 +998,21 @@ where
         .boxed_local()
     }
 
-    #[tracing::instrument(skip(self, cte))]
-    async fn execute_cte<'p, 'c, 't>(
+    #[tracing::instrument(skip(self, cte, arena))]
+    async fn execute_cte<'p, 'c, 't, 'arena>(
         &self,
         cte: &ra::CTE,
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         transaction: &'t S::TransactionGuard,
+        arena: &'arena bumpalo::Bump
     ) -> Result<storage::EntireRelation, EvaulateRaError<S::LoadingError>> {
         tracing::debug!("CTE: {:?}", cte);
 
         match &cte.value {
             ra::CTEValue::Standard { query } => match query {
                 ra::CTEQuery::Select(s) => {
-                    let evaluated = self.evaluate_ra(s.clone(), placeholders, ctes, &HashMap::new(), transaction).await?;
+                    let evaluated = self.evaluate_ra(s.clone(), placeholders, ctes, &HashMap::new(), transaction, &arena).await?;
                     Ok(evaluated)
                 }
             },
@@ -1059,7 +1054,7 @@ where
 
                     loop {
                         let mut tmp = self
-                            .evaluate_ra(s.clone(), placeholders, &inner_cte, &HashMap::new(), transaction )
+                            .evaluate_ra(s.clone(), placeholders, &inner_cte, &HashMap::new(), transaction, &arena)
                             .await?;
 
                         for (column, name) in tmp.columns.iter_mut().zip(columns.iter()) {
@@ -1117,9 +1112,9 @@ where
 
     type CopyState<'e> = NaiveCopyState<'e, S, S::TransactionGuard> where S: 'e, S::TransactionGuard: 'e;
 
-    async fn prepare<'q>(
+    async fn prepare<'q, 'a>(
         &self,
-        query: &sql::Query<'q>,
+        query: &sql::Query<'q, 'a>,
         _ctx: &mut Context<S::TransactionGuard>,
     ) -> Result<Self::Prepared, Self::PrepareError> {
         let (expected, columns) = match query {
@@ -1130,7 +1125,7 @@ where
                     .await
                     .map_err(PrepareError::LoadingSchemas)?;
 
-                let (ra_expression, expected_types) = ra::RaExpression::parse_select(s, &schemas)
+                let (ra_expression, expected_types) = ra::RaExpression::parse_select(&s, &schemas)
                     .map_err(PrepareError::ParsingSelect)?;
 
                 let parameters: Vec<_> = {
@@ -1209,10 +1204,11 @@ where
     }
 
     #[tracing::instrument(skip(self, query, ctx))]
-    async fn execute_bound(
+    async fn execute_bound<'arena>(
         &self,
         query: &<Self::Prepared as PreparedStatement>::Bound,
         ctx: &mut Context<S::TransactionGuard>,
+        arena: &'arena bumpalo::Bump,
     ) -> Result<ExecuteResult, Self::ExecuteBoundError> {
         tracing::debug!("Executing Bound Query");
         tracing::debug!("{:#?}", query.query);
@@ -1247,7 +1243,7 @@ where
 
                     let (ra_expression, placeholder_types) =
                         match crate::ra::RaExpression::parse_select_with_context(
-                            select,
+                            &select,
                             &schemas,
                             &parse_context,
                         ) {
@@ -1286,7 +1282,7 @@ where
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
                     let r = match self
-                        .evaluate_ra(ra_expression, &placeholder_values, &cte_queries, &HashMap::new(), transaction)
+                        .evaluate_ra(ra_expression, &placeholder_values, &cte_queries, &HashMap::new(), transaction, &arena)
                         .await
                     {
                         Ok(r) => r,
@@ -1385,7 +1381,7 @@ where
                             tracing::trace!("Using Select as Values for Insert");
 
                             let content = match self
-                                .execute(&Query::Select(select.to_static()), ctx)
+                                .execute(&Query::Select(select.to_static()), ctx, &arena)
                                 .boxed_local()
                                 .await
                                 .map_err(|e| ExecuteBoundError::Other("Executing Query"))?
@@ -1537,7 +1533,7 @@ where
 
                     // tracing::info!("Relation");
 
-                    let (ra_update, ra_placeholders) = RaUpdate::parse(update, &schemas)
+                    let (ra_update, ra_placeholders) = RaUpdate::parse(&update, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
 
                     let placeholder_values: HashMap<_, _> = ra_placeholders
@@ -1580,6 +1576,7 @@ where
                                             &cte_queries,
                                             &HashMap::new(),
                                             transaction,
+                                            &arena
                                         )
                                         .await
                                         .map_err(ExecuteBoundError::Executing)?,
@@ -1602,7 +1599,8 @@ where
                                             &placeholder_values,
                                             &cte_queries,
                                             &HashMap::new(),
-                                            transaction
+                                            transaction,
+                                            &arena
                                         )
                                         .await
                                         .map_err(ExecuteBoundError::Executing)?;
@@ -1682,7 +1680,7 @@ where
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
-                    let (ra_delete, placeholders) = ra::RaDelete::parse(delete, &schemas)
+                    let (ra_delete, placeholders) = ra::RaDelete::parse(&delete, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
 
                     let relation = self
@@ -1726,7 +1724,8 @@ where
                                         &placeholders,
                                         &cte_queries,
                                         &HashMap::new(),
-                                        transaction
+                                        transaction,
+                                        &arena
                                     )
                                     .await
                                     .map_err(ExecuteBoundError::Executing)?;
@@ -1770,14 +1769,14 @@ where
                         return Ok(ExecuteResult::Create);
                     }
 
-                    let fields: Vec<_> = create
+                    let fields: std::vec::Vec<_> = create
                         .fields
                         .iter()
                         .map(|tfield| {
                             (
                                 tfield.ident.0.to_string(),
                                 tfield.datatype.clone(),
-                                tfield.modifiers.clone(),
+                                tfield.modifiers.iter().map(|m| m.clone()).collect::<Vec<_>>(),
                             )
                         })
                         .collect();
@@ -1853,7 +1852,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                             modifications.add_column(
                                 &column_name.0,
                                 data_type.clone(),
-                                type_modifiers.clone(),
+                                type_modifiers.to_vec(),
                             );
 
                             self.storage
@@ -1868,7 +1867,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
 
                             let mut modifications = storage::ModifyRelation::new();
 
-                            for column in columns {
+                            for column in columns.iter() {
                                 tracing::info!("Column: {:?}", column);
 
                                 modifications.change_type(&column.0 .0, column.1.clone());
@@ -2006,20 +2005,20 @@ let transaction = ctx.transaction.as_ref().unwrap();
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
-                    let (ra_cte, _cte_placeholder_types) = ra::parse_ctes(cte, &schemas)
+                    let (ra_cte, _cte_placeholder_types) = ra::parse_ctes(&cte, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
 
                     for cte in ra_cte {
                         parse_context.add_cte(cte.clone());
 
                         let cte_result = self
-                            .execute_cte(&cte, &HashMap::new(), &HashMap::new(), transaction )
+                            .execute_cte(&cte, &HashMap::new(), &HashMap::new(), transaction, &arena)
                             .await
                             .map_err(ExecuteBoundError::Executing)?;
                         cte_queries.insert(cte.name.clone(), cte_result);
                     }
 
-                    to_process = Some(query);
+                    to_process = Some(&query);
                     continue;
                 }
                 Query::Vacuum(v) => {
@@ -2100,8 +2099,11 @@ mod tests {
 
     use super::*;
 
+    use bumpalo::Bump;
+
     #[tokio::test]
     async fn execute_delete_with_subquery() {
+        let arena = Bump::new();
         let query = "DELETE FROM dashboard_acl WHERE dashboard_id NOT IN (SELECT id FROM dashboard) AND dashboard_id != -1";
 
         let storage = {
@@ -2147,20 +2149,21 @@ mod tests {
         };
         let engine = NaiveEngine::new(storage);
 
-        let query = Query::parse(query.as_bytes()).unwrap();
+        let query = Query::parse(query.as_bytes(), &arena).unwrap();
         
         let mut ctx = Context::new();
         ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
-        let res = engine.execute(&query, &mut ctx).await.unwrap();
+        let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
         assert_eq!(ExecuteResult::Delete { deleted_rows: 1 }, res);
     }
 
     #[tokio::test]
     async fn using_is_true() {
+        let arena = Bump::new();
         let query_str = "SELECT name FROM user WHERE active IS TRUE";
 
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let storage = {
             let storage = InMemoryStorage::new();
@@ -2200,7 +2203,7 @@ mod tests {
 
         let mut ctx = Context::new();
         ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
-        let res = engine.execute(&query, &mut ctx).await.unwrap();
+        let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
 
         dbg!(&res);
 

@@ -6,11 +6,8 @@ use std::fmt::Debug;
 
 use futures::future::LocalBoxFuture;
 
-use crate::execution;
-
 pub trait Endpoint<E, T>
 where
-    E: execution::Execute<T> + 'static,
     T: 'static,
 {
     fn run<'s, 'f>(&'s self, engine: E) -> LocalBoxFuture<'f, Result<(), Box<dyn Debug>>>
@@ -56,6 +53,12 @@ pub mod postgres {
     pub enum RunError {
         Bind(tokio::io::Error),
         LocalAddr(tokio::io::Error),
+    }
+
+    pub trait EngineWrapper {
+        type Engine;
+
+        fn get(&self) -> Self::Engine;
     }
 
     impl<A, E, T> Endpoint<E, T> for PostgresEndpoint<A>
@@ -106,7 +109,7 @@ pub mod postgres {
         addr: std::net::SocketAddr,
         engine: Rc<E>,
     ) where
-        E: execution::Execute<T>,
+        E: execution::Execute<T> + 'static,
     {
         let startmsg = match postgres::StartMessage::parse(&mut connection).await {
             Ok(sm) => sm,
@@ -158,11 +161,17 @@ pub mod postgres {
 
         let mut ctx = execution::Context::new();
 
-        let mut prepared_statements = HashMap::new();
-        let mut bound_statements =
-            HashMap::<String, <E::Prepared as execution::PreparedStatement>::Bound>::new();
+        let mut arena = bumpalo::Bump::with_capacity(512 * 1024);
+        let mut execution_arena = bumpalo::Bump::with_capacity(512 * 1024);
 
+        let mut prepared_statements = HashMap::new();
+        let mut bound_statements = HashMap::new();
+
+        
         loop {
+            arena.reset();
+            execution_arena.reset();
+
             tracing::trace!("Waiting for message");
 
             let msg = match postgres::Message::parse(&mut connection).await {
@@ -185,7 +194,7 @@ pub mod postgres {
 
                     tracing::info!("Handling Raw-Query: {:?}", query);
 
-                    let queries = match sql::Query::parse_multiple(query.as_bytes()) {
+                    let queries = match sql::Query::parse_multiple(query.as_bytes(), &arena) {
                         Ok(q) => q,
                         Err(e) => {
                             tracing::error!("Parsing Query: {:?}", e);
@@ -228,6 +237,7 @@ pub mod postgres {
                                 .execute(
                                     &Query::BeginTransaction(sql::IsolationMode::Standard),
                                     &mut ctx,
+                                    &execution_arena
                                 )
                                 .await
                                 .unwrap();
@@ -302,7 +312,7 @@ pub mod postgres {
 
                             if implicit_transaction {
                                 engine
-                                    .execute(&Query::CommitTransaction, &mut ctx)
+                                    .execute(&Query::CommitTransaction, &mut ctx, &execution_arena)
                                     .await
                                     .unwrap();
                             }
@@ -322,7 +332,7 @@ pub mod postgres {
                             continue;
                         }
 
-                        let result = match engine.execute(&query, &mut ctx).await {
+                        let result = match engine.execute(&query, &mut ctx, &execution_arena).await {
                             Ok(r) => r,
                             Err(e) => {
                                 tracing::error!("Executing: {:?}", e);
@@ -350,7 +360,7 @@ pub mod postgres {
 
                         if implicit_transaction {
                             engine
-                                .execute(&Query::CommitTransaction, &mut ctx)
+                                .execute(&Query::CommitTransaction, &mut ctx, &arena)
                                 .await
                                 .unwrap();
                         }
@@ -388,7 +398,7 @@ pub mod postgres {
 
                     tracing::info!("Query: {:?}", query);
 
-                    let query = match sql::Query::parse(query.as_bytes()) {
+                    let query = match sql::Query::parse(query.as_bytes(), &arena) {
                         Ok(q) => q,
                         Err(e) => {
                             tracing::error!("Parsing Query: {:?}", e);
@@ -567,7 +577,7 @@ pub mod postgres {
                         }
                     };
 
-                    let result = match engine.execute_bound(bound_statement, &mut ctx).await {
+                    let result = match engine.execute_bound(bound_statement, &mut ctx, &execution_arena).await {
                         Ok(r) => r,
                         Err(e) => {
                             tracing::error!("Executing Bound: {:?}", e);
@@ -625,5 +635,7 @@ pub mod postgres {
                 }
             };
         }
+
+        drop(prepared_statements);
     }
 }

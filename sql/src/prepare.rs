@@ -1,29 +1,50 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Parser as _};
+use crate::{Parser as _, CompatibleParser, arenas::Boxed};
 
-use super::{
-    query, DataType, Identifier, Query,
-};
+use super::{query, DataType, Identifier, Query};
 
 #[derive(Debug, PartialEq)]
-pub struct Prepare<'s> {
+pub struct Prepare<'s, 'a> {
     pub name: Identifier<'s>,
-    pub params: Vec<DataType>,
-    pub query: Box<Query<'s>>,
+    pub params: crate::arenas::Vec<'a, DataType>,
+    pub query: Boxed<'a, Query<'s, 'a>>,
 }
 
-impl<'i, 's> crate::Parser<'i> for Prepare<'s> where 'i: 's {
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for Prepare<'i, 'a>
+{
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
-            parse(i)
+            parse(i, a)
+        }
+    }
+}
+
+impl<'s, 'a> CompatibleParser for Prepare<'s, 'a> {
+    type StaticVersion = Prepare<'static, 'static>;
+
+    fn parameter_count(&self) -> usize {
+        0
+    }
+
+    fn to_static(&self) -> Self::StaticVersion {
+        Prepare {
+            name: self.name.to_static(),
+            params: self.params.clone_to_heap(),
+            query: self.query.to_static(),
         }
     }
 }
 
 #[deprecated]
-pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn parse<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Prepare<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
+{
     let (i, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("PREPARE"),
         nom::character::complete::multispace1,
@@ -37,7 +58,8 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                     nom::character::complete::multispace0,
-                    nom::multi::separated_list1(
+                    crate::nom_util::bump_separated_list1(
+                        arena,
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag(","),
@@ -53,49 +75,37 @@ pub fn parse(i: &[u8]) -> IResult<&[u8], Prepare<'_>, nom::error::VerboseError<&
             nom::character::complete::multispace1,
             nom::bytes::complete::tag("as"),
             nom::character::complete::multispace1,
-            query,
+            move |i| query(i, arena),
         )),
         |(name, params, _, _, _, q)| Prepare {
             name,
-            params: params.unwrap_or(Vec::new()),
-            query: Box::new(q),
+            params: params.unwrap_or(crate::arenas::Vec::arena(arena)),
+            query: crate::arenas::Boxed::arena(arena, q),
         },
     )(i)?;
 
     Ok((i, tmp))
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Prepare<'s> {
-    type StaticVersion = Prepare<'static>;
-
-    fn to_static(&self) -> Self::StaticVersion {
-        Prepare {
-            name: self.name.to_static(),
-            params: self.params.clone(),
-            query: Box::new(self.query.to_static()),
-        }
-    }
-
-    fn parameter_count(&self) -> usize {
-        0
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
-        BinaryOperator, ColumnReference, Condition, Select, TableExpression, ValueExpression, macros::parser_parse,
+        macros::arena_parser_parse, BinaryOperator, ColumnReference, Condition, Select, TableExpression,
+        ValueExpression,
     };
 
     use super::*;
 
     #[test]
     fn prepared_no_params() {
-        parser_parse!(Prepare, "PREPARE testing as SELECT * FROM users", Prepare {
+        arena_parser_parse!(
+            Prepare,
+            "PREPARE testing as SELECT * FROM users",
+            Prepare {
                 name: "testing".into(),
-                params: vec![],
+                params: vec![].into(),
                 query: Box::new(Query::Select(Select {
-                    values: vec![ValueExpression::All],
+                    values: vec![ValueExpression::All].into(),
                     table: Some(TableExpression::Relation("users".into())),
                     where_condition: None,
                     having: None,
@@ -104,35 +114,40 @@ mod tests {
                     limit: None,
                     for_update: None,
                     combine: None,
-                }))
-            });
+                })).into()
+            }
+        );
     }
 
     #[test]
     fn prepared_params() {
-        parser_parse!(Prepare, "PREPARE testing(integer) as SELECT * FROM users WHERE id = $1", Prepare {
+        arena_parser_parse!(
+            Prepare,
+            "PREPARE testing(integer) as SELECT * FROM users WHERE id = $1",
+            Prepare {
                 name: "testing".into(),
-                params: vec![DataType::Integer],
+                params: vec![DataType::Integer].into(),
                 query: Box::new(Query::Select(Select {
-                    values: vec![ValueExpression::All],
+                    values: vec![ValueExpression::All].into(),
                     table: Some(TableExpression::Relation("users".into())),
                     where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: "id".into(),
                             })),
-                            second: Box::new(ValueExpression::Placeholder(1)),
+                            second: Boxed::new(ValueExpression::Placeholder(1)),
                             operator: BinaryOperator::Equal
                         }
-                    ))])),
+                    ).into())].into())),
                     having: None,
                     order_by: None,
                     group_by: None,
                     limit: None,
                     for_update: None,
                     combine: None,
-                }))
-            });
+                })).into()
+            }
+        );
     }
 }

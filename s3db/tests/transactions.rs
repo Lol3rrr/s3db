@@ -6,8 +6,9 @@ use sql::{DataType, Query};
 
 macro_rules! execute {
     ($engine:expr, $ctx:expr, $query:literal) => {{
-        let query = Query::parse($query.as_bytes()).unwrap();
-        $engine.execute(&query, $ctx).await.unwrap()
+        let arena = bumpalo::Bump::new();
+        let query = Query::parse($query.as_bytes(), &arena).unwrap();
+        $engine.execute(&query, $ctx, &bumpalo::Bump::new()).await.unwrap()
     }};
 }
 

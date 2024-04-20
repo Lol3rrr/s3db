@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{dialects, CompatibleParser, Parser as _};
+use crate::{ArenaParser as _, CompatibleParser, Parser as _, arenas::Boxed};
 
 use super::{common::ValueExpression, condition::Condition};
 
@@ -20,20 +20,20 @@ pub use order::{NullOrdering, OrderAttribute, OrderBy, Ordering};
 ///
 /// # References:
 /// * [Postgres Docs](https://www.postgresql.org/docs/16/sql-select.html)
-#[derive(Debug, PartialEq, Clone)]
-pub struct Select<'s> {
+#[derive(Debug, PartialEq)]
+pub struct Select<'s, 'a> {
     /// The Values that will be returned by the Query for each Row
-    pub values: Vec<ValueExpression<'s>>,
+    pub values: crate::arenas::Vec<'a, ValueExpression<'s, 'a>>,
     /// The base table expression to select values from
-    pub table: Option<TableExpression<'s>>,
+    pub table: Option<TableExpression<'s, 'a>>,
     /// A condition to filter out unwanted queries
-    pub where_condition: Option<Condition<'s>>,
-    pub order_by: Option<Vec<Ordering<'s>>>,
-    pub group_by: Option<Vec<GroupAttribute<'s>>>,
-    pub having: Option<Condition<'s>>,
+    pub where_condition: Option<Condition<'s, 'a>>,
+    pub order_by: Option<crate::arenas::Vec<'a, Ordering<'s>>>,
+    pub group_by: Option<crate::arenas::Vec<'a, GroupAttribute<'s>>>,
+    pub having: Option<Condition<'s, 'a>>,
     pub limit: Option<SelectLimit>,
     pub for_update: Option<()>,
-    pub combine: Option<(Combination, Box<Select<'s>>)>,
+    pub combine: Option<(Combination, Boxed<'a, Select<'s, 'a>>)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -42,16 +42,16 @@ pub struct SelectLimit {
     pub offset: Option<usize>,
 }
 
-impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
-    type StaticVersion = Select<'static>;
+impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
+    type StaticVersion = Select<'static, 'static>;
 
     fn to_static(&self) -> Self::StaticVersion {
         Select {
-            values: self.values.iter().map(|v| v.to_static()).collect(),
+            values: crate::arenas::Vec::Heap(self.values.iter().map(|v| v.to_static()).collect()),
             table: self.table.as_ref().map(|t| t.to_static()),
             where_condition: self.where_condition.as_ref().map(|c| c.to_static()),
             order_by: self.order_by.as_ref().map(|orders| {
-                orders
+                crate::arenas::Vec::Heap(orders
                     .iter()
                     .map(|order| Ordering {
                         column: match &order.column {
@@ -63,19 +63,19 @@ impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
                         order: order.order.clone(),
                         nulls: order.nulls.clone(),
                     })
-                    .collect()
+                    .collect())
             }),
             group_by: self
                 .group_by
                 .as_ref()
-                .map(|idents| idents.iter().map(|i| i.to_static()).collect()),
+                .map(|idents| crate::arenas::Vec::Heap(idents.iter().map(|i| i.to_static()).collect())),
             having: self.having.as_ref().map(|h| h.to_static()),
             limit: self.limit.clone(),
             for_update: self.for_update,
             combine: self
                 .combine
                 .as_ref()
-                .map(|(c, s)| (c.clone(), Box::new(s.to_static()))),
+                .map(|(c, s)| (c.clone(), s.to_static())),
         }
     }
 
@@ -83,19 +83,19 @@ impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
         let value_max = self
             .values
             .iter()
-            .map(|v| v.max_parameter())
+            .map(|v| v.parameter_count())
             .max()
             .unwrap_or(0);
-        let table_max = self.table.as_ref().map(|t| t.max_parameter()).unwrap_or(0);
+        let table_max = self.table.as_ref().map(|t| t.parameter_count()).unwrap_or(0);
         let where_max = self
             .where_condition
             .as_ref()
-            .map(|c| c.max_parameter())
+            .map(|c| c.parameter_count())
             .unwrap_or(0);
         let comb_max = self
             .combine
             .as_ref()
-            .map(|(_, s)| s.max_parameter())
+            .map(|(_, s)| s.parameter_count())
             .unwrap_or(0);
 
         [value_max, table_max, where_max, comb_max]
@@ -105,23 +105,24 @@ impl<'s> CompatibleParser<dialects::Postgres> for Select<'s> {
     }
 }
 
-impl<'s> Select<'s> {
-    pub fn max_parameter(&self) -> usize {
-        Self::parameter_count(self)
-    }
-}
-
-impl<'i, 's> crate::Parser<'i> for Select<'s> where 'i: 's {
-    fn parse() -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for Select<'i, 'a>
+{
+    fn parse_arena(
+        a: &'a bumpalo::Bump,
+    ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
         move |i| {
             #[allow(deprecated)]
-            select(i)
+            select(i, a)
         }
     }
 }
 
 #[deprecated]
-pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&[u8]>> {
+pub fn select<'i, 'a>(
+    i: &'i [u8],
+    a: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Select<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
+{
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("SELECT"),
         nom::character::complete::multispace1,
@@ -147,7 +148,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
         nom::sequence::tuple((
             nom::combinator::opt(nom::bytes::complete::tag_no_case("distinct")),
             nom::character::complete::multispace0,
-            <Vec<ValueExpression<'_>>>::parse(),
+            <crate::arenas::Vec<'a, ValueExpression<'i, 'a>>>::parse_arena(a),
             nom::combinator::opt(nom::combinator::map(
                 nom::sequence::tuple((
                     nom::character::complete::multispace0,
@@ -156,7 +157,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                         "FROM",
                         nom::sequence::tuple((
                             nom::character::complete::multispace1,
-                            TableExpression::parse(),
+                            TableExpression::parse_arena(a),
                         )),
                     )),
                 )),
@@ -170,7 +171,7 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                         "where condition",
                         nom::combinator::cut(nom::sequence::tuple((
                             nom::combinator::opt(nom::character::complete::multispace1),
-                            Condition::parse(),
+                            Condition::parse_arena(a),
                         ))),
                     ),
                 ))
@@ -181,24 +182,30 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
                     nom::character::complete::multispace0,
                     Combination::parse(),
                     nom::character::complete::multispace1,
-                    select,
+                    Select::parse_arena(a),
                 ))
-                .map(|(_, c, _, s)| (c, Box::new(s))),
+                .map(|(_, c, _, s)| (c, crate::arenas::Boxed::arena(a, s))),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((nom::character::complete::multispace1, <Vec<GroupAttribute<'_>>>::parse()))
-                    .map(|(_, attributes)| attributes),
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    <crate::arenas::Vec<'a, GroupAttribute<'_>>>::parse_arena(a),
+                ))
+                .map(|(_, attributes)| attributes),
             ),
             nom::combinator::opt(
-                nom::sequence::tuple((nom::character::complete::multispace1, <Vec<Ordering<'_>>>::parse()))
-                    .map(|(_, order)| order),
+                nom::sequence::tuple((
+                    nom::character::complete::multispace1,
+                    <crate::arenas::Vec<'a, Ordering<'_>>>::parse_arena(a),
+                ))
+                .map(|(_, order)| order),
             ),
             nom::combinator::opt(
                 nom::sequence::tuple((
                     nom::character::complete::multispace1,
                     nom::bytes::complete::tag_no_case("HAVING"),
                     nom::character::complete::multispace1,
-                    Condition::parse(),
+                    Condition::parse_arena(a),
                 ))
                 .map(|(_, _, _, cond)| cond),
             ),
@@ -257,8 +264,9 @@ pub fn select(i: &[u8]) -> IResult<&[u8], Select<'_>, nom::error::VerboseError<&
 #[cfg(test)]
 mod tests {
     use crate::{
-        self as sql, AggregateExpression, BinaryOperator, ColumnReference, Identifier, Literal,
-        macros::{parser_parse, parser_parse_err}
+        self as sql,
+        macros::{arena_parser_parse, arena_parser_parse_err},
+        AggregateExpression, BinaryOperator, ColumnReference, Identifier, Literal,
     };
 
     use super::*;
@@ -267,15 +275,12 @@ mod tests {
 
     #[test]
     fn count_select() {
-        parser_parse!(
-            Select,
-            "select count(*) from pgbench_branches"
-        );
+        arena_parser_parse!(Select, "select count(*) from pgbench_branches");
     }
 
     #[test]
     fn select_where_and() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT 1 FROM \"pg_indexes\" WHERE \"tablename\"=$1 AND \"indexname\"=$2"
         );
@@ -283,14 +288,14 @@ mod tests {
 
     #[test]
     fn select_with_limit() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT name FROM users LIMIT 1",
             Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("name".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Relation(Identifier("users".into()))),
                 where_condition: None,
                 order_by: None,
@@ -308,16 +313,16 @@ mod tests {
 
     #[test]
     fn select_with_alias_without_as() {
-        parser_parse!(
+       arena_parser_parse!(
             Select,
             "SELECT u.name FROM user u",
             Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: Some(Identifier("u".into())),
                     column: Identifier("name".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Renamed {
-                    inner: Box::new(TableExpression::Relation(Identifier("user".into()))),
+                    inner: Boxed::new(TableExpression::Relation(Identifier("user".into()))),
                     name: Identifier("u".into()),
                     column_rename: None,
                 }),
@@ -334,24 +339,24 @@ mod tests {
 
     #[test]
     fn select_where_not_null() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT COUNT(*) FROM \"api_key\"WHERE service_account_id IS NOT NULL",
             Select {
                 values: vec![ValueExpression::AggregateExpression(
-                    AggregateExpression::Count(Box::new(ValueExpression::All))
-                )],
+                    AggregateExpression::Count(Boxed::new(ValueExpression::All))
+                )].into(),
                 table: Some(TableExpression::Relation(Identifier("api_key".into()))),
                 where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: Identifier("service_account_id".into())
                         })),
-                        second: Box::new(ValueExpression::Null),
+                        second: Boxed::new(ValueExpression::Null),
                         operator: sql::BinaryOperator::IsNot
                     }
-                ))])),
+                ).into())].into())),
                 order_by: None,
                 group_by: None,
                 having: None,
@@ -364,25 +369,25 @@ mod tests {
 
     #[test]
     fn select_multiple_inner_joins() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT * FROM customer INNER JOIN orders ON customer.ID=orders.customer INNER JOIN products ON orders.product=products.ID",
             Select {
-                values: vec![ValueExpression::All],
+                values: vec![ValueExpression::All].into(),
                 table: Some(TableExpression::Join {
-                    left: Box::new(TableExpression::Join {
-                        left: Box::new(TableExpression::Relation(Identifier("customer".into()))),
-                        right: Box::new(TableExpression::Relation(Identifier("orders".into()))),
+                    left: Boxed::new(TableExpression::Join {
+                        left: Boxed::new(TableExpression::Relation(Identifier("customer".into()))),
+                        right: Boxed::new(TableExpression::Relation(Identifier("orders".into()))),
                         kind: JoinKind::Inner,
                         condition: Condition::And(vec![Condition::Value(Box::new(
                             ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("customer".into())),
                                         column: Identifier("ID".into())
                                     }
                                 )),
-                                second: Box::new(ValueExpression::ColumnReference(
+                                second: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("orders".into())),
                                         column: Identifier("customer".into())
@@ -390,24 +395,24 @@ mod tests {
                                 )),
                                 operator: BinaryOperator::Equal
                             }
-                        ))]),
+                        ).into())].into()),
                         lateral: false,
                     }),
-                    right: Box::new(TableExpression::Relation(Identifier("products".into()))),
+                    right: Boxed::new(TableExpression::Relation(Identifier("products".into()))),
                     kind: JoinKind::Inner,
                     condition: Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("orders".into())),
                                 column: Identifier("product".into())
                             })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("products".into())),
                                 column: Identifier("ID".into())
                             })),
                             operator: BinaryOperator::Equal,
                         }
-                    ))]),
+                    ).into())].into()),
                     lateral: false,
                 }),
                 where_condition: None,
@@ -423,25 +428,25 @@ mod tests {
 
     #[test]
     fn select_multiple_joins() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT * FROM customer JOIN orders ON customer.ID=orders.customer JOIN products ON orders.product=products.ID",
             Select {
-                values: vec![ValueExpression::All],
+                values: vec![ValueExpression::All].into(),
                 table: Some(TableExpression::Join {
-                    left: Box::new(TableExpression::Join {
-                        left: Box::new(TableExpression::Relation(Identifier("customer".into()))),
-                        right: Box::new(TableExpression::Relation(Identifier("orders".into()))),
+                    left: Boxed::new(TableExpression::Join {
+                        left: Boxed::new(TableExpression::Relation(Identifier("customer".into()))),
+                        right: Boxed::new(TableExpression::Relation(Identifier("orders".into()))),
                         kind: JoinKind::Inner,
                         condition: Condition::And(vec![Condition::Value(Box::new(
                             ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("customer".into())),
                                         column: Identifier("ID".into())
                                     }
                                 )),
-                                second: Box::new(ValueExpression::ColumnReference(
+                                second: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: Some(Identifier("orders".into())),
                                         column: Identifier("customer".into())
@@ -449,24 +454,24 @@ mod tests {
                                 )),
                                 operator: BinaryOperator::Equal
                             }
-                        ))]),
+                        ).into())].into()),
                         lateral: false,
                     }),
-                    right: Box::new(TableExpression::Relation(Identifier("products".into()))),
+                    right: Boxed::new(TableExpression::Relation(Identifier("products".into()))),
                     kind: JoinKind::Inner,
                     condition: Condition::And(vec![Condition::Value(Box::new(
                         ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("orders".into())),
                                 column: Identifier("product".into())
                             })),
-                            second: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: Some(Identifier("products".into())),
                                 column: Identifier("ID".into())
                             })),
                             operator: BinaryOperator::Equal,
                         }
-                    ))]),
+                    ).into())].into()),
                     lateral: false,
                 }),
                 where_condition: None,
@@ -482,14 +487,14 @@ mod tests {
 
     #[test]
     fn select_order_by_column_reference() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT name FROM users ORDER BY users.age",
             Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("name".into())
-                })],
+                })].into(),
                 table: Some(TableExpression::Relation(Identifier("users".into()))),
                 where_condition: None,
                 order_by: Some(vec![Ordering {
@@ -499,7 +504,7 @@ mod tests {
                     }),
                     order: OrderBy::Ascending,
                     nulls: NullOrdering::Last
-                }]),
+                }].into()),
                 group_by: None,
                 having: None,
                 limit: None,
@@ -511,11 +516,11 @@ mod tests {
 
     #[test]
     fn union_all() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT 1 UNION ALL SELECT n + 1 FROM cte WHERE n < 2",
             Select {
-                values: vec![ValueExpression::Literal(sql::Literal::SmallInteger(1))],
+                values: vec![ValueExpression::Literal(sql::Literal::SmallInteger(1))].into(),
                 table: None,
                 where_condition: None,
                 order_by: None,
@@ -527,37 +532,37 @@ mod tests {
                     Combination::Union,
                     Box::new(Select {
                         values: vec![ValueExpression::Operator {
-                            first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                                 relation: None,
                                 column: "n".into()
                             })),
-                            second: Box::new(ValueExpression::Literal(sql::Literal::SmallInteger(
+                            second: Boxed::new(ValueExpression::Literal(sql::Literal::SmallInteger(
                                 1
                             ))),
                             operator: BinaryOperator::Add,
-                        }],
+                        }].into(),
                         table: Some(TableExpression::Relation("cte".into())),
                         where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
                             ValueExpression::Operator {
-                                first: Box::new(ValueExpression::ColumnReference(
+                                first: Boxed::new(ValueExpression::ColumnReference(
                                     ColumnReference {
                                         relation: None,
                                         column: "n".into()
                                     }
                                 )),
-                                second: Box::new(ValueExpression::Literal(
+                                second: Boxed::new(ValueExpression::Literal(
                                     sql::Literal::SmallInteger(2)
                                 )),
                                 operator: BinaryOperator::Less
                             }
-                        ))])),
+                        ).into())].into())),
                         order_by: None,
                         group_by: None,
                         having: None,
                         limit: None,
                         for_update: None,
                         combine: None
-                    })
+                    }).into()
                 )),
             }
         );
@@ -565,30 +570,30 @@ mod tests {
 
     #[test]
     fn having_clause() {
-        parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT count(*) FROM orders GROUP BY uid HAVING uid > 0",
             Select {
                 values: vec![ValueExpression::AggregateExpression(
-                    AggregateExpression::Count(Box::new(ValueExpression::All))
-                )],
+                    AggregateExpression::Count(Boxed::new(ValueExpression::All))
+                )].into(),
                 table: Some(TableExpression::Relation("orders".into())),
                 where_condition: None,
                 order_by: None,
                 group_by: Some(vec![GroupAttribute::ColumnRef(ColumnReference {
                     relation: None,
                     column: "uid".into(),
-                })]),
+                })].into()),
                 having: Some(Condition::And(vec![Condition::Value(Box::new(
                     ValueExpression::Operator {
-                        first: Box::new(ValueExpression::ColumnReference(ColumnReference {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
                             relation: None,
                             column: "uid".into(),
                         })),
-                        second: Box::new(ValueExpression::Literal(Literal::SmallInteger(0))),
+                        second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(0))),
                         operator: BinaryOperator::Greater
                     }
-                ))])),
+                ).into())].into())),
                 limit: None,
                 for_update: None,
                 combine: None,
@@ -598,6 +603,6 @@ mod tests {
 
     #[test]
     fn errors() {
-        parser_parse_err!(Select, "SELECT something FROM");
+        arena_parser_parse_err!(Select, "SELECT something FROM");
     }
 }

@@ -229,7 +229,7 @@ impl<'s> Scope<'s> {
 impl ProjectionAttribute {
     fn parse_internal(
         scope: &mut Scope<'_>,
-        expr: &ValueExpression<'_>,
+        expr: &ValueExpression<'_, '_>,
         placeholders: &mut HashMap<usize, DataType>,
         table_expression: &mut RaExpression,
         outer: &mut Vec<RaExpression>,
@@ -253,7 +253,6 @@ impl ProjectionAttribute {
 
         if let ValueExpression::AllFromRelation { relation } = &expr {
             let mut columns = table_expression.get_columns();
-            dbg!(&columns);
 
             let src_name = match scope.renamings.get(relation.0.as_ref()) {
                 Some(n) => n,
@@ -455,14 +454,14 @@ impl RaExpression {
     }
 
     pub fn parse_select(
-        query: &Select<'_>,
+        query: &Select<'_, '_>,
         schemas: &Schemas,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
         Self::parse_select_with_context(query, schemas, &ParsingContext::new())
     }
 
     pub fn parse_select_with_context(
-        query: &Select<'_>,
+        query: &Select<'_, '_>,
         schemas: &Schemas,
         parse_context: &ParsingContext,
     ) -> Result<(Self, HashMap<usize, DataType>), ParseSelectError> {
@@ -684,7 +683,7 @@ impl RaExpression {
     }
 
     fn parse_s(
-        query: &Select<'_>,
+        query: &Select<'_, '_>,
         scope: &mut Scope<'_>,
         placeholders: &mut HashMap<usize, DataType>,
         outer: &mut Vec<RaExpression>,
@@ -706,7 +705,7 @@ impl RaExpression {
         // FIXME
         // This is currently the wrong way around, however this should yield the same result at
         // least at the moment
-        let ordered_ra = select::parse_order(where_ra, &query.order_by)?;
+        let ordered_ra = select::parse_order(where_ra, query.order_by.as_deref())?;
         let selected_ra = select::parse_aggregate(ordered_ra, &query, scope, placeholders, outer)?;
 
         let limited_ra = match &query.limit {
@@ -744,12 +743,14 @@ mod tests {
     use super::*;
 
     use sql::{Literal, Query};
+    use bumpalo::Bump;
 
     use pretty_assertions::assert_eq;
 
     #[test]
     fn basic_select() {
-        let parsed = match Query::parse("SELECT user FROM testing".as_bytes()).unwrap() {
+        let arena = Bump::new();
+        let parsed = match Query::parse("SELECT user FROM testing".as_bytes(), &arena).unwrap() {
             Query::Select(s) => s,
             other => panic!("{:?}", other),
         };
@@ -795,8 +796,9 @@ mod tests {
 
     #[test]
     fn basic_select_where() {
+        let arena = Bump::new();
         let parsed =
-            match Query::parse("SELECT user FROM testing WHERE user = 'bot'".as_bytes()).unwrap() {
+            match Query::parse("SELECT user FROM testing WHERE user = 'bot'".as_bytes(), &arena).unwrap() {
                 Query::Select(s) => s,
                 other => panic!("{:?}", other),
             };
@@ -860,8 +862,9 @@ mod tests {
 
     #[test]
     fn basic_select_where_with_placeholders() {
+        let arena = Bump::new();
         let parsed =
-            match Query::parse("SELECT user FROM testing WHERE user = $1".as_bytes()).unwrap() {
+            match Query::parse("SELECT user FROM testing WHERE user = $1".as_bytes(), &arena).unwrap() {
                 Query::Select(s) => s,
                 other => panic!("{:?}", other),
             };
@@ -923,9 +926,10 @@ mod tests {
 
     #[test]
     fn select_with_coalesce() {
+        let arena = Bump::new();
         let query = "SELECT\n\tdashboard.id,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.version,\n\tdashboard.updated,\n\tCOALESCE(dashboard.updated_by, -1),\n\t'',\n\tdashboard.data\nFROM dashboard;";
 
-        let parsed = match Query::parse(query.as_bytes()).unwrap() {
+        let parsed = match Query::parse(query.as_bytes(), &arena).unwrap() {
             Query::Select(s) => s,
             other => panic!("{:?}", other),
         };
@@ -1045,9 +1049,10 @@ mod tests {
 
     #[test]
     fn select_list_parameters() {
+        let arena = Bump::new();
         let query_str = "SELECT \"id\", \"role_id\", \"action\", \"scope\", \"kind\", \"attribute\", \"identifier\", \"updated\", \"created\" FROM \"permission\" WHERE \"action\" IN ($1,$2,$3,$4)";
 
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
         let select_query = match query {
             Query::Select(s) => s,
             other => panic!("{:?}", other),
@@ -1209,10 +1214,11 @@ mod tests {
 
     #[test]
     fn select_with_join() {
+        let arena = Bump::new();
         let query_str =
             "SELECT user.name, password.hash FROM user JOIN password ON user.id = password.uid";
 
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
         let select_query = match query {
             Query::Select(s) => s,
             other => panic!("{:?}", other),
@@ -1303,8 +1309,9 @@ mod tests {
 
     #[test]
     fn select_with_renamed_table() {
+        let arena = Bump::new();
         let query_str = "SELECT name FROM users AS u";
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let select_query = match query {
             Query::Select(s) => s,
@@ -1348,8 +1355,9 @@ mod tests {
 
     #[test]
     fn select_with_renamed_attribute() {
+        let arena = Bump::new();
         let query_str = "SELECT name AS user_name FROM users";
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let select_query = match query {
             Query::Select(s) => s,
@@ -1389,8 +1397,9 @@ mod tests {
 
     #[test]
     fn select_fully_qualified_with_renamed_table() {
+        let arena = Bump::new();
         let query_str = "SELECT u.name FROM users AS u WHERE u.name = 'something'";
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let select_query = match query {
             Query::Select(s) => s,
@@ -1448,8 +1457,9 @@ mod tests {
 
     #[test]
     fn select_max_aggregate() {
+        let arena = Bump::new();
         let query_str = "SELECT max(users.id) FROM users";
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let select_query = match query {
             Query::Select(s) => s,
@@ -1514,13 +1524,15 @@ mod error_tests {
     use self::sql::Query;
 
     use super::*;
+    use bumpalo::Bump;
 
     use pretty_assertions::assert_eq;
 
     #[test]
     fn select_unknown_attribute() {
+        let arena = Bump::new();
         let query_str = "SELECT something FROM users";
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let select_query = match query {
             Query::Select(s) => s,
@@ -1544,8 +1556,9 @@ mod error_tests {
 
     #[test]
     fn aggregate_with_not_aggregated_column_over_everything() {
+        let arena = Bump::new();
         let query_str = "SELECT count(*), name FROM users";
-        let query = Query::parse(query_str.as_bytes()).unwrap();
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
 
         let select_query = match query {
             Query::Select(s) => s,
@@ -1572,9 +1585,10 @@ mod error_tests {
 
     #[test]
     fn select_all() {
+        let arena = Bump::new();
         let query_str = "SELECT * FROM users";
 
-        let select = match Query::parse(query_str.as_bytes()) {
+        let select = match Query::parse(query_str.as_bytes(), &arena) {
             Ok(Query::Select(s)) => s,
             other => panic!("{:?}", other),
         };
