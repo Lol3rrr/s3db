@@ -52,8 +52,8 @@ impl<'a, T> core::ops::Deref for Boxed<'a, T> {
 impl<'a, T> AsRef<T> for Boxed<'a, T> {
     fn as_ref(&self) -> &T {
         match self {
-            Self::Heap(v) => &v,
-            Self::Arena(v) => &v,
+            Self::Heap(v) => v,
+            Self::Arena(v) => v,
         }
     }
 }

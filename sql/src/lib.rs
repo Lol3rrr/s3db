@@ -1,4 +1,5 @@
 //! [Reference](https://www.postgresql.org/docs/16/sql.html)
+#![deny(warnings)]
 
 use nom::IResult;
 
