@@ -1,3 +1,6 @@
 [workspace]
 members = ["s3db", "sql", "storage"]
 resolver = "2"
+
+[workspace.dependencies]
+bumpalo = {version = "3.16.0", features = ["collections", "boxed"]}
