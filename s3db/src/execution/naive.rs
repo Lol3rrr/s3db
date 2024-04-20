@@ -91,25 +91,25 @@ impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
 {
-    fn evaluate_ra<'s, 'p, 'f, 'o, 'c, 't, 'arena>(
+    async fn evaluate_ra<'s, 'exp, 'p, 'f, 'o, 'c, 't, 'arena>(
         &'s self,
-        expr: ra::RaExpression,
+        expr: &'exp ra::RaExpression,
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         outer: &'o HashMap<AttributeId, storage::Data>,
         transaction: &'t S::TransactionGuard,
         arena: &'arena bumpalo::Bump,
-    ) -> LocalBoxFuture<'f, Result<storage::EntireRelation, EvaulateRaError<S::LoadingError>>>
+    ) -> Result<(storage::TableSchema, LocalBoxStream<'f, storage::Row>), EvaulateRaError<S::LoadingError>>
     where
         's: 'f,
         'p: 'f,
         'c: 'f,
         'o: 'f,
         't: 'f,
+        'exp: 'f,
         'arena: 'f,
     {
-        async move {
-            let mut pending: bumpalo::collections::Vec<'_, &RaExpression> = bumpalo::vec![in arena; &expr];
+            let mut pending: bumpalo::collections::Vec<'_, &RaExpression> = bumpalo::vec![in arena; expr];
             let mut expression_stack: bumpalo::collections::Vec<'_, StackedExpr> = bumpalo::collections::Vec::new_in(arena);
             while let Some(tmp) = pending.pop() {
                 expression_stack.push(StackedExpr {
@@ -457,6 +457,8 @@ where
                     ra::RaExpression::LateralJoin { left, right, kind, condition } => {
                         tracing::info!("Executing LateralJoin");
 
+                        async {
+                    
                         let inner_columns = {
                             let mut tmp = Vec::new();
                             tmp.extend(left.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
@@ -475,20 +477,15 @@ where
                         while let Some(row) = left_rows.next().await {
                             let mut outer = outer.clone();
                             outer.extend(left_columns.iter().map(|(_, _, _, id)|*id).zip(row.data.iter().cloned()));
-                            let right_result = self.evaluate_ra(RaExpression::clone(&right), placeholders, ctes, &outer, transaction, &arena).await?;
+                            let (right_schema, right_stream) = self.evaluate_ra(&right, placeholders, ctes, &outer, transaction, &arena).await?;
                            
                             let result_columns = {
                                 let mut tmp = left_result_columns.clone();
-                                tmp.extend(right_result.columns.iter().map(|(name, ty, mods)| storage::ColumnSchema {
-                                    name: name.clone(),
-                                    ty: ty.clone(),
-                                    mods: mods.clone(),
-                                }));
+                                tmp.extend(right_schema.rows);
                                 tmp
                             };
 
-                            let row_result = futures::stream::once(async { row }).boxed_local();
-                            let right_stream = futures::stream::iter(right_result.parts.into_iter().flat_map(|p| p.rows)).boxed_local();
+                            let row_result = futures::stream::once(async { row }).boxed_local();    
 
                             let (joined_schema, joined_rows) = algorithms::joins::Naive {}.execute(algorithms::joins::JoinArguments {
                                 kind: kind.clone(),
@@ -516,7 +513,7 @@ where
                         }
 
                         match total_result {
-                            Some((schema, rows)) => (schema, futures::stream::iter(rows).boxed_local()),
+                            Some((schema, rows)) => Ok((schema, futures::stream::iter(rows).boxed_local())),
                             None => {
                                 let tmp = left_columns.into_iter().chain(right_columns.into_iter()).map(|(_, name, ty, _)| { 
                                     storage::ColumnSchema {
@@ -526,9 +523,10 @@ where
                                     }
                                 }).collect();
 
-                                (TableSchema { rows: tmp }, futures::stream::empty().boxed_local())
+                                Ok((TableSchema { rows: tmp }, futures::stream::empty().boxed_local()))
                             }
                         }
+                    }.boxed_local().await?
                     }
                     ra::RaExpression::Limit { limit, offset, .. } => {
                         let (table_schema, rows) = results.pop().unwrap();
@@ -540,16 +538,8 @@ where
                 results.push(result);
             }
 
-            let (schema, rows_stream) = results.pop().unwrap();
-
-            let rows = rows_stream.collect().await;
-
-            Ok(storage::EntireRelation {
-                columns: schema.rows.into_iter().map(|c| (c.name, c.ty, c.mods)).collect(),
-                parts: vec![storage::PartialRelation { rows }],
-            })
-        }
-        .boxed_local()
+            let result = results.pop().unwrap();
+        Ok(result)
     }
 
     fn evaluate_ra_cond<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f, 'arena>(
@@ -742,14 +732,12 @@ where
                         tmp
                     };
 
-                    match self.evaluate_ra(*query.clone(), placeholders, ctes, &n_tmp, transaction, &arena).await {
-                        Ok(res) => Ok(res
-                            .parts
-                            .into_iter()
-                            .flat_map(|p| p.rows.into_iter())
-                            .any(|_| true)),
+                    let res = match self.evaluate_ra(query, placeholders, ctes, &n_tmp, transaction, &arena).await {
+                        Ok((_, mut rows)) => {
+                            Ok(rows.next().await.is_some())},
                         Err(e) => panic!("{:?}", e),
-                    }
+                    };
+                    res
                 }
             }
         }
@@ -825,14 +813,11 @@ where
                         // dbg!(columns, row);
                         tmp
                     };
-                    let result = self.evaluate_ra(query.clone(), placeholders, ctes, &n_outer, transaction, &arena).await?;
+                    let (_, rows) = self.evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, &arena).await?;
 
-                    let parts: Vec<_> = result
-                        .parts
-                        .into_iter()
-                        .flat_map(|p| p.rows.into_iter())
+                    let parts: Vec<_> = rows
                         .map(|r| r.data[0].clone())
-                        .collect();
+                        .collect().await;
 
                     Ok(storage::Data::List(parts))
                 }
@@ -1012,8 +997,9 @@ where
         match &cte.value {
             ra::CTEValue::Standard { query } => match query {
                 ra::CTEQuery::Select(s) => {
-                    let evaluated = self.evaluate_ra(s.clone(), placeholders, ctes, &HashMap::new(), transaction, &arena).await?;
-                    Ok(evaluated)
+                    let tmp = HashMap::new();
+                    let (evaluated_schema, rows) = self.evaluate_ra(&s, placeholders, ctes, &tmp, transaction, &arena).await?;
+                    Ok(storage::EntireRelation::from_parts(evaluated_schema, rows.collect().await))
                 }
             },
             ra::CTEValue::Recursive { query, columns } => match query {
@@ -1053,25 +1039,26 @@ where
                     inner_cte.insert(cte.name.clone(), result);
 
                     loop {
-                        let mut tmp = self
-                            .evaluate_ra(s.clone(), placeholders, &inner_cte, &HashMap::new(), transaction, &arena)
+                        let tmp = HashMap::new();
+                        let (mut tmp_schema, tmp_rows) = self
+                            .evaluate_ra(&s, placeholders, &inner_cte, &tmp, transaction, &arena)
                             .await?;
 
-                        for (column, name) in tmp.columns.iter_mut().zip(columns.iter()) {
-                            column.0.clone_from(name);
+                        for (column, name) in tmp_schema.rows.iter_mut().zip(columns.iter()) {
+                            column.name.clone_from(name);
                         }
 
-                        let tmp_rows = tmp.parts.iter().flat_map(|p| p.rows.iter());
+                        let tmp_rows: Vec<_> = tmp_rows.collect().await;
                         let previous_rows = inner_cte
                             .get(&cte.name)
                             .into_iter()
                             .flat_map(|s| s.parts.iter().flat_map(|p| p.rows.iter()));
 
-                        if tmp_rows.count() == previous_rows.count() {
+                        if tmp_rows.len() == previous_rows.count() {
                             break;
                         }
 
-                        inner_cte.insert(cte.name.clone(), tmp);
+                        inner_cte.insert(cte.name.clone(), storage::EntireRelation::from_parts(tmp_schema, tmp_rows));
                     }
 
                     let result = inner_cte.remove(&cte.name).unwrap();
@@ -1281,8 +1268,9 @@ where
 
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
-                    let r = match self
-                        .evaluate_ra(ra_expression, &placeholder_values, &cte_queries, &HashMap::new(), transaction, &arena)
+                    let tmp = HashMap::new();
+                    let (scheme, rows) = match self
+                        .evaluate_ra(&ra_expression, &placeholder_values, &cte_queries, &tmp, transaction, &arena)
                         .await
                     {
                         Ok(r) => r,
@@ -1292,10 +1280,12 @@ where
                         }
                     };
 
-                    tracing::debug!("RA-Result: {:?}", r);
+                    let result = storage::EntireRelation::from_parts(scheme, rows.collect().await);
+
+                    tracing::debug!("RA-Result: {:?}", result);
 
                     Ok(ExecuteResult::Select {
-                        content: r,
+                        content: result,
                         formats: query.result_columns.clone(),
                     })
                 }
