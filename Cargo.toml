@@ -8,4 +8,3 @@ bumpalo = {version = "3.16.0", features = ["collections", "boxed"]}
 [profile.bench]
 codegen-units = 1
 lto = "thin"
-strip = "symbols"
