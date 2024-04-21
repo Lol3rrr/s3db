@@ -14,8 +14,8 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Run Profiling
-        run: RUSTFLAGS="--cfg flamegraph" cargo bench -- --profile-time 5
+      - name: Run Profiling for 
+        run: RUSTFLAGS="--cfg flamegraph" cargo bench --bench parse --bench execute -- --profile-time 5
       - name: Upload result artifacts
         uses: actions/upload-artifact@v4
         with:
