@@ -20,7 +20,6 @@ pub enum AggregateState {
     },
     Max {
         value: Option<storage::Data>,
-        ty: DataType,
         expr: Box<RaValueExpression>,
         columns: Vec<(String, DataType, ra::AttributeId)>,
     },
@@ -57,9 +56,8 @@ impl AggregateState {
                 value: None,
             },
             ra::AggregateExpression::Renamed { inner, .. } => Self::new(inner, columns),
-            ra::AggregateExpression::Max { inner, dtype } => Self::Max {
+            ra::AggregateExpression::Max { inner, .. } => Self::Max {
                 value: None,
-                ty: dtype.clone(),
                 expr: inner.clone(),
                 columns: columns.to_vec(),
             },

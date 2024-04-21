@@ -83,7 +83,7 @@ impl AggregateExpression {
 
                     Err(ParseSelectError::NotImplemented("Parsing SUM Aggregate"))
                 }
-                sql::AggregateExpression::AnyValue(val) => Err(ParseSelectError::NotImplemented(
+                sql::AggregateExpression::AnyValue(_val) => Err(ParseSelectError::NotImplemented(
                     "Parsing AnyValue Aggregate",
                 )),
                 sql::AggregateExpression::Max(val) => {
@@ -146,7 +146,7 @@ impl AggregateExpression {
                     },
                 })
             }
-            ValueExpression::Literal(lit) => todo!(),
+            ValueExpression::Literal(_lit) => todo!(),
             ValueExpression::Renamed { inner, name } => {
                 let inner = Self::parse(inner, scope, previous_columns, placeholders, ra_expr)?;
 
@@ -179,7 +179,7 @@ impl AggregateExpression {
 
     pub fn return_ty(&self) -> DataType {
         match self {
-            Self::Renamed { inner, name } => inner.return_ty(),
+            Self::Renamed { inner, .. } => inner.return_ty(),
             Self::CountRows => DataType::BigInteger,
             Self::Count { .. } => DataType::BigInteger,
             Self::Column { dtype, .. } => dtype.clone(),
@@ -244,18 +244,10 @@ impl AggregateExpression {
                                     RaFunction::Coalesce(parts) => {
                                         pending.extend(parts.iter());
                                     }
-                                    RaFunction::LeftPad {
-                                        base,
-                                        length,
-                                        padding,
-                                    } => {
+                                    RaFunction::LeftPad { base, .. } => {
                                         pending.push(base);
                                     }
-                                    RaFunction::SetValue {
-                                        name,
-                                        value,
-                                        is_called,
-                                    } => {
+                                    RaFunction::SetValue { value, .. } => {
                                         pending.push(value);
                                     }
                                     RaFunction::Lower(parts) => {
@@ -272,10 +264,10 @@ impl AggregateExpression {
                                             pending.push(c);
                                         }
                                     }
-                                    RaFunction::CurrentSchemas { implicit } => {
+                                    RaFunction::CurrentSchemas { .. } => {
                                         todo!("CurrentSchemas");
                                     }
-                                    RaFunction::ArrayPosition { array, target } => {
+                                    RaFunction::ArrayPosition { .. } => {
                                         todo!("ArrayPosition")
                                     }
                                 },
