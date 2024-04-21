@@ -727,7 +727,8 @@ fn parse_with_context_cte() {
         values: vec![ValueExpression::ColumnReference(ColumnReference {
             relation: None,
             column: "name".into(),
-        })].into(),
+        })]
+        .into(),
         table: Some(sql::TableExpression::Relation("cte".into())),
         where_condition: None,
         order_by: None,
@@ -893,7 +894,7 @@ fn select_as_single_value() {
 
 #[test]
 fn select_group_by_number() {
-    let arena =Bump::new();
+    let arena = Bump::new();
     let query_str = "SELECT COUNT(balance), plz FROM users GROUP BY 2";
 
     let select = match Query::parse(query_str.as_bytes(), &arena) {

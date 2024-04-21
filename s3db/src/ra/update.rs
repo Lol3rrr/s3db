@@ -229,8 +229,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::ra::{RaComparisonOperator, RaConditionValue};
-    use sql::{BinaryOperator, Literal, Query};
     use bumpalo::Bump;
+    use sql::{BinaryOperator, Literal, Query};
 
     use super::*;
 

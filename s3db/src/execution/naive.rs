@@ -3,27 +3,44 @@
 
 use std::collections::HashMap;
 
-use futures::{future::LocalBoxFuture, FutureExt, stream::{StreamExt, LocalBoxStream}};
+use futures::{
+    future::LocalBoxFuture,
+    stream::{LocalBoxStream, StreamExt},
+    FutureExt,
+};
 
 use crate::{
-    execution::algorithms::{self, joins::Join}, postgres::FormatCode, ra::{self, AttributeId, RaExpression, RaUpdate}, storage::{self, Data, Storage, TableSchema}
+    execution::algorithms::{self, joins::Join},
+    postgres::FormatCode,
+    ra::{self, AttributeId, RaExpression, RaUpdate},
+    storage::{self, Data, Storage, TableSchema},
 };
-use sql::{ BinaryOperator,  DataType, Query, TypeModifier, CompatibleParser};
+use sql::{BinaryOperator, CompatibleParser, DataType, Query, TypeModifier};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
 mod aggregate;
 use aggregate::AggregateState;
 
-mod pattern;
 mod condition;
+mod pattern;
 mod value;
 
 pub struct NaiveEngine<S> {
     storage: S,
 }
 
-pub struct NaiveEngineConditionEval<'engine, 'columns, 'placeholders, 'ctes, 'outer, 'transaction, 'arena, S, TG> {
+pub struct NaiveEngineConditionEval<
+    'engine,
+    'columns,
+    'placeholders,
+    'ctes,
+    'outer,
+    'transaction,
+    'arena,
+    S,
+    TG,
+> {
     engine: &'engine NaiveEngine<S>,
     columns: &'columns [(String, DataType, AttributeId)],
     placeholders: &'placeholders HashMap<usize, Data>,
@@ -33,13 +50,28 @@ pub struct NaiveEngineConditionEval<'engine, 'columns, 'placeholders, 'ctes, 'ou
     arena: &'arena bumpalo::Bump,
 }
 
-impl<S> algorithms::joins::EvaluateConditions<S::LoadingError> for NaiveEngineConditionEval<'_, '_, '_, '_, '_, '_, '_, S, S::TransactionGuard> where S: Storage {
+impl<S> algorithms::joins::EvaluateConditions<S::LoadingError>
+    for NaiveEngineConditionEval<'_, '_, '_, '_, '_, '_, '_, S, S::TransactionGuard>
+where
+    S: Storage,
+{
     async fn evaluate(
-                &self,
-                condition: &ra::RaCondition,
-                row: &storage::Row,
-            ) -> Result<bool, EvaulateRaError<S::LoadingError>> {
-        condition::evaluate_ra_cond(&self.engine, condition, row, self.columns, self.placeholders, self.ctes, self.outer, self.transaction, self.arena).await
+        &self,
+        condition: &ra::RaCondition,
+        row: &storage::Row,
+    ) -> Result<bool, EvaulateRaError<S::LoadingError>> {
+        condition::evaluate_ra_cond(
+            &self.engine,
+            condition,
+            row,
+            self.columns,
+            self.placeholders,
+            self.ctes,
+            self.outer,
+            self.transaction,
+            self.arena,
+        )
+        .await
     }
 }
 
@@ -101,7 +133,10 @@ where
         outer: &'o HashMap<AttributeId, storage::Data>,
         transaction: &'t S::TransactionGuard,
         arena: &'arena bumpalo::Bump,
-    ) -> Result<(storage::TableSchema, LocalBoxStream<'f, storage::Row>), EvaulateRaError<S::LoadingError>>
+    ) -> Result<
+        (storage::TableSchema, LocalBoxStream<'f, storage::Row>),
+        EvaulateRaError<S::LoadingError>,
+    >
     where
         's: 'f,
         'p: 'f,
@@ -111,118 +146,141 @@ where
         'exp: 'f,
         'arena: 'f,
     {
-            let mut pending: bumpalo::collections::Vec<'_, &RaExpression> = bumpalo::vec![in arena; expr];
-            let mut expression_stack: bumpalo::collections::Vec<'_, StackedExpr> = bumpalo::collections::Vec::new_in(arena);
-            while let Some(tmp) = pending.pop() {
-                expression_stack.push(StackedExpr {
-                    expr: tmp,
-                });
-                match &tmp {
-                    ra::RaExpression::Renamed { inner, .. } => { 
-                        pending.push(inner);
-                    }
-                    ra::RaExpression::EmptyRelation => {}
-                    ra::RaExpression::BaseRelation { .. } => {}
-                    ra::RaExpression::Projection { inner, .. } => {
-                        pending.push(inner);
-                    }
-                    ra::RaExpression::Selection { inner, .. } => {
-                        pending.push(inner);
-                    }
-                    ra::RaExpression::Join { left, right,  .. } => {
-                        pending.push(left);
-                        pending.push(right);
-                    }
-                    ra::RaExpression::LateralJoin { left, .. } => {
-                        // We only push the left side, because we want to evaluate the right side
-                        // in a recursive way later
-                        pending.push(left);
-                    }
-                    ra::RaExpression::Aggregation { inner, .. } => {
-                        pending.push(inner);
-                    }
-                    ra::RaExpression::Limit { inner, ..} => {
-                        pending.push(inner);
-                    }
-                    ra::RaExpression::OrderBy { inner, .. } => {
-                        pending.push(inner);
-                    }
-                    ra::RaExpression::Chain { parts } => {
-                        pending.extend(parts.iter());
-                    }
-                    ra::RaExpression::CTE { .. } => {}
-                };
-            }
+        let mut pending: bumpalo::collections::Vec<'_, &RaExpression> =
+            bumpalo::vec![in arena; expr];
+        let mut expression_stack: bumpalo::collections::Vec<'_, StackedExpr> =
+            bumpalo::collections::Vec::new_in(arena);
+        while let Some(tmp) = pending.pop() {
+            expression_stack.push(StackedExpr { expr: tmp });
+            match &tmp {
+                ra::RaExpression::Renamed { inner, .. } => {
+                    pending.push(inner);
+                }
+                ra::RaExpression::EmptyRelation => {}
+                ra::RaExpression::BaseRelation { .. } => {}
+                ra::RaExpression::Projection { inner, .. } => {
+                    pending.push(inner);
+                }
+                ra::RaExpression::Selection { inner, .. } => {
+                    pending.push(inner);
+                }
+                ra::RaExpression::Join { left, right, .. } => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                ra::RaExpression::LateralJoin { left, .. } => {
+                    // We only push the left side, because we want to evaluate the right side
+                    // in a recursive way later
+                    pending.push(left);
+                }
+                ra::RaExpression::Aggregation { inner, .. } => {
+                    pending.push(inner);
+                }
+                ra::RaExpression::Limit { inner, .. } => {
+                    pending.push(inner);
+                }
+                ra::RaExpression::OrderBy { inner, .. } => {
+                    pending.push(inner);
+                }
+                ra::RaExpression::Chain { parts } => {
+                    pending.extend(parts.iter());
+                }
+                ra::RaExpression::CTE { .. } => {}
+            };
+        }
 
-            let mut results: bumpalo::collections::Vec<'_, (TableSchema, LocalBoxStream<'_, storage::Row>)> = bumpalo::collections::Vec::with_capacity_in(expression_stack.len(), arena);
-            for stacked_expr in expression_stack.into_iter().rev() {
-                let expr = stacked_expr.expr;
+        let mut results: bumpalo::collections::Vec<
+            '_,
+            (TableSchema, LocalBoxStream<'_, storage::Row>),
+        > = bumpalo::collections::Vec::with_capacity_in(expression_stack.len(), arena);
+        for stacked_expr in expression_stack.into_iter().rev() {
+            let expr = stacked_expr.expr;
 
-                let result = match expr {
-                    ra::RaExpression::EmptyRelation => {
-                        (TableSchema {
-                            rows: Vec::new(),
-                        }, futures::stream::iter(vec![storage::Row::new(0, Vec::new())]).boxed_local())
-                    }
-                    ra::RaExpression::Renamed {  .. } => {
-                        results.pop().unwrap()
-                    }
-                    ra::RaExpression::BaseRelation { name, .. } => {
-                        self.storage
-                            .stream_relation(&name.0, transaction)
-                            .await
-                            .map_err(EvaulateRaError::StorageError)?
-                    }
-                    ra::RaExpression::CTE { name, .. } => {
-                        let cte_value = ctes.get(name).ok_or_else(|| EvaulateRaError::Other("Getting CTE"))?;
+            let result = match expr {
+                ra::RaExpression::EmptyRelation => (
+                    TableSchema { rows: Vec::new() },
+                    futures::stream::iter(vec![storage::Row::new(0, Vec::new())]).boxed_local(),
+                ),
+                ra::RaExpression::Renamed { .. } => results.pop().unwrap(),
+                ra::RaExpression::BaseRelation { name, .. } => self
+                    .storage
+                    .stream_relation(&name.0, transaction)
+                    .await
+                    .map_err(EvaulateRaError::StorageError)?,
+                ra::RaExpression::CTE { name, .. } => {
+                    let cte_value = ctes
+                        .get(name)
+                        .ok_or_else(|| EvaulateRaError::Other("Getting CTE"))?;
 
-                        let table_schema = TableSchema {
-                            rows: cte_value.columns.iter().map(|(name, ty, mods)| storage::ColumnSchema {
+                    let table_schema = TableSchema {
+                        rows: cte_value
+                            .columns
+                            .iter()
+                            .map(|(name, ty, mods)| storage::ColumnSchema {
                                 name: name.to_string(),
                                 mods: mods.to_vec(),
                                 ty: ty.clone(),
-                            }).collect(),
-                        };
-
-                        let stream = futures::stream::iter(cte_value.parts.iter().flat_map(|p| p.rows.iter().cloned())).boxed_local();
-
-                        (table_schema, stream)
-                    }
-                    ra::RaExpression::Projection { inner, attributes } => {
-                        let (table_schema, rows) = results.pop().unwrap(); 
-
-                        let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
-
-                        assert_eq!(
-                            inner_columns
-                                .iter()
-                                .map(|(n, t, _)| (n, t))
-                                .collect::<Vec<_>>(),
-                            table_schema
-                                .rows
-                                .iter()
-                                .map(|c| (&c.name, &c.ty))
-                                .collect::<Vec<_>>()
-                        );
-
-                        let columns: Vec<_> = attributes
-                            .iter()
-                            .map(|attr| {
-                                storage::ColumnSchema {
-                                    name: attr.name.clone(),
-                                    ty: attr.value.datatype().unwrap(),
-                                    mods: Vec::new(),
-                                }
                             })
-                            .collect();
+                            .collect(),
+                    };
 
-                        let stream: LocalBoxStream<'_, storage::Row> = StreamExt::boxed_local(StreamExt::then(rows, move |row| {
+                    let stream = futures::stream::iter(
+                        cte_value.parts.iter().flat_map(|p| p.rows.iter().cloned()),
+                    )
+                    .boxed_local();
+
+                    (table_schema, stream)
+                }
+                ra::RaExpression::Projection { inner, attributes } => {
+                    let (table_schema, rows) = results.pop().unwrap();
+
+                    let inner_columns = inner
+                        .get_columns()
+                        .into_iter()
+                        .map(|(_, n, t, i)| (n, t, i))
+                        .collect::<Vec<_>>();
+
+                    assert_eq!(
+                        inner_columns
+                            .iter()
+                            .map(|(n, t, _)| (n, t))
+                            .collect::<Vec<_>>(),
+                        table_schema
+                            .rows
+                            .iter()
+                            .map(|c| (&c.name, &c.ty))
+                            .collect::<Vec<_>>()
+                    );
+
+                    let columns: Vec<_> = attributes
+                        .iter()
+                        .map(|attr| storage::ColumnSchema {
+                            name: attr.name.clone(),
+                            ty: attr.value.datatype().unwrap(),
+                            mods: Vec::new(),
+                        })
+                        .collect();
+
+                    let stream: LocalBoxStream<'_, storage::Row> =
+                        StreamExt::boxed_local(StreamExt::then(rows, move |row| {
                             let inner_columns = inner_columns.clone();
                             let attributes = attributes;
                             async move {
                                 let mut data = Vec::new();
                                 for attribute in attributes.iter() {
-                                    let tmp = value::evaluate_ra_value(self, &attribute.value, &row, &inner_columns, placeholders, ctes, &outer, transaction, &arena).await.unwrap(); // TODO
+                                    let tmp = value::evaluate_ra_value(
+                                        self,
+                                        &attribute.value,
+                                        &row,
+                                        &inner_columns,
+                                        placeholders,
+                                        ctes,
+                                        &outer,
+                                        transaction,
+                                        &arena,
+                                    )
+                                    .await
+                                    .unwrap(); // TODO
 
                                     // TODO
                                     // This is not a good fix
@@ -240,231 +298,333 @@ where
                             }
                         }));
 
-                        (TableSchema {
-                            rows: columns
-                        }, stream)
-                    }
-                    ra::RaExpression::Selection { inner, filter } => {
-                        let (table_schema, rows) = results.pop().unwrap();
+                    (TableSchema { rows: columns }, stream)
+                }
+                ra::RaExpression::Selection { inner, filter } => {
+                    let (table_schema, rows) = results.pop().unwrap();
 
-                        let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
+                    let inner_columns = inner
+                        .get_columns()
+                        .into_iter()
+                        .map(|(_, n, t, i)| (n, t, i))
+                        .collect::<Vec<_>>();
 
-                        assert_eq!(
-                            inner_columns
-                                .iter()
-                                .map(|(n, t, _)| (n, t))
-                                .collect::<Vec<_>>(),
-                            table_schema
-                                .rows
-                                .iter()
-                                .map(|c| (&c.name, &c.ty))
-                                .collect::<Vec<_>>()
-                        );
+                    assert_eq!(
+                        inner_columns
+                            .iter()
+                            .map(|(n, t, _)| (n, t))
+                            .collect::<Vec<_>>(),
+                        table_schema
+                            .rows
+                            .iter()
+                            .map(|c| (&c.name, &c.ty))
+                            .collect::<Vec<_>>()
+                    );
 
-                        let stream = StreamExt::filter_map(rows, move |row| {
-                            let inner_columns = inner_columns.clone();
-                            async move {
-                                let result = condition::evaluate_ra_cond(self, filter, &row, &inner_columns, placeholders, ctes, outer, transaction, &arena).await.unwrap(); // TODO
-                                if result {
-                                    Some(row)
-                                } else {
-                                    None
-                                }
+                    let stream = StreamExt::filter_map(rows, move |row| {
+                        let inner_columns = inner_columns.clone();
+                        async move {
+                            let result = condition::evaluate_ra_cond(
+                                self,
+                                filter,
+                                &row,
+                                &inner_columns,
+                                placeholders,
+                                ctes,
+                                outer,
+                                transaction,
+                                &arena,
+                            )
+                            .await
+                            .unwrap(); // TODO
+                            if result {
+                                Some(row)
+                            } else {
+                                None
                             }
-                        }).boxed_local();
+                        }
+                    })
+                    .boxed_local();
 
-                        (table_schema, stream)
-                    }
-                    ra::RaExpression::Aggregation { inner, attributes, aggregation_condition } => {
-                        let (table_schema, mut rows) = results.pop().unwrap();
+                    (table_schema, stream)
+                }
+                ra::RaExpression::Aggregation {
+                    inner,
+                    attributes,
+                    aggregation_condition,
+                } => {
+                    let (table_schema, mut rows) = results.pop().unwrap();
 
-                        let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
+                    let inner_columns = inner
+                        .get_columns()
+                        .into_iter()
+                        .map(|(_, n, t, i)| (n, t, i))
+                        .collect::<Vec<_>>();
 
-                        let result_columns: Vec<_> = attributes
+                    let result_columns: Vec<_> = attributes
+                        .iter()
+                        .map(|attr| storage::ColumnSchema {
+                            name: attr.name.clone(),
+                            ty: attr.value.return_ty(),
+                            mods: Vec::new(),
+                        })
+                        .collect();
+
+                    let table_schema = TableSchema {
+                        rows: result_columns,
+                    };
+
+                    match aggregation_condition {
+                        ra::AggregationCondition::Everything => {
+                            let mut states: Vec<_> = attributes
                                 .iter()
-                                .map(|attr| storage::ColumnSchema {
-                                    name: attr.name.clone(),
-                                    ty: attr.value.return_ty(),
-                                    mods: Vec::new()
-                                })
+                                .map(|attr| AggregateState::new(&attr.value, &inner_columns))
                                 .collect();
 
-                        let table_schema = TableSchema {
-                            rows: result_columns
-                        };
+                            while let Some(row) = rows.next().await {
+                                for state in states.iter_mut() {
+                                    state.update(self, &row, outer, transaction, &arena).await?;
+                                }
+                            }
 
-                        match aggregation_condition {
-                            ra::AggregationCondition::Everything => {
+                            let row_data: Vec<_> = states
+                                .into_iter()
+                                .map(|s| {
+                                    s.to_data().ok_or(EvaulateRaError::Other(
+                                        "Converting AggregateState to Data",
+                                    ))
+                                })
+                                .collect::<Result<_, _>>()?;
+
+                            (
+                                table_schema,
+                                futures::stream::once(async { storage::Row::new(0, row_data) })
+                                    .boxed_local(),
+                            )
+                        }
+                        ra::AggregationCondition::GroupBy { fields } => {
+                            let groups: Vec<Vec<storage::Row>> = {
+                                let mut tmp: Vec<Vec<storage::Row>> = Vec::new();
+
+                                let compare_indices: Vec<_> = fields
+                                    .iter()
+                                    .map(|(_, src_id)| {
+                                        inner_columns
+                                            .iter()
+                                            .enumerate()
+                                            .find(|(_, (_, _, c_id))| c_id == src_id)
+                                            .map(|(i, _)| i)
+                                            .unwrap()
+                                    })
+                                    .collect();
+                                let grouping_func =
+                                    |first: &storage::Row, second: &storage::Row| {
+                                        compare_indices
+                                            .iter()
+                                            .all(|idx| first.data[*idx] == second.data[*idx])
+                                    };
+
+                                while let Some(row) = rows.next().await {
+                                    let mut grouped = false;
+                                    for group in tmp.iter_mut() {
+                                        let group_row = group.first().expect("We only insert Groups with at least one Row in them, so every group must have a first element");
+
+                                        if grouping_func(&row, group_row) {
+                                            grouped = true;
+                                            group.push(row.clone());
+
+                                            break;
+                                        }
+                                    }
+
+                                    if !grouped {
+                                        tmp.push(vec![row.clone()]);
+                                    }
+                                }
+
+                                tmp
+                            };
+
+                            let mut result_rows: Vec<storage::Row> = Vec::new();
+                            for group in groups.into_iter() {
                                 let mut states: Vec<_> = attributes
                                     .iter()
                                     .map(|attr| AggregateState::new(&attr.value, &inner_columns))
                                     .collect();
 
-                                while let Some(row) = rows.next().await {
+                                for row in group {
                                     for state in states.iter_mut() {
-                                        state.update(self, &row, outer, transaction, &arena).await?;
+                                        state
+                                            .update(self, &row, outer, transaction, &arena)
+                                            .await?;
                                     }
                                 }
 
                                 let row_data: Vec<_> = states
                                     .into_iter()
-                                    .map(|s| s.to_data().ok_or(EvaulateRaError::Other("Converting AggregateState to Data")))
+                                    .map(|s| {
+                                        s.to_data().ok_or(EvaulateRaError::Other(
+                                            "Converting AggregateState to Data",
+                                        ))
+                                    })
                                     .collect::<Result<_, _>>()?;
 
-                                (table_schema, futures::stream::once(async { storage::Row::new(0, row_data) }).boxed_local())
+                                result_rows.push(storage::Row::new(0, row_data));
                             }
-                            ra::AggregationCondition::GroupBy { fields } => {
-                                let groups: Vec<Vec<storage::Row>> = {
-                                    let mut tmp: Vec<Vec<storage::Row>> = Vec::new();
 
-                                    let compare_indices : Vec<_>= fields.iter().map(|(_, src_id)| {
-                                        inner_columns.iter().enumerate().find(|(_, (_, _, c_id))| c_id == src_id).map(|(i, _)| i).unwrap()
-                                    }).collect();
-                                    let grouping_func =
-                                        |first: &storage::Row, second: &storage::Row| {
-                                            compare_indices.iter().all(|idx| first.data[*idx] == second.data[*idx])
-                                        };
-
-                                    while let Some(row) = rows.next().await {
-                                        let mut grouped = false;
-                                        for group in tmp.iter_mut() {
-                                            let group_row = group.first().expect("We only insert Groups with at least one Row in them, so every group must have a first element");
-
-                                            if grouping_func(&row, group_row) {
-                                                grouped = true;
-                                                group.push(row.clone());
-
-                                                break;
-                                            }
-                                        }
-
-                                        if !grouped {
-                                            tmp.push(vec![row.clone()]);
-                                        }
-                                    }
-
-                                    tmp
-                                };
-
-
-                                let mut result_rows: Vec<storage::Row> = Vec::new();
-                                for group in groups.into_iter() {
-                                    let mut states: Vec<_> = attributes.iter().map(|attr| AggregateState::new(&attr.value, &inner_columns)).collect();
-
-                                    for row in group {
-                                        for state in states.iter_mut() {
-                                            state.update(self, &row, outer, transaction, &arena).await?;
-                                        }
-                                    }
-
-                                    let row_data: Vec<_> = states
-                                        .into_iter()
-                                        .map(|s| s.to_data().ok_or(EvaulateRaError::Other("Converting AggregateState to Data")))
-                                        .collect::<Result<_, _>>()?;
-
-                                    result_rows.push(storage::Row::new(0, row_data));
-                                }
-
-                                (table_schema, futures::stream::iter(result_rows).boxed_local())
-                            }
+                            (
+                                table_schema,
+                                futures::stream::iter(result_rows).boxed_local(),
+                            )
                         }
                     }
-                    ra::RaExpression::Chain { parts } => {
-                        let mut table_schema = TableSchema { rows: Vec::new() };
+                }
+                ra::RaExpression::Chain { parts } => {
+                    let mut table_schema = TableSchema { rows: Vec::new() };
 
-                        let mut part_results = Vec::with_capacity(parts.len());
-                        for _ in parts {
-                            let (part_table, part_rows) = results.pop().unwrap();
+                    let mut part_results = Vec::with_capacity(parts.len());
+                    for _ in parts {
+                        let (part_table, part_rows) = results.pop().unwrap();
 
-                            table_schema = part_table;
-                            part_results.push(part_rows);
-                        }
-
-                        part_results.reverse();
-
-                        let stream = futures::stream::iter(part_results).flatten().boxed_local();
-
-                        (table_schema, stream)
+                        table_schema = part_table;
+                        part_results.push(part_rows);
                     }
-                    ra::RaExpression::OrderBy { inner, attributes } => {
-                        let inner_columns = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect::<Vec<_>>();
-                        let (table_schema, rows) = results.pop().unwrap();
 
-                        let orders: Vec<(usize, sql::OrderBy)> = attributes.iter().map(|(id, order)| {
-                            let attribute_idx = inner_columns.iter().enumerate().find(|( _, column)| id == &column.2).map(|( idx, _)| idx).ok_or_else(|| EvaulateRaError::Other("Could not find Attribute"))?;
+                    part_results.reverse();
+
+                    let stream = futures::stream::iter(part_results).flatten().boxed_local();
+
+                    (table_schema, stream)
+                }
+                ra::RaExpression::OrderBy { inner, attributes } => {
+                    let inner_columns = inner
+                        .get_columns()
+                        .into_iter()
+                        .map(|(_, n, t, i)| (n, t, i))
+                        .collect::<Vec<_>>();
+                    let (table_schema, rows) = results.pop().unwrap();
+
+                    let orders: Vec<(usize, sql::OrderBy)> = attributes
+                        .iter()
+                        .map(|(id, order)| {
+                            let attribute_idx = inner_columns
+                                .iter()
+                                .enumerate()
+                                .find(|(_, column)| id == &column.2)
+                                .map(|(idx, _)| idx)
+                                .ok_or_else(|| {
+                                    EvaulateRaError::Other("Could not find Attribute")
+                                })?;
 
                             Ok((attribute_idx, order.clone()))
-                        }).collect::<Result<_, _>>()?;
+                        })
+                        .collect::<Result<_, _>>()?;
 
-                        let mut result_rows: Vec<_> = rows.collect().await;
+                    let mut result_rows: Vec<_> = rows.collect().await;
 
-                        result_rows.sort_unstable_by(|first, second| {
-                            for (attribute_idx, order) in orders.iter() {
-                                let first_value = &first.data[*attribute_idx];
-                                let second_value = &second.data[*attribute_idx];
+                    result_rows.sort_unstable_by(|first, second| {
+                        for (attribute_idx, order) in orders.iter() {
+                            let first_value = &first.data[*attribute_idx];
+                            let second_value = &second.data[*attribute_idx];
 
-                                let (first_value, second_value) = match order {
-                                    sql::OrderBy::Ascending => (first_value, second_value),
-                                    sql::OrderBy::Descending => (second_value, first_value),
-                                };
+                            let (first_value, second_value) = match order {
+                                sql::OrderBy::Ascending => (first_value, second_value),
+                                sql::OrderBy::Descending => (second_value, first_value),
+                            };
 
-                                if core::mem::discriminant::<storage::Data>(first_value) == core::mem::discriminant(second_value) {
-                                    match first_value.partial_cmp(second_value).expect("") {
-                                        core::cmp::Ordering::Equal => {}
-                                        other => return other,
-                                    }
-                                } else {
-                                    todo!("What to do when comparing data with different types")
+                            if core::mem::discriminant::<storage::Data>(first_value)
+                                == core::mem::discriminant(second_value)
+                            {
+                                match first_value.partial_cmp(second_value).expect("") {
+                                    core::cmp::Ordering::Equal => {}
+                                    other => return other,
                                 }
+                            } else {
+                                todo!("What to do when comparing data with different types")
                             }
-                            core::cmp::Ordering::Equal
-                        });
+                        }
+                        core::cmp::Ordering::Equal
+                    });
 
-                        (table_schema, futures::stream::iter(result_rows).boxed_local())
-                    }
-                    ra::RaExpression::Join { left, right, kind, condition, .. } => {
-                        tracing::info!("Executing Join");
+                    (
+                        table_schema,
+                        futures::stream::iter(result_rows).boxed_local(),
+                    )
+                }
+                ra::RaExpression::Join {
+                    left,
+                    right,
+                    kind,
+                    condition,
+                    ..
+                } => {
+                    tracing::info!("Executing Join");
 
+                    let inner_columns = {
+                        let mut tmp = Vec::new();
+                        tmp.extend(left.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
+                        tmp.extend(
+                            right
+                                .get_columns()
+                                .into_iter()
+                                .map(|(_, n, t, i)| (n, t, i)),
+                        );
+                        tmp
+                    };
+
+                    let (right_schema, right_rows) = results.pop().unwrap();
+                    let (left_schema, left_rows) = results.pop().unwrap();
+
+                    let result_columns = {
+                        let mut tmp = left_schema.rows.clone();
+                        tmp.extend(right_schema.rows.clone());
+                        tmp
+                    };
+
+                    let (schema, rows) = algorithms::joins::Naive {}
+                        .execute(
+                            algorithms::joins::JoinArguments {
+                                kind: kind.clone(),
+                                conditon: condition,
+                            },
+                            algorithms::joins::JoinContext {},
+                            result_columns,
+                            left_rows,
+                            right_rows,
+                            &NaiveEngineConditionEval {
+                                engine: self,
+                                columns: &inner_columns,
+                                placeholders,
+                                ctes,
+                                outer,
+                                transaction,
+                                arena,
+                            },
+                        )
+                        .await?;
+
+                    (schema, rows.boxed_local())
+                }
+                ra::RaExpression::LateralJoin {
+                    left,
+                    right,
+                    kind,
+                    condition,
+                } => {
+                    tracing::info!("Executing LateralJoin");
+
+                    async {
                         let inner_columns = {
                             let mut tmp = Vec::new();
-                            tmp.extend(left.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
-                            tmp.extend(right.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
-                            tmp
-                        };
-
-                        let (right_schema, right_rows) = results.pop().unwrap();
-                        let (left_schema, left_rows) = results.pop().unwrap();
-
-                        let result_columns = {
-                            let mut tmp = left_schema.rows.clone();
-                            tmp.extend(right_schema.rows.clone());
-                            tmp
-                        };
-
-                        let (schema, rows) = algorithms::joins::Naive{}.execute(algorithms::joins::JoinArguments {
-                            kind: kind.clone(),
-                            conditon: condition,
-                        }, algorithms::joins::JoinContext {}, result_columns, left_rows, right_rows,  &NaiveEngineConditionEval {
-                            engine: self,
-                            columns: &inner_columns,
-                            placeholders,
-                            ctes,
-                            outer,
-                            transaction,
-                            arena
-                        }).await?;
-
-                        (schema, rows.boxed_local())
-                    }
-                    ra::RaExpression::LateralJoin { left, right, kind, condition } => {
-                        tracing::info!("Executing LateralJoin");
-
-                        async {
-                    
-                        let inner_columns = {
-                            let mut tmp = Vec::new();
-                            tmp.extend(left.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
-                            tmp.extend(right.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)));
+                            tmp.extend(
+                                left.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)),
+                            );
+                            tmp.extend(
+                                right
+                                    .get_columns()
+                                    .into_iter()
+                                    .map(|(_, n, t, i)| (n, t, i)),
+                            );
                             tmp
                         };
 
@@ -478,29 +638,52 @@ where
                         let left_result_columns = left_schema.rows.clone();
                         while let Some(row) = left_rows.next().await {
                             let mut outer = outer.clone();
-                            outer.extend(left_columns.iter().map(|(_, _, _, id)|*id).zip(row.data.iter().cloned()));
-                            let (right_schema, right_stream) = self.evaluate_ra(&right, placeholders, ctes, &outer, transaction, &arena).await?;
-                           
+                            outer.extend(
+                                left_columns
+                                    .iter()
+                                    .map(|(_, _, _, id)| *id)
+                                    .zip(row.data.iter().cloned()),
+                            );
+                            let (right_schema, right_stream) = self
+                                .evaluate_ra(
+                                    &right,
+                                    placeholders,
+                                    ctes,
+                                    &outer,
+                                    transaction,
+                                    &arena,
+                                )
+                                .await?;
+
                             let result_columns = {
                                 let mut tmp = left_result_columns.clone();
                                 tmp.extend(right_schema.rows);
                                 tmp
                             };
 
-                            let row_result = futures::stream::once(async { row }).boxed_local();    
+                            let row_result = futures::stream::once(async { row }).boxed_local();
 
-                            let (joined_schema, joined_rows) = algorithms::joins::Naive {}.execute(algorithms::joins::JoinArguments {
-                                kind: kind.clone(),
-                                conditon: condition,
-                            }, algorithms::joins::JoinContext {}, result_columns, row_result, right_stream,  &NaiveEngineConditionEval {
-                                engine: self,
-                                columns: &inner_columns,
-                                placeholders,
-                                ctes,
-                                outer: &outer,
-                                transaction,
-                                arena
-                            }).await?;
+                            let (joined_schema, joined_rows) = algorithms::joins::Naive {}
+                                .execute(
+                                    algorithms::joins::JoinArguments {
+                                        kind: kind.clone(),
+                                        conditon: condition,
+                                    },
+                                    algorithms::joins::JoinContext {},
+                                    result_columns,
+                                    row_result,
+                                    right_stream,
+                                    &NaiveEngineConditionEval {
+                                        engine: self,
+                                        columns: &inner_columns,
+                                        placeholders,
+                                        ctes,
+                                        outer: &outer,
+                                        transaction,
+                                        arena,
+                                    },
+                                )
+                                .await?;
 
                             let joined_rows_vec: Vec<_> = joined_rows.collect().await;
 
@@ -515,175 +698,43 @@ where
                         }
 
                         match total_result {
-                            Some((schema, rows)) => Ok((schema, futures::stream::iter(rows).boxed_local())),
+                            Some((schema, rows)) => {
+                                Ok((schema, futures::stream::iter(rows).boxed_local()))
+                            }
                             None => {
-                                let tmp = left_columns.into_iter().chain(right_columns.into_iter()).map(|(_, name, ty, _)| { 
-                                    storage::ColumnSchema {
+                                let tmp = left_columns
+                                    .into_iter()
+                                    .chain(right_columns.into_iter())
+                                    .map(|(_, name, ty, _)| storage::ColumnSchema {
                                         name: name.clone(),
                                         ty: ty.clone(),
                                         mods: Vec::new(),
-                                    }
-                                }).collect();
+                                    })
+                                    .collect();
 
-                                Ok((TableSchema { rows: tmp }, futures::stream::empty().boxed_local()))
+                                Ok((
+                                    TableSchema { rows: tmp },
+                                    futures::stream::empty().boxed_local(),
+                                ))
                             }
                         }
-                    }.boxed_local().await?
                     }
-                    ra::RaExpression::Limit { limit, offset, .. } => {
-                        let (table_schema, rows) = results.pop().unwrap();
-
-                        (table_schema, rows.skip(*offset).take(*limit).boxed_local())
-                    }
-                };
-
-                results.push(result);
-            }
-
-            let result = results.pop().unwrap();
-        Ok(result)
-    } 
-
-    fn evaluate_ra_cond_val<'s, 'cond, 'r, 'col, 'p, 'c, 'o, 't, 'f, 'arena>(
-        &'s self,
-        condition: &'cond ra::RaConditionValue,
-        row: &'r storage::Row,
-        columns: &'col [(String, DataType, AttributeId)],
-        placeholders: &'p HashMap<usize, storage::Data>,
-        ctes: &'c HashMap<String, storage::EntireRelation>,
-        outer: &'o HashMap<AttributeId, storage::Data>,
-        transaction: &'t S::TransactionGuard,
-        arena: &'arena bumpalo::Bump
-    ) -> LocalBoxFuture<'f, Result<bool, EvaulateRaError<S::LoadingError>>>
-    where
-        's: 'f,
-        'cond: 'f,
-        'r: 'f,
-        'col: 'f,
-        'p: 'f,
-        'c: 'f,
-        'o: 'f,
-        't: 'f,
-        'arena: 'f
-    {
-        async move {
-            match condition {
-                ra::RaConditionValue::Constant { value } => Ok(*value),
-                ra::RaConditionValue::Attribute { name,  a_id, .. } => {
-                    let data_result = row.data.iter().zip(columns.iter()).find(|(_, column)| &column.2 == a_id).map(|(d, _)| d);
-                    
-                    match data_result {
-                        Some(storage::Data::Boolean(v)) => Ok(*v),
-                        Some(d) => {
-                            dbg!(&d);
-                            Err(EvaulateRaError::Other("Invalid Data Type"))
-                        },
-                        None => Err(EvaulateRaError::UnknownAttribute { name: name.clone(), id: *a_id }),
-                    }
-
+                    .boxed_local()
+                    .await?
                 }
-                ra::RaConditionValue::Comparison {
-                    first,
-                    second,
-                    comparison,
-                } => {
-                    let first_value = value::evaluate_ra_value(self, first, row, columns, placeholders, ctes, outer, transaction, &arena)
-                        .await?;
-                    let second_value = value::evaluate_ra_value(self, second, row, columns, placeholders, ctes, outer, transaction, &arena)
-                        .await?;
+                ra::RaExpression::Limit { limit, offset, .. } => {
+                    let (table_schema, rows) = results.pop().unwrap();
 
-                    match comparison {
-                        ra::RaComparisonOperator::Equals => Ok(first_value == second_value),
-                        ra::RaComparisonOperator::NotEquals => Ok(first_value != second_value),
-                        ra::RaComparisonOperator::Greater => Ok(first_value > second_value),
-                        ra::RaComparisonOperator::GreaterEqual => Ok(first_value >= second_value),
-                        ra::RaComparisonOperator::Less => Ok(first_value < second_value),
-                        ra::RaComparisonOperator::LessEqual => Ok(first_value <= second_value),
-                        ra::RaComparisonOperator::In => {
-                            dbg!(&first_value, &second_value);
-
-                            let parts = match second_value {
-                                Data::List(ps) => ps,
-                                other => {
-                                    dbg!(other);
-                                    return Err(EvaulateRaError::Other(
-                                        "Attempting IN comparison on non List",
-                                    ));
-                                }
-                            };
-
-                            Ok(parts.iter().any(|p| p == &first_value))
-                        }
-                        ra::RaComparisonOperator::NotIn => match second_value {
-                            storage::Data::List(d) => Ok(d.iter().all(|v| v != &first_value)),
-                            other => {
-                                tracing::error!("Cannot perform NotIn Operation on not List Data");
-                                dbg!(other);
-                                Err(EvaulateRaError::Other("Incompatible Error"))
-                            }
-                        },
-                        ra::RaComparisonOperator::Like => {
-                            let haystack = match first_value {
-                                Data::Text(t) => t,
-                                other => {
-                                    tracing::warn!("Expected Text Data, got {:?}", other);
-                                    return Err(EvaulateRaError::Other("Wrong Type for Haystack"));
-                                }
-                            };
-                            let raw_pattern = match second_value {
-                                Data::Text(p) => p,
-                                other => {
-                                    tracing::warn!("Expected Text Data, got {:?}", other);
-                                    return Err(EvaulateRaError::Other("Wrong Type for Pattern"));
-                                }
-                            };
-
-                            let result = pattern::like_match(&haystack, &raw_pattern);
-
-                            Ok(result)
-                        }
-                        ra::RaComparisonOperator::ILike => {
-                            todo!("Perforing ILike Comparison")
-                        }
-                        ra::RaComparisonOperator::Is => match (first_value, second_value) {
-                            (storage::Data::Boolean(val), storage::Data::Boolean(true)) => Ok(val),
-                            (storage::Data::Boolean(val), storage::Data::Boolean(false)) => {
-                                Ok(!val)
-                            }
-                            _ => Ok(false),
-                        },
-                        ra::RaComparisonOperator::IsNot => {
-                            dbg!(&first_value, &second_value);
-
-                            Err(EvaulateRaError::Other("Not implemented - IsNot Operator "))
-                        }
-                    }
+                    (table_schema, rows.skip(*offset).take(*limit).boxed_local())
                 }
-                ra::RaConditionValue::Negation { inner } => {
-                    let inner_result = self
-                        .evaluate_ra_cond_val(inner, row, columns, placeholders, ctes, outer, transaction, &arena)
-                        .await?;
+            };
 
-                    Ok(!inner_result)
-                }
-                ra::RaConditionValue::Exists { query } => {
-                    let n_tmp = {
-                        let mut tmp = outer.clone();
-                        tmp.extend(columns.iter().zip(row.data.iter()).map(|(column, data)| (column.2, data.clone())));
-                        tmp
-                    };
-
-                    let res = match self.evaluate_ra(query, placeholders, ctes, &n_tmp, transaction, &arena).await {
-                        Ok((_, mut rows)) => {
-                            Ok(rows.next().await.is_some())},
-                        Err(e) => panic!("{:?}", e),
-                    };
-                    res
-                }
-            }
+            results.push(result);
         }
-        .boxed_local()
-    } 
+
+        let result = results.pop().unwrap();
+        Ok(result)
+    }
 
     #[tracing::instrument(skip(self, cte, arena))]
     async fn execute_cte<'p, 'c, 't, 'arena>(
@@ -692,7 +743,7 @@ where
         placeholders: &'p HashMap<usize, storage::Data>,
         ctes: &'c HashMap<String, storage::EntireRelation>,
         transaction: &'t S::TransactionGuard,
-        arena: &'arena bumpalo::Bump
+        arena: &'arena bumpalo::Bump,
     ) -> Result<storage::EntireRelation, EvaulateRaError<S::LoadingError>> {
         tracing::debug!("CTE: {:?}", cte);
 
@@ -700,8 +751,13 @@ where
             ra::CTEValue::Standard { query } => match query {
                 ra::CTEQuery::Select(s) => {
                     let tmp = HashMap::new();
-                    let (evaluated_schema, rows) = self.evaluate_ra(&s, placeholders, ctes, &tmp, transaction, &arena).await?;
-                    Ok(storage::EntireRelation::from_parts(evaluated_schema, rows.collect().await))
+                    let (evaluated_schema, rows) = self
+                        .evaluate_ra(&s, placeholders, ctes, &tmp, transaction, &arena)
+                        .await?;
+                    Ok(storage::EntireRelation::from_parts(
+                        evaluated_schema,
+                        rows.collect().await,
+                    ))
                 }
             },
             ra::CTEValue::Recursive { query, columns } => match query {
@@ -760,7 +816,10 @@ where
                             break;
                         }
 
-                        inner_cte.insert(cte.name.clone(), storage::EntireRelation::from_parts(tmp_schema, tmp_rows));
+                        inner_cte.insert(
+                            cte.name.clone(),
+                            storage::EntireRelation::from_parts(tmp_schema, tmp_rows),
+                        );
                     }
 
                     let result = inner_cte.remove(&cte.name).unwrap();
@@ -876,20 +935,31 @@ where
     }
 
     async fn start_copy<'s, 'e, 'c>(
-            &'s self,
-            table_name: &str,
-            ctx: &'c mut Context<S::TransactionGuard>,
-        ) ->  Result<Self::CopyState<'e>, Self::ExecuteBoundError>
-        where
-            's: 'e, 'c: 'e {
-        let schemas = self.storage.schemas().await.map_err(ExecuteBoundError::StorageError)?;
+        &'s self,
+        table_name: &str,
+        ctx: &'c mut Context<S::TransactionGuard>,
+    ) -> Result<Self::CopyState<'e>, Self::ExecuteBoundError>
+    where
+        's: 'e,
+        'c: 'e,
+    {
+        let schemas = self
+            .storage
+            .schemas()
+            .await
+            .map_err(ExecuteBoundError::StorageError)?;
 
         let table = match schemas.get_table(table_name) {
             Some(t) => t.clone(),
             None => return Err(ExecuteBoundError::Other("Missing Table")),
         };
 
-        Ok(NaiveCopyState { table: table_name.into(), engine: &self.storage, schema: table, tx: ctx.transaction.as_ref().unwrap() })
+        Ok(NaiveCopyState {
+            table: table_name.into(),
+            engine: &self.storage,
+            schema: table,
+            tx: ctx.transaction.as_ref().unwrap(),
+        })
     }
 
     #[tracing::instrument(skip(self, query, ctx, arena))]
@@ -917,7 +987,9 @@ where
                     tracing::debug!("Creating Prepared statement");
                     dbg!(&prepare);
 
-                    Err(ExecuteBoundError::NotImplemented("Creating Prepared Statement"))
+                    Err(ExecuteBoundError::NotImplemented(
+                        "Creating Prepared Statement",
+                    ))
                 }
                 Query::Select(select) => {
                     tracing::debug!("Selecting: {:?}", select);
@@ -957,12 +1029,14 @@ where
                         .iter()
                         .map(|(name, ty)| {
                             let value = query.values.get(*name - 1).unwrap();
-                            let tmp = storage::Data::realize(ty, value).map_err(|(_realize, ty, _)| {
-                                Self::ExecuteBoundError::RealizingValueFromRaw {
-                                    value: value.clone(),
-                                    target: ty.clone(),
-                                }
-                            })?;
+                            let tmp = storage::Data::realize(ty, value).map_err(
+                                |(_realize, ty, _)| {
+                                    Self::ExecuteBoundError::RealizingValueFromRaw {
+                                        value: value.clone(),
+                                        target: ty.clone(),
+                                    }
+                                },
+                            )?;
 
                             Ok((*name, tmp))
                         })
@@ -972,7 +1046,14 @@ where
 
                     let tmp = HashMap::new();
                     let (scheme, rows) = match self
-                        .evaluate_ra(&ra_expression, &placeholder_values, &cte_queries, &tmp, transaction, &arena)
+                        .evaluate_ra(
+                            &ra_expression,
+                            &placeholder_values,
+                            &cte_queries,
+                            &tmp,
+                            transaction,
+                            &arena,
+                        )
                         .await
                     {
                         Ok(r) => r,
@@ -1049,15 +1130,21 @@ where
 
                                                 Ok(data)
                                             }
-                                            sql::ValueExpression::FunctionCall(func) => match func {
-                                                sql::FunctionCall::CurrentTimestamp => {
-                                                    Ok(storage::Data::Timestamp("2024-04-12 12:00:00.000000-05".into()))
+                                            sql::ValueExpression::FunctionCall(func) => {
+                                                match func {
+                                                    sql::FunctionCall::CurrentTimestamp => {
+                                                        Ok(storage::Data::Timestamp(
+                                                            "2024-04-12 12:00:00.000000-05".into(),
+                                                        ))
+                                                    }
+                                                    other => {
+                                                        dbg!(other);
+                                                        Err(ExecuteBoundError::NotImplemented(
+                                                            "FunctionCall",
+                                                        ))
+                                                    }
                                                 }
-                                                other => {
-                                                    dbg!(other);
-                                                    Err(ExecuteBoundError::NotImplemented("FunctionCall"))
-                                                }
-                                            },
+                                            }
                                             other => {
                                                 dbg!(other);
                                                 Err(ExecuteBoundError::NotImplemented(
@@ -1196,7 +1283,7 @@ where
                     let inserted_rows = insert_rows.len();
 
                     self.storage
-                        .insert_rows(&ins.table.0, &mut insert_rows.into_iter(), transaction )
+                        .insert_rows(&ins.table.0, &mut insert_rows.into_iter(), transaction)
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1213,7 +1300,7 @@ where
 
                     let relation = self
                         .storage
-                        .get_entire_relation(&update.table.0, transaction )
+                        .get_entire_relation(&update.table.0, transaction)
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1232,12 +1319,14 @@ where
                         .iter()
                         .map(|(name, ty)| {
                             let value = query.values.get(*name - 1).unwrap();
-                            let tmp = storage::Data::realize(ty, value).map_err(|(_realize, ty, _)| {
-                                Self::ExecuteBoundError::RealizingValueFromRaw {
-                                    value: value.clone(),
-                                    target: ty.clone(),
-                                }
-                            })?;
+                            let tmp = storage::Data::realize(ty, value).map_err(
+                                |(_realize, ty, _)| {
+                                    Self::ExecuteBoundError::RealizingValueFromRaw {
+                                        value: value.clone(),
+                                        target: ty.clone(),
+                                    }
+                                },
+                            )?;
 
                             Ok((*name, tmp))
                         })
@@ -1260,18 +1349,18 @@ where
                             {
                                 let should_update = match condition.as_ref() {
                                     Some(cond) => condition::evaluate_ra_cond(
-                                            self,
-                                            cond,
-                                            &row,
-                                            &table_columns,
-                                            &placeholder_values,
-                                            &cte_queries,
-                                            &HashMap::new(),
-                                            transaction,
-                                            &arena
-                                        )
-                                        .await
-                                        .map_err(ExecuteBoundError::Executing)?,
+                                        self,
+                                        cond,
+                                        &row,
+                                        &table_columns,
+                                        &placeholder_values,
+                                        &cte_queries,
+                                        &HashMap::new(),
+                                        transaction,
+                                        &arena,
+                                    )
+                                    .await
+                                    .map_err(ExecuteBoundError::Executing)?,
                                     None => true,
                                 };
 
@@ -1284,18 +1373,18 @@ where
                                 let mut field_values = Vec::new();
                                 for field in fields.iter() {
                                     let value = value::evaluate_ra_value(
-                                            self,
-                                            &field.value,
-                                            &row,
-                                            &table_columns,
-                                            &placeholder_values,
-                                            &cte_queries,
-                                            &HashMap::new(),
-                                            transaction,
-                                            &arena
-                                        )
-                                        .await
-                                        .map_err(ExecuteBoundError::Executing)?;
+                                        self,
+                                        &field.value,
+                                        &row,
+                                        &table_columns,
+                                        &placeholder_values,
+                                        &cte_queries,
+                                        &HashMap::new(),
+                                        transaction,
+                                        &arena,
+                                    )
+                                    .await
+                                    .map_err(ExecuteBoundError::Executing)?;
 
                                     field_values.push(value);
                                 }
@@ -1322,7 +1411,7 @@ where
                                     .update_rows(
                                         update.table.0.as_ref(),
                                         &mut core::iter::once((row.id(), row.data)),
-                                        transaction
+                                        transaction,
                                     )
                                     .await
                                     .map_err(ExecuteBoundError::StorageError)?;
@@ -1377,7 +1466,7 @@ where
 
                     let relation = self
                         .storage
-                        .get_entire_relation(&ra_delete.table, transaction )
+                        .get_entire_relation(&ra_delete.table, transaction)
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1385,12 +1474,14 @@ where
                         .iter()
                         .map(|(name, ty)| {
                             let value = query.values.get(*name - 1).unwrap();
-                            let tmp = storage::Data::realize(ty, value).map_err(|(_realize, ty, _)| {
-                                Self::ExecuteBoundError::RealizingValueFromRaw {
-                                    value: value.clone(),
-                                    target: ty.clone(),
-                                }
-                            })?;
+                            let tmp = storage::Data::realize(ty, value).map_err(
+                                |(_realize, ty, _)| {
+                                    Self::ExecuteBoundError::RealizingValueFromRaw {
+                                        value: value.clone(),
+                                        target: ty.clone(),
+                                    }
+                                },
+                            )?;
 
                             Ok((*name, tmp))
                         })
@@ -1409,18 +1500,18 @@ where
                         for row in relation.parts.into_iter().flat_map(|p| p.rows.into_iter()) {
                             if let Some(condition) = ra_delete.condition.as_ref() {
                                 let condition_result = condition::evaluate_ra_cond(
-                                        self,
-                                        condition,
-                                        &row,
-                                        &table_columns,
-                                        &placeholders,
-                                        &cte_queries,
-                                        &HashMap::new(),
-                                        transaction,
-                                        &arena
-                                    )
-                                    .await
-                                    .map_err(ExecuteBoundError::Executing)?;
+                                    self,
+                                    condition,
+                                    &row,
+                                    &table_columns,
+                                    &placeholders,
+                                    &cte_queries,
+                                    &HashMap::new(),
+                                    transaction,
+                                    &arena,
+                                )
+                                .await
+                                .map_err(ExecuteBoundError::Executing)?;
 
                                 if !condition_result {
                                     continue;
@@ -1437,7 +1528,7 @@ where
                     let row_count = to_delete.len();
 
                     self.storage
-                        .delete_rows(&delete.table.0, &mut to_delete.into_iter(), transaction )
+                        .delete_rows(&delete.table.0, &mut to_delete.into_iter(), transaction)
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1453,7 +1544,7 @@ where
                     if create.if_not_exists
                         && self
                             .storage
-                            .relation_exists(&create.identifier.0, transaction )
+                            .relation_exists(&create.identifier.0, transaction)
                             .await
                             .map_err(ExecuteBoundError::StorageError)?
                     {
@@ -1468,7 +1559,11 @@ where
                             (
                                 tfield.ident.0.to_string(),
                                 tfield.datatype.clone(),
-                                tfield.modifiers.iter().map(|m| m.clone()).collect::<Vec<_>>(),
+                                tfield
+                                    .modifiers
+                                    .iter()
+                                    .map(|m| m.clone())
+                                    .collect::<Vec<_>>(),
                             )
                         })
                         .collect();
@@ -1506,14 +1601,14 @@ where
                 Query::AlterTable(alter) => {
                     tracing::debug!("Alter Table");
 
-let transaction = ctx.transaction.as_ref().unwrap();
+                    let transaction = ctx.transaction.as_ref().unwrap();
 
                     match alter {
                         sql::AlterTable::Rename { from, to } => {
                             tracing::debug!("Renaming from {:?} -> {:?}", from, to);
 
                             self.storage
-                                .rename_relation(&from.0, &to.0, transaction )
+                                .rename_relation(&from.0, &to.0, transaction)
                                 .await
                                 .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1548,7 +1643,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                             );
 
                             self.storage
-                                .modify_relation(&table.0, modifications, transaction )
+                                .modify_relation(&table.0, modifications, transaction)
                                 .await
                                 .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1621,7 +1716,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
 
                     let pg_indexes_table = self
                         .storage
-                        .get_entire_relation("pg_indexes", transaction )
+                        .get_entire_relation("pg_indexes", transaction)
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1635,7 +1730,7 @@ let transaction = ctx.transaction.as_ref().unwrap();
                         .map(|row| row.id());
 
                     self.storage
-                        .delete_rows("pg_indexes", &mut cid, transaction )
+                        .delete_rows("pg_indexes", &mut cid, transaction)
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
@@ -1644,39 +1739,47 @@ let transaction = ctx.transaction.as_ref().unwrap();
                 Query::DropTable(drop_table) => {
                     let transaction = match ctx.transaction.as_ref() {
                         Some(t) => t,
-                        None => {
-                            return Err(ExecuteBoundError::Other("Missing Transaction State"))
-                        }
+                        None => return Err(ExecuteBoundError::Other("Missing Transaction State")),
                     };
 
                     for name in drop_table.names.iter() {
-                    self.storage
-                        .remove_relation(&name.0, transaction )
-                        .await
-                        .map_err(ExecuteBoundError::StorageError)?;
+                        self.storage
+                            .remove_relation(&name.0, transaction)
+                            .await
+                            .map_err(ExecuteBoundError::StorageError)?;
                     }
 
                     Ok(ExecuteResult::Drop_)
                 }
                 Query::TruncateTable(trunc_table) => {
                     // TODO
-                    tracing::error!(?trunc_table, "[TODO] Truncating Table is not yet really supported");
+                    tracing::error!(
+                        ?trunc_table,
+                        "[TODO] Truncating Table is not yet really supported"
+                    );
 
                     Ok(ExecuteResult::Truncate)
                 }
                 Query::BeginTransaction(isolation) => {
                     tracing::debug!("Starting Transaction: {:?}", isolation);
 
-                    let guard = self.storage.start_transaction().await.map_err(ExecuteBoundError::StorageError)?;
+                    let guard = self
+                        .storage
+                        .start_transaction()
+                        .await
+                        .map_err(ExecuteBoundError::StorageError)?;
                     ctx.transaction = Some(guard);
 
                     Ok(ExecuteResult::Begin)
                 }
                 Query::CommitTransaction => {
                     tracing::debug!("Committing Transaction");
-                    
+
                     let guard = ctx.transaction.take().unwrap();
-                    self.storage.commit_transaction(guard).await.map_err(ExecuteBoundError::StorageError)?;
+                    self.storage
+                        .commit_transaction(guard)
+                        .await
+                        .map_err(ExecuteBoundError::StorageError)?;
 
                     Ok(ExecuteResult::Commit)
                 }
@@ -1684,7 +1787,10 @@ let transaction = ctx.transaction.as_ref().unwrap();
                     tracing::debug!("Rollback Transaction");
 
                     let guard = ctx.transaction.take().unwrap();
-                    self.storage.abort_transaction(guard).await.map_err(ExecuteBoundError::StorageError)?;
+                    self.storage
+                        .abort_transaction(guard)
+                        .await
+                        .map_err(ExecuteBoundError::StorageError)?;
 
                     Ok(ExecuteResult::Rollback)
                 }
@@ -1704,7 +1810,13 @@ let transaction = ctx.transaction.as_ref().unwrap();
                         parse_context.add_cte(cte.clone());
 
                         let cte_result = self
-                            .execute_cte(&cte, &HashMap::new(), &HashMap::new(), transaction, &arena)
+                            .execute_cte(
+                                &cte,
+                                &HashMap::new(),
+                                &HashMap::new(),
+                                transaction,
+                                &arena,
+                            )
                             .await
                             .map_err(ExecuteBoundError::Executing)?;
                         cte_queries.insert(cte.name.clone(), cte_result);
@@ -1755,7 +1867,10 @@ impl PreparedStatement for NaivePrepared {
     }
 }
 
-impl<'e, S> CopyState for NaiveCopyState<'e, S, S::TransactionGuard> where S: Storage {
+impl<'e, S> CopyState for NaiveCopyState<'e, S, S::TransactionGuard>
+where
+    S: Storage,
+{
     fn columns(&self) -> Vec<()> {
         self.schema.rows.iter().map(|_| ()).collect()
     }
@@ -1777,7 +1892,10 @@ impl<'e, S> CopyState for NaiveCopyState<'e, S, S::TransactionGuard> where S: St
             row_data.push(tmp);
         }
 
-        self.engine.insert_rows(&self.table, &mut core::iter::once(row_data), self.tx).await.unwrap();
+        self.engine
+            .insert_rows(&self.table, &mut core::iter::once(row_data), self.tx)
+            .await
+            .unwrap();
 
         Ok(())
     }
@@ -1807,7 +1925,7 @@ mod tests {
                 .create_relation(
                     "dashboard_acl",
                     vec![("dashboard_id".into(), DataType::Integer, Vec::new())],
-                    &trans
+                    &trans,
                 )
                 .await
                 .unwrap();
@@ -1816,13 +1934,17 @@ mod tests {
                 .create_relation(
                     "dashboard",
                     vec![("id".into(), DataType::Integer, Vec::new())],
-                    &trans
+                    &trans,
                 )
                 .await
                 .unwrap();
 
             storage
-                .insert_rows("dashboard", &mut vec![vec![Data::Integer(1)]].into_iter(), &trans)
+                .insert_rows(
+                    "dashboard",
+                    &mut vec![vec![Data::Integer(1)]].into_iter(),
+                    &trans,
+                )
                 .await
                 .unwrap();
 
@@ -1830,7 +1952,7 @@ mod tests {
                 .insert_rows(
                     "dashboard_acl",
                     &mut vec![vec![Data::Integer(132)], vec![Data::Integer(1)]].into_iter(),
-                    &trans
+                    &trans,
                 )
                 .await
                 .unwrap();
@@ -1842,10 +1964,13 @@ mod tests {
         let engine = NaiveEngine::new(storage);
 
         let query = Query::parse(query.as_bytes(), &arena).unwrap();
-        
+
         let mut ctx = Context::new();
         ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
-        let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+        let res = engine
+            .execute(&query, &mut ctx, &bumpalo::Bump::new())
+            .await
+            .unwrap();
 
         assert_eq!(ExecuteResult::Delete { deleted_rows: 1 }, res);
     }
@@ -1869,7 +1994,7 @@ mod tests {
                         ("name".into(), DataType::Text, Vec::new()),
                         ("active".into(), DataType::Bool, Vec::new()),
                     ],
-                    &trans
+                    &trans,
                 )
                 .await
                 .unwrap();
@@ -1895,7 +2020,10 @@ mod tests {
 
         let mut ctx = Context::new();
         ctx.transaction = Some(engine.storage.start_transaction().await.unwrap());
-        let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+        let res = engine
+            .execute(&query, &mut ctx, &bumpalo::Bump::new())
+            .await
+            .unwrap();
 
         dbg!(&res);
 

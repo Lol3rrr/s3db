@@ -167,7 +167,6 @@ pub mod postgres {
         let mut prepared_statements = HashMap::new();
         let mut bound_statements = HashMap::new();
 
-        
         loop {
             arena.reset();
             execution_arena.reset();
@@ -237,7 +236,7 @@ pub mod postgres {
                                 .execute(
                                     &Query::BeginTransaction(sql::IsolationMode::Standard),
                                     &mut ctx,
-                                    &execution_arena
+                                    &execution_arena,
                                 )
                                 .await
                                 .unwrap();
@@ -332,7 +331,8 @@ pub mod postgres {
                             continue;
                         }
 
-                        let result = match engine.execute(&query, &mut ctx, &execution_arena).await {
+                        let result = match engine.execute(&query, &mut ctx, &execution_arena).await
+                        {
                             Ok(r) => r,
                             Err(e) => {
                                 tracing::error!("Executing: {:?}", e);
@@ -577,7 +577,10 @@ pub mod postgres {
                         }
                     };
 
-                    let result = match engine.execute_bound(bound_statement, &mut ctx, &execution_arena).await {
+                    let result = match engine
+                        .execute_bound(bound_statement, &mut ctx, &execution_arena)
+                        .await
+                    {
                         Ok(r) => r,
                         Err(e) => {
                             tracing::error!("Executing Bound: {:?}", e);

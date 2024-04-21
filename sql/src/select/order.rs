@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{ColumnReference, Literal, Parser as _, CompatibleParser};
+use crate::{ColumnReference, CompatibleParser, Literal, Parser as _};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Ordering<'s> {
@@ -58,7 +58,10 @@ impl<'i, 'a> crate::ArenaParser<'i, 'a> for crate::arenas::Vec<'a, Ordering<'i>>
 }
 
 #[deprecated]
-pub fn order_by<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], crate::arenas::Vec<'a, Ordering<'i>>, nom::error::VerboseError<&'i [u8]>> {
+pub fn order_by<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], crate::arenas::Vec<'a, Ordering<'i>>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("ORDER"),
         nom::character::complete::multispace1,
@@ -206,10 +209,7 @@ mod tests {
 
     #[test]
     fn error() {
-        arena_parser_parse_err!(
-            crate::arenas::Vec<'_, Ordering<'_>>,
-            "ORDER BY "
-        );
+        arena_parser_parse_err!(crate::arenas::Vec<'_, Ordering<'_>>, "ORDER BY ");
     }
 
     #[test]

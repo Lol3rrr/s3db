@@ -74,10 +74,9 @@ impl<'s, 'a> CompatibleParser for CreateTable<'s, 'a> {
             identifier: self.identifier.to_static(),
             fields: crate::arenas::Vec::Heap(self.fields.iter().map(|f| f.to_static()).collect()),
             if_not_exists: self.if_not_exists,
-            primary_key: self
-                .primary_key
-                .as_ref()
-                .map(|parts| crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())),
+            primary_key: self.primary_key.as_ref().map(|parts| {
+                crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())
+            }),
             withs: self.withs.clone_to_heap(),
         }
     }
@@ -146,7 +145,7 @@ where
                     nom::sequence::delimited(
                         nom::bytes::complete::tag("("),
                         crate::nom_util::bump_separated_list0(
-                            a,    
+                            a,
                             nom::sequence::tuple((
                                 nom::character::complete::multispace0,
                                 nom::bytes::complete::tag(","),
@@ -162,7 +161,10 @@ where
                                     Literal::SmallInteger(v) => v as usize,
                                     Literal::Integer(v) => v as usize,
                                     Literal::BigInteger(v) => v as usize,
-                                    other => panic!("Fill Factor needs to be a number, but got {:?}", other),
+                                    other => panic!(
+                                        "Fill Factor needs to be a number, but got {:?}",
+                                        other
+                                    ),
                                 };
 
                                 WithOptions::FillFactor(value)
@@ -217,7 +219,10 @@ impl<'i, 'a> crate::ArenaParser<'i, 'a> for CreateIndex<'i, 'a> {
 }
 
 #[deprecated]
-pub fn create_index<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], CreateIndex<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+pub fn create_index<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], CreateIndex<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, (_, unique, _, _, _, name, _, table, _, _, columns, _)) =
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("CREATE"),
@@ -494,7 +499,8 @@ mod tests {
                     ident: "name".into(),
                     datatype: DataType::Integer,
                     modifiers: bumpalo::vec![in &arena; ].into()
-                }].into(),
+                }]
+                .into(),
                 if_not_exists: false,
                 primary_key: None,
                 withs: vec![WithOptions::FillFactor(100)].into()

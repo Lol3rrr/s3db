@@ -1,5 +1,5 @@
+use futures::future::{FutureExt, LocalBoxFuture};
 use std::collections::HashMap;
-use futures::future::{LocalBoxFuture, FutureExt};
 
 use crate::{
     ra::{self, AttributeId, RaValueExpression},
@@ -7,7 +7,7 @@ use crate::{
 };
 use sql::DataType;
 
-use super::{EvaulateRaError, NaiveEngine, value::evaluate_ra_value};
+use super::{value::evaluate_ra_value, EvaulateRaError, NaiveEngine};
 
 pub enum AggregateState {
     CountRows {
@@ -85,45 +85,45 @@ impl AggregateState {
         S: Storage,
     {
         async move {
-        match self {
-            Self::CountRows {
-                attribute_index,
-                count,
-            } => {
-                if let Some(idx) = attribute_index {
-                    let value = &row.data[*idx];
-                    if value == &storage::Data::Null {
-                        return Ok(());
+            match self {
+                Self::CountRows {
+                    attribute_index,
+                    count,
+                } => {
+                    if let Some(idx) = attribute_index {
+                        let value = &row.data[*idx];
+                        if value == &storage::Data::Null {
+                            return Ok(());
+                        }
+                    }
+
+                    *count += 1;
+                    Ok(())
+                }
+                Self::Column {
+                    attribute_index,
+                    value,
+                } => {
+                    let row_value = &row.data[*attribute_index];
+
+                    match &value {
+                        Some(v) => {
+                            assert_eq!(v, row_value);
+                            Ok(())
+                        }
+                        None => {
+                            *value = Some(row_value.clone());
+                            Ok(())
+                        }
                     }
                 }
-
-                *count += 1;
-                Ok(())
-            }
-            Self::Column {
-                attribute_index,
-                value,
-            } => {
-                let row_value = &row.data[*attribute_index];
-
-                match &value {
-                    Some(v) => {
-                        assert_eq!(v, row_value);
-                        Ok(())
-                    }
-                    None => {
-                        *value = Some(row_value.clone());
-                        Ok(())
-                    }
-                }
-            }
-            Self::Max {
-                value,
-                expr,
-                columns,
-                ..
-            } => {
-                let tmp = evaluate_ra_value(
+                Self::Max {
+                    value,
+                    expr,
+                    columns,
+                    ..
+                } => {
+                    let tmp = evaluate_ra_value(
                         engine,
                         expr,
                         row,
@@ -136,21 +136,22 @@ impl AggregateState {
                     )
                     .await?;
 
-                match value.as_mut() {
-                    Some(v) => {
-                        if &tmp > v {
-                            *v = tmp;
+                    match value.as_mut() {
+                        Some(v) => {
+                            if &tmp > v {
+                                *v = tmp;
+                            }
                         }
-                    }
-                    None => {
-                        *value = Some(tmp);
-                    }
-                };
+                        None => {
+                            *value = Some(tmp);
+                        }
+                    };
 
-                Ok(())
+                    Ok(())
+                }
             }
         }
-        }.boxed_local()
+        .boxed_local()
     }
 
     pub fn to_data(self) -> Option<storage::Data> {

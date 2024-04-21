@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{Identifier, Parser as _, CompatibleParser};
+use crate::{CompatibleParser, Identifier, Parser as _};
 
 #[derive(Debug, PartialEq)]
 pub struct DropIndex<'s> {
@@ -115,7 +115,10 @@ impl<'i, 'a> crate::ArenaParser<'i, 'a> for DropTable<'i, 'a> {
 }
 
 #[deprecated]
-pub fn drop_table<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], DropTable<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+pub fn drop_table<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], DropTable<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("DROP"),
@@ -153,7 +156,7 @@ pub fn drop_table<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::macros::{parser_parse, arena_parser_parse};
+    use crate::macros::{arena_parser_parse, parser_parse};
 
     #[test]
     fn drop_index_basic() {

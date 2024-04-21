@@ -33,7 +33,10 @@ impl<'i, 'a> crate::ArenaParser<'i, 'a> for TruncateTable<'i, 'a> {
 }
 
 #[deprecated]
-pub fn parse<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], TruncateTable<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+pub fn parse<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], TruncateTable<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     nom::combinator::map(
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("TRUNCATE"),
@@ -72,7 +75,8 @@ mod tests {
                     "pgbench_branches".into(),
                     "pgbench_history".into(),
                     "pgbench_tellers".into()
-                ].into()
+                ]
+                .into()
             }
         );
     }

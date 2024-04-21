@@ -22,7 +22,13 @@ where
         mut left_result: futures::stream::LocalBoxStream<'lr, storage::Row>,
         right_result: futures::stream::LocalBoxStream<'rr, storage::Row>,
         condition_eval: &CE,
-    ) -> Result<(storage::TableSchema, futures::stream::BoxStream<storage::Row>), EvaulateRaError<SE>> {
+    ) -> Result<
+        (
+            storage::TableSchema,
+            futures::stream::BoxStream<storage::Row>,
+        ),
+        EvaulateRaError<SE>,
+    > {
         assert!(
             <Self as Join<CE, SE>>::compatible(self, &args, &_ctx),
             "Not compatible"

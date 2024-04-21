@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Condition, Identifier, Parser as _, ArenaParser, arenas::Boxed};
+use crate::{arenas::Boxed, ArenaParser, CompatibleParser, Condition, Identifier, Parser as _};
 
 use super::Select;
 
@@ -98,9 +98,12 @@ impl<'i, 'a> ArenaParser<'i, 'a> for TableExpression<'i, 'a> {
 #[deprecated]
 pub fn table_expression<'i, 'a>(
     i: &'i [u8],
-    arena: &'a bumpalo::Bump
+    arena: &'a bumpalo::Bump,
 ) -> IResult<&'i [u8], TableExpression<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
-    fn base<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], TableExpression<'i, 'a>, nom::error::VerboseError<&'i[u8]>> {
+    fn base<'i, 'a>(
+        i: &'i [u8],
+        arena: &'a bumpalo::Bump,
+    ) -> IResult<&'i [u8], TableExpression<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
         let (remaining, table) = nom::branch::alt((
             nom::sequence::tuple((
                 nom::bytes::complete::tag("("),
@@ -295,20 +298,25 @@ mod tests {
             "first INNER JOIN (SELECT name FROM second)",
             TableExpression::Join {
                 left: Box::new(TableExpression::Relation("first".into())).into(),
-                right: Box::new(TableExpression::SubQuery(Box::new(Select {
-                    values: vec![ValueExpression::ColumnReference(ColumnReference {
-                        relation: None,
-                        column: "name".into(),
-                    })].into(),
-                    table: Some(TableExpression::Relation("second".into())),
-                    where_condition: None,
-                    order_by: None,
-                    group_by: None,
-                    having: None,
-                    limit: None,
-                    for_update: None,
-                    combine: None
-                }).into())).into(),
+                right: Box::new(TableExpression::SubQuery(
+                    Box::new(Select {
+                        values: vec![ValueExpression::ColumnReference(ColumnReference {
+                            relation: None,
+                            column: "name".into(),
+                        })]
+                        .into(),
+                        table: Some(TableExpression::Relation("second".into())),
+                        where_condition: None,
+                        order_by: None,
+                        group_by: None,
+                        having: None,
+                        limit: None,
+                        for_update: None,
+                        combine: None
+                    })
+                    .into()
+                ))
+                .into(),
                 kind: JoinKind::Inner,
                 condition: Condition::And(vec![].into()),
                 lateral: false,
@@ -340,7 +348,8 @@ mod tests {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "name".into(),
-                    })].into(),
+                    })]
+                    .into(),
                     table: Some(TableExpression::Relation("second".into())),
                     where_condition: None,
                     order_by: None,

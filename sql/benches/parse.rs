@@ -7,7 +7,7 @@ pub fn simple_select(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("sql");
     group.throughput(criterion::Throughput::Elements(1));
-    
+
     let mut arena = bumpalo::Bump::with_capacity(ARENA_CAPACITY);
     group.bench_function("simple_select", |b| {
         b.iter(|| {
@@ -15,7 +15,7 @@ pub fn simple_select(c: &mut Criterion) {
             arena.reset();
         })
     });
-    
+
     for parts in [1usize, 3, 5, 10] {
         let mut columns = "test".to_string();
         for i in 0..(parts.saturating_sub(1)) {
@@ -38,7 +38,7 @@ pub fn simple_select(c: &mut Criterion) {
 pub fn select_conditions(c: &mut Criterion) {
     let mut group = c.benchmark_group("sql");
     group.throughput(criterion::Throughput::Elements(1));
-    
+
     for parts in [1usize, 3, 5, 10] {
         let mut input: String = "SELECT * FROM users WHERE true".into();
         for i in 0..(parts.saturating_sub(1)) {
@@ -66,7 +66,6 @@ pub fn select_conditions(c: &mut Criterion) {
                 black_box(sql::Query::parse(input.as_bytes(), &arena));
                 arena.reset();
             })
-
         });
     }
 

@@ -37,5 +37,13 @@ where
         left_rows: futures::stream::LocalBoxStream<'lr, storage::Row>,
         right_rows: futures::stream::LocalBoxStream<'rr, storage::Row>,
         condition_eval: &CE,
-    ) -> impl Future<Output = Result<(storage::TableSchema, futures::stream::BoxStream<storage::Row>), EvaulateRaError<SE>>>;
+    ) -> impl Future<
+        Output = Result<
+            (
+                storage::TableSchema,
+                futures::stream::BoxStream<storage::Row>,
+            ),
+            EvaulateRaError<SE>,
+        >,
+    >;
 }

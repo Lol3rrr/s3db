@@ -1,6 +1,6 @@
 use crate::{
-    select, AggregateExpression, BinaryOperator, ColumnReference, CompatibleParser, DataType,
-    FunctionCall, Identifier, Literal, Parser as _, ArenaParser, arenas::Boxed,
+    arenas::Boxed, select, AggregateExpression, ArenaParser, BinaryOperator, ColumnReference,
+    CompatibleParser, DataType, FunctionCall, Identifier, Literal, Parser as _,
 };
 
 use nom::{IResult, Parser};
@@ -44,8 +44,14 @@ pub enum ValueExpression<'s, 'a> {
     SubQuery(select::Select<'s, 'a>),
     Not(Boxed<'a, ValueExpression<'s, 'a>>),
     Case {
-        matched_value: Boxed<'a, ValueExpression<'s,'a>>,
-        cases: crate::arenas::Vec<'a, (crate::arenas::Vec<'a, ValueExpression<'s, 'a>>, ValueExpression<'s, 'a>)>,
+        matched_value: Boxed<'a, ValueExpression<'s, 'a>>,
+        cases: crate::arenas::Vec<
+            'a,
+            (
+                crate::arenas::Vec<'a, ValueExpression<'s, 'a>>,
+                ValueExpression<'s, 'a>,
+            ),
+        >,
         else_case: Option<Boxed<'a, ValueExpression<'s, 'a>>>,
     },
 }
@@ -124,7 +130,9 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
             Self::RowConstructor => ValueExpression::RowConstructor,
             Self::ParenedExpression => ValueExpression::ParenedExpression,
             Self::Placeholder(p) => ValueExpression::Placeholder(*p),
-            Self::List(vals) => ValueExpression::List(crate::arenas::Vec::Heap(vals.iter().map(|v| v.to_static()).collect())),
+            Self::List(vals) => ValueExpression::List(crate::arenas::Vec::Heap(
+                vals.iter().map(|v| v.to_static()).collect(),
+            )),
             Self::SubQuery(s) => ValueExpression::SubQuery(s.to_static()),
             Self::Not(v) => ValueExpression::Not(v.to_static()),
             Self::Case {
@@ -133,15 +141,19 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
                 else_case,
             } => ValueExpression::Case {
                 matched_value: matched_value.to_static(),
-                cases: crate::arenas::Vec::Heap(cases
-                    .iter()
-                    .map(|(matching, value)| {
-                        (
-                            crate::arenas::Vec::Heap(matching.iter().map(|v| v.to_static()).collect()),
-                            value.to_static(),
-                        )
-                    })
-                    .collect()),
+                cases: crate::arenas::Vec::Heap(
+                    cases
+                        .iter()
+                        .map(|(matching, value)| {
+                            (
+                                crate::arenas::Vec::Heap(
+                                    matching.iter().map(|v| v.to_static()).collect(),
+                                ),
+                                value.to_static(),
+                            )
+                        })
+                        .collect(),
+                ),
                 else_case: else_case.as_ref().map(|c| c.to_static()),
             },
         }
@@ -404,11 +416,14 @@ pub fn value_expression<'i, 'a>(
 
     let result = match second {
         ValueExpression::Renamed { inner, name } => ValueExpression::Renamed {
-            inner: Boxed::arena(arena, ValueExpression::Operator {
-                first: Boxed::arena(arena, parsed),
-                second: Boxed::arena(arena, Boxed::into_inner(inner)),
-                operator,
-            }),
+            inner: Boxed::arena(
+                arena,
+                ValueExpression::Operator {
+                    first: Boxed::arena(arena, parsed),
+                    second: Boxed::arena(arena, Boxed::into_inner(inner)),
+                    operator,
+                },
+            ),
             name,
         },
         other => ValueExpression::Operator {

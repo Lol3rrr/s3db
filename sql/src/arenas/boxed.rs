@@ -1,5 +1,4 @@
 #[allow(clippy::disallowed_types)]
-
 #[derive(Debug)]
 pub enum Boxed<'a, T> {
     Arena(bumpalo::boxed::Box<'a, T>),
@@ -14,16 +13,14 @@ impl<'a, T> Boxed<'a, T> {
     pub fn arena(a: &'a bumpalo::Bump, data: T) -> Self {
         Self::Arena(bumpalo::boxed::Box::new_in(data, a))
     }
-    
+
     pub fn into_static(self) -> Boxed<'static, T> {
         match self {
-            Self::Arena(bumped) => {
-                Boxed::Heap(Box::new(bumpalo::boxed::Box::into_inner(bumped)))
-            },
+            Self::Arena(bumped) => Boxed::Heap(Box::new(bumpalo::boxed::Box::into_inner(bumped))),
             Self::Heap(heaped) => Boxed::Heap(heaped),
         }
     }
-    
+
     pub fn into_inner(value: Self) -> T {
         match value {
             Self::Heap(v) => *v,
@@ -58,7 +55,10 @@ impl<'a, T> AsRef<T> for Boxed<'a, T> {
     }
 }
 
-impl<'a, 'b, X, Y> PartialEq<Boxed<'b, Y>> for Boxed<'a, X> where X: PartialEq<Y> {
+impl<'a, 'b, X, Y> PartialEq<Boxed<'b, Y>> for Boxed<'a, X>
+where
+    X: PartialEq<Y>,
+{
     fn eq(&self, other: &Boxed<'b, Y>) -> bool {
         let first: &X = self;
         let second: &Y = other;
@@ -66,13 +66,16 @@ impl<'a, 'b, X, Y> PartialEq<Boxed<'b, Y>> for Boxed<'a, X> where X: PartialEq<Y
     }
 }
 
-impl<'a, T> crate::CompatibleParser for Boxed<'a, T> where T: crate::CompatibleParser {
+impl<'a, T> crate::CompatibleParser for Boxed<'a, T>
+where
+    T: crate::CompatibleParser,
+{
     type StaticVersion = Boxed<'static, T::StaticVersion>;
 
     fn to_static(&self) -> Self::StaticVersion {
         match self {
             Self::Heap(v) => Boxed::Heap(Box::new(v.to_static())),
-            Self::Arena(v) => Boxed::Heap(Box::new(v.to_static()))
+            Self::Arena(v) => Boxed::Heap(Box::new(v.to_static())),
         }
     }
 

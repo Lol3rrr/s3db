@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _, Select, ArenaParser, arenas::Boxed};
+use crate::{arenas::Boxed, ArenaParser, CompatibleParser, Parser as _, Select};
 
 use super::{Identifier, Literal, ValueExpression};
 
@@ -70,9 +70,11 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
     fn parameter_count(&self) -> usize {
         match self {
             Self::LPad { base, .. } => base.parameter_count(),
-            Self::Coalesce { values } => {
-                values.iter().map(|v| v.parameter_count()).max().unwrap_or(0)
-            }
+            Self::Coalesce { values } => values
+                .iter()
+                .map(|v| v.parameter_count())
+                .max()
+                .unwrap_or(0),
             Self::Exists { query } => query.parameter_count(),
             Self::SetValue { .. } => 0,
             Self::Lower { value } => value.parameter_count(),
@@ -312,7 +314,9 @@ pub fn function_call<'i, 'a>(
 #[cfg(test)]
 mod tests {
 
-    use crate::{macros::arena_parser_parse, AggregateExpression, ColumnReference, TableExpression};
+    use crate::{
+        macros::arena_parser_parse, AggregateExpression, ColumnReference, TableExpression,
+    };
 
     use super::*;
 
@@ -328,7 +332,8 @@ mod tests {
                         column: Identifier("updated_by".into()),
                     }),
                     ValueExpression::Literal(Literal::SmallInteger(-1))
-                ].into()
+                ]
+                .into()
             }
         );
     }
@@ -361,7 +366,8 @@ mod tests {
                                 column: Identifier("id".into())
                             }
                         )))
-                    )].into(),
+                    )]
+                    .into(),
                     table: Some(TableExpression::Relation(Identifier("org".into()))),
                     where_condition: None,
                     order_by: None,
@@ -408,7 +414,9 @@ mod tests {
             FunctionCall::Substr {
                 value: Boxed::new(ValueExpression::Literal(Literal::Str("content".into()))),
                 start: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(4))),
-                count: Some(Boxed::new(ValueExpression::Literal(Literal::SmallInteger(2))))
+                count: Some(Boxed::new(ValueExpression::Literal(Literal::SmallInteger(
+                    2
+                ))))
             }
         );
     }

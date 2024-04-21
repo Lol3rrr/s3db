@@ -47,11 +47,16 @@ where
     }
 }
 
-pub fn bump_separated_list0<'a, S, P, I, O, SO, E>(arena: &'a bumpalo::Bump, mut seperator: S, mut parser: P) -> impl FnMut(I) -> nom::IResult<I, crate::arenas::Vec<'a, O>, E>
+pub fn bump_separated_list0<'a, S, P, I, O, SO, E>(
+    arena: &'a bumpalo::Bump,
+    mut seperator: S,
+    mut parser: P,
+) -> impl FnMut(I) -> nom::IResult<I, crate::arenas::Vec<'a, O>, E>
 where
     P: nom::Parser<I, O, E>,
     S: nom::Parser<I, SO, E>,
-    I: Copy {
+    I: Copy,
+{
     move |i| {
         let mut result = bumpalo::collections::Vec::new_in(arena);
 
@@ -76,17 +81,22 @@ where
                     result.push(entry);
                     remaining = n_rem;
                 }
-                Err(_) => return Ok((remaining, crate::arenas::Vec::Arena(result)))
+                Err(_) => return Ok((remaining, crate::arenas::Vec::Arena(result))),
             };
         }
     }
 }
 
-pub fn bump_separated_list1<'a, S, P, I, O, SO, E>(arena: &'a bumpalo::Bump, mut seperator: S, mut parser: P) -> impl FnMut(I) -> nom::IResult<I, crate::arenas::Vec<'a, O>, E>
+pub fn bump_separated_list1<'a, S, P, I, O, SO, E>(
+    arena: &'a bumpalo::Bump,
+    mut seperator: S,
+    mut parser: P,
+) -> impl FnMut(I) -> nom::IResult<I, crate::arenas::Vec<'a, O>, E>
 where
     P: nom::Parser<I, O, E>,
     S: nom::Parser<I, SO, E>,
-    I: Copy {
+    I: Copy,
+{
     move |i| {
         let mut result = bumpalo::collections::Vec::new_in(arena);
 
@@ -111,7 +121,7 @@ where
                     result.push(entry);
                     remaining = n_rem;
                 }
-                Err(_) => return Ok((remaining, crate::arenas::Vec::Arena(result)))
+                Err(_) => return Ok((remaining, crate::arenas::Vec::Arena(result))),
             };
         }
     }

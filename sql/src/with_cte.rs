@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{query, Identifier, Parser as _, Query, CompatibleParser};
+use crate::{query, CompatibleParser, Identifier, Parser as _, Query};
 
 #[derive(Debug, PartialEq)]
 pub struct WithCTE<'s, 'a> {
@@ -19,9 +19,7 @@ impl<'i, 'a> crate::ArenaParser<'i, 'a> for WithCTEs<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            with_ctes(i, a)
-        }
+        move |i| with_ctes(i, a)
     }
 }
 
@@ -34,18 +32,18 @@ impl<'s, 'a> CompatibleParser for WithCTEs<'s, 'a> {
 
     fn to_static(&self) -> Self::StaticVersion {
         WithCTEs {
-            parts: crate::arenas::Vec::Heap(self
-                .parts
-                .iter()
-                .map(|p| WithCTE {
-                    name: p.name.to_static(),
-                    query: p.query.to_static(),
-                    columns: p
-                        .columns
-                        .as_ref()
-                        .map(|cs| crate::arenas::Vec::Heap(cs.iter().map(|c| c.to_static()).collect())),
-                })
-                .collect()),
+            parts: crate::arenas::Vec::Heap(
+                self.parts
+                    .iter()
+                    .map(|p| WithCTE {
+                        name: p.name.to_static(),
+                        query: p.query.to_static(),
+                        columns: p.columns.as_ref().map(|cs| {
+                            crate::arenas::Vec::Heap(cs.iter().map(|c| c.to_static()).collect())
+                        }),
+                    })
+                    .collect(),
+            ),
             recursive: self.recursive,
         }
     }
@@ -54,8 +52,7 @@ impl<'s, 'a> CompatibleParser for WithCTEs<'s, 'a> {
 pub fn with_ctes<'i, 'a>(
     i: &'i [u8],
     arena: &'a bumpalo::Bump,
-) -> IResult<&'i [u8], WithCTEs<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
-{
+) -> IResult<&'i [u8], WithCTEs<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, (_, _, _, recursive)) = nom::sequence::tuple((
         nom::character::complete::multispace0,
         nom::bytes::complete::tag_no_case("WITH"),
@@ -123,8 +120,8 @@ pub fn with_ctes<'i, 'a>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        BinaryOperator, ColumnReference, Combination, Condition, Literal, Select, TableExpression,
-        ValueExpression, macros::arena_parser_parse, arenas::Boxed
+        arenas::Boxed, macros::arena_parser_parse, BinaryOperator, ColumnReference, Combination,
+        Condition, Literal, Select, TableExpression, ValueExpression,
     };
 
     use super::*;
@@ -151,7 +148,8 @@ mod tests {
                         combine: None
                     }),
                     columns: None,
-                }].into(),
+                }]
+                .into(),
                 recursive: false,
             }
         );
@@ -161,7 +159,7 @@ mod tests {
     fn multiple() {
         arena_parser_parse!(
             WithCTEs,
-"
+            "
 WITH regional_sales AS (
     SELECT 2
 ), top_regions AS (
@@ -199,7 +197,8 @@ WITH regional_sales AS (
                         }),
                         columns: None,
                     }
-                ].into(),
+                ]
+                .into(),
                 recursive: false,
             }
         );
@@ -236,33 +235,40 @@ WITH regional_sales AS (
                                         Literal::SmallInteger(1)
                                     )),
                                     operator: BinaryOperator::Add,
-                                }].into(),
+                                }]
+                                .into(),
                                 table: Some(TableExpression::Relation("cte".into())),
-                                where_condition: Some(Condition::And(vec![Condition::Value(
-                                    Box::new(ValueExpression::Operator {
-                                        first: Boxed::new(ValueExpression::ColumnReference(
-                                            ColumnReference {
-                                                relation: None,
-                                                column: "n".into()
-                                            }
-                                        )),
-                                        second: Boxed::new(ValueExpression::Literal(
-                                            Literal::SmallInteger(2)
-                                        )),
-                                        operator: BinaryOperator::Less
-                                    }).into()
-                                )].into())),
+                                where_condition: Some(Condition::And(
+                                    vec![Condition::Value(
+                                        Box::new(ValueExpression::Operator {
+                                            first: Boxed::new(ValueExpression::ColumnReference(
+                                                ColumnReference {
+                                                    relation: None,
+                                                    column: "n".into()
+                                                }
+                                            )),
+                                            second: Boxed::new(ValueExpression::Literal(
+                                                Literal::SmallInteger(2)
+                                            )),
+                                            operator: BinaryOperator::Less
+                                        })
+                                        .into()
+                                    )]
+                                    .into()
+                                )),
                                 order_by: None,
                                 group_by: None,
                                 having: None,
                                 limit: None,
                                 for_update: None,
                                 combine: None
-                            }).into()
+                            })
+                            .into()
                         ))
                     }),
                     columns: Some(vec!["n".into()].into()),
-                }].into(),
+                }]
+                .into(),
                 recursive: true
             }
         );

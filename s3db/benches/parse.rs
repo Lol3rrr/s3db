@@ -1,6 +1,6 @@
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use s3db::{ra::RaExpression, storage::Schemas};
 use sql::DataType;
-use criterion::{criterion_group, criterion_main, black_box, Criterion};
 
 fn simple_select(c: &mut Criterion) {
     let query = "SELECT name FROM users";
@@ -17,7 +17,9 @@ fn simple_select(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ra");
     group.throughput(criterion::Throughput::Elements(1));
-    group.bench_function("simple_select", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
+    group.bench_function("simple_select", |b| {
+        b.iter(|| black_box(RaExpression::parse_select(&query, &schemas)))
+    });
     group.finish();
 }
 
@@ -51,7 +53,9 @@ fn select_join(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ra");
     group.throughput(criterion::Throughput::Elements(1));
-    group.bench_function("select_join", |b| b.iter(|| black_box(RaExpression::parse_select(&query, &schemas))));
+    group.bench_function("select_join", |b| {
+        b.iter(|| black_box(RaExpression::parse_select(&query, &schemas)))
+    });
     group.finish();
 }
 

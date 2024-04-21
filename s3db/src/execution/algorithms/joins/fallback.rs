@@ -30,7 +30,13 @@ where
         left_result: futures::stream::LocalBoxStream<'lr, storage::Row>,
         right_result: futures::stream::LocalBoxStream<'rr, storage::Row>,
         condition_eval: &CE,
-    ) -> Result<(storage::TableSchema, futures::stream::BoxStream<storage::Row>), crate::execution::naive::EvaulateRaError<SE>> {
+    ) -> Result<
+        (
+            storage::TableSchema,
+            futures::stream::BoxStream<storage::Row>,
+        ),
+        crate::execution::naive::EvaulateRaError<SE>,
+    > {
         assert!(
             <Self as Join<CE, SE>>::compatible(self, &args, &ctx),
             "Not compatible"

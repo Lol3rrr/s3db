@@ -17,6 +17,16 @@ jobs:
       - name: Run Profiling for 
         run: RUSTFLAGS="--cfg flamegraph" cargo bench --bench parse --bench execute -- --profile-time 5
       - name: Upload result artifacts
+        id: upload-artifacts
         uses: actions/upload-artifact@v4
         with:
           path: target/criterion/
+      - name: Comment artifact results
+        if: github.event_name == 'pull_request'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: |
+            # Profiling Results
+            Link: ${{ steps.upload-artifacts.outputs.artifact-url }}
+          pr_number: ${{ github.event.pull_request.number }}
+          comment_tag: profiling_results

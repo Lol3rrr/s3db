@@ -187,42 +187,56 @@ impl Storage for InMemoryStorage {
     async fn stream_relation<'own, 'name, 'transaction, 'stream>(
         &'own self,
         name: &'name str,
-        transaction: &'transaction Self::TransactionGuard
+        transaction: &'transaction Self::TransactionGuard,
     ) -> Result<(TableSchema, futures::stream::LocalBoxStream<'stream, Row>), Self::LoadingError>
-    where 'own: 'stream, 'name: 'stream, 'transaction: 'stream {
+    where
+        'own: 'stream,
+        'name: 'stream,
+        'transaction: 'stream,
+    {
         use futures::stream::StreamExt;
 
-        let tables = self.tables.try_borrow().map_err(|_| LoadingError::BorrowingTables)?;
+        let tables = self
+            .tables
+            .try_borrow()
+            .map_err(|_| LoadingError::BorrowingTables)?;
         let table = tables.get(name).ok_or(LoadingError::UnknownRelation)?;
 
-        let columns: Vec<ColumnSchema> = table.columns.iter().map(|(name, ty, modifiers)| ColumnSchema {
-            name: name.to_string(),
-            ty: ty.clone(),
-            mods: modifiers.to_vec(),
-        }).collect();
-        let table_schema = TableSchema {
-            rows: columns,
-        };
+        let columns: Vec<ColumnSchema> = table
+            .columns
+            .iter()
+            .map(|(name, ty, modifiers)| ColumnSchema {
+                name: name.to_string(),
+                ty: ty.clone(),
+                mods: modifiers.to_vec(),
+            })
+            .collect();
+        let table_schema = TableSchema { rows: columns };
 
-        let rows: Vec<Row> = table.rows.iter().filter(|row| {
-            if (transaction.active.contains(&row.created)
-                                || row.created > transaction.latest_commit
-                                || transaction.aborted.contains(&row.created))
-                                && row.created != transaction.id
-                            {
-                                return false;
-                            }
-                            if row.expired != 0
-                                && (!transaction.active.contains(&row.expired)
-                                    || row.expired == transaction.id
-                                    || row.expired < transaction.latest_commit)
-                                && !transaction.aborted.contains(&row.expired)
-                            {
-                                return false;
-                            }
+        let rows: Vec<Row> = table
+            .rows
+            .iter()
+            .filter(|row| {
+                if (transaction.active.contains(&row.created)
+                    || row.created > transaction.latest_commit
+                    || transaction.aborted.contains(&row.created))
+                    && row.created != transaction.id
+                {
+                    return false;
+                }
+                if row.expired != 0
+                    && (!transaction.active.contains(&row.expired)
+                        || row.expired == transaction.id
+                        || row.expired < transaction.latest_commit)
+                    && !transaction.aborted.contains(&row.expired)
+                {
+                    return false;
+                }
 
-                            true
-        }).map(|r| r.data.clone()).collect();
+                true
+            })
+            .map(|r| r.data.clone())
+            .collect();
 
         let stream = futures::stream::iter(rows).boxed_local();
 
@@ -407,42 +421,56 @@ impl Storage for &InMemoryStorage {
     async fn stream_relation<'own, 'name, 'transaction, 'stream>(
         &'own self,
         name: &'name str,
-        transaction: &'transaction Self::TransactionGuard
+        transaction: &'transaction Self::TransactionGuard,
     ) -> Result<(TableSchema, futures::stream::LocalBoxStream<'stream, Row>), Self::LoadingError>
-    where 'own: 'stream, 'name: 'stream, 'transaction: 'stream {
+    where
+        'own: 'stream,
+        'name: 'stream,
+        'transaction: 'stream,
+    {
         use futures::stream::StreamExt;
 
-        let tables = self.tables.try_borrow().map_err(|_| LoadingError::BorrowingTables)?;
+        let tables = self
+            .tables
+            .try_borrow()
+            .map_err(|_| LoadingError::BorrowingTables)?;
         let table = tables.get(name).ok_or(LoadingError::UnknownRelation)?;
 
-        let columns: Vec<ColumnSchema> = table.columns.iter().map(|(name, ty, modifiers)| ColumnSchema {
-            name: name.to_string(),
-            ty: ty.clone(),
-            mods: modifiers.to_vec(),
-        }).collect();
-        let table_schema = TableSchema {
-            rows: columns,
-        };
+        let columns: Vec<ColumnSchema> = table
+            .columns
+            .iter()
+            .map(|(name, ty, modifiers)| ColumnSchema {
+                name: name.to_string(),
+                ty: ty.clone(),
+                mods: modifiers.to_vec(),
+            })
+            .collect();
+        let table_schema = TableSchema { rows: columns };
 
-        let rows: Vec<Row> = table.rows.iter().filter(|row| {
-            if (transaction.active.contains(&row.created)
-                                || row.created > transaction.latest_commit
-                                || transaction.aborted.contains(&row.created))
-                                && row.created != transaction.id
-                            {
-                                return false;
-                            }
-                            if row.expired != 0
-                                && (!transaction.active.contains(&row.expired)
-                                    || row.expired == transaction.id
-                                    || row.expired < transaction.latest_commit)
-                                && !transaction.aborted.contains(&row.expired)
-                            {
-                                return false;
-                            }
+        let rows: Vec<Row> = table
+            .rows
+            .iter()
+            .filter(|row| {
+                if (transaction.active.contains(&row.created)
+                    || row.created > transaction.latest_commit
+                    || transaction.aborted.contains(&row.created))
+                    && row.created != transaction.id
+                {
+                    return false;
+                }
+                if row.expired != 0
+                    && (!transaction.active.contains(&row.expired)
+                        || row.expired == transaction.id
+                        || row.expired < transaction.latest_commit)
+                    && !transaction.aborted.contains(&row.expired)
+                {
+                    return false;
+                }
 
-                            true
-        }).map(|r| r.data.clone()).collect();
+                true
+            })
+            .map(|r| r.data.clone())
+            .collect();
 
         let stream = futures::stream::iter(rows).boxed_local();
 

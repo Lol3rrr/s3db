@@ -1,5 +1,4 @@
 #[allow(clippy::disallowed_types)]
-
 #[derive(Debug)]
 pub enum Vec<'a, T> {
     Arena(bumpalo::collections::Vec<'a, T>),
@@ -11,7 +10,10 @@ impl<'a, T> Vec<'a, T> {
         Self::Arena(bumpalo::collections::Vec::new_in(a))
     }
 
-    pub fn clone_to_heap(&self) -> Vec<'static, T> where T: Clone {
+    pub fn clone_to_heap(&self) -> Vec<'static, T>
+    where
+        T: Clone,
+    {
         let mut result = std::vec::Vec::with_capacity(self.len());
         result.extend(self.iter().cloned());
         Vec::Heap(result)
@@ -58,7 +60,10 @@ impl<'a, T> core::ops::Deref for Vec<'a, T> {
     }
 }
 
-impl<'a, 'b, X, Y> PartialEq<Vec<'b, Y>> for Vec<'a, X> where X: PartialEq<Y> {
+impl<'a, 'b, X, Y> PartialEq<Vec<'b, Y>> for Vec<'a, X>
+where
+    X: PartialEq<Y>,
+{
     fn eq(&self, other: &Vec<'b, Y>) -> bool {
         let first: &[X] = self;
         let second: &[Y] = other;
@@ -78,7 +83,7 @@ impl<'a, T> IntoIterator for Vec<'a, T> {
     }
 }
 
-impl<'r,'a, T> IntoIterator for &'r Vec<'a, T> {
+impl<'r, 'a, T> IntoIterator for &'r Vec<'a, T> {
     type Item = &'r T;
     type IntoIter = core::slice::Iter<'r, T>;
 
@@ -103,7 +108,10 @@ impl<'a, T> Iterator for ArenaVecIterator<'a, T> {
     }
 }
 
-impl<'a, T> crate::CompatibleParser for Vec<'a, T> where T: crate::CompatibleParser {
+impl<'a, T> crate::CompatibleParser for Vec<'a, T>
+where
+    T: crate::CompatibleParser,
+{
     type StaticVersion = Vec<'static, T::StaticVersion>;
 
     fn to_static(&self) -> Self::StaticVersion {

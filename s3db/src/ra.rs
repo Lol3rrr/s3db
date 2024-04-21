@@ -742,8 +742,8 @@ impl RaExpression {
 mod tests {
     use super::*;
 
-    use sql::{Literal, Query};
     use bumpalo::Bump;
+    use sql::{Literal, Query};
 
     use pretty_assertions::assert_eq;
 
@@ -797,11 +797,15 @@ mod tests {
     #[test]
     fn basic_select_where() {
         let arena = Bump::new();
-        let parsed =
-            match Query::parse("SELECT user FROM testing WHERE user = 'bot'".as_bytes(), &arena).unwrap() {
-                Query::Select(s) => s,
-                other => panic!("{:?}", other),
-            };
+        let parsed = match Query::parse(
+            "SELECT user FROM testing WHERE user = 'bot'".as_bytes(),
+            &arena,
+        )
+        .unwrap()
+        {
+            Query::Select(s) => s,
+            other => panic!("{:?}", other),
+        };
 
         let schemas: Schemas = [(
             "testing".to_string(),
@@ -863,11 +867,15 @@ mod tests {
     #[test]
     fn basic_select_where_with_placeholders() {
         let arena = Bump::new();
-        let parsed =
-            match Query::parse("SELECT user FROM testing WHERE user = $1".as_bytes(), &arena).unwrap() {
-                Query::Select(s) => s,
-                other => panic!("{:?}", other),
-            };
+        let parsed = match Query::parse(
+            "SELECT user FROM testing WHERE user = $1".as_bytes(),
+            &arena,
+        )
+        .unwrap()
+        {
+            Query::Select(s) => s,
+            other => panic!("{:?}", other),
+        };
 
         let schemas: Schemas = [(
             "testing".to_string(),
