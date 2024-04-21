@@ -14,7 +14,7 @@ use sql::{BinaryOperator, DataType};
 use super::EvaulateRaError;
 
 #[derive(Debug, Clone)]
-pub enum ValueMapper<'expr, 'placeholders> {
+pub enum ValueMapper<'expr, 'outer, 'placeholders> {
     Attribute {
         idx: usize,
     },
@@ -22,46 +22,47 @@ pub enum ValueMapper<'expr, 'placeholders> {
         value: storage::Data,
     },
     List {
-        parts: Vec<ValueMapper<'expr, 'placeholders>>,
+        parts: Vec<ValueMapper<'expr, 'outer, 'placeholders>>,
     },
     Cast {
-        inner: Box<ValueMapper<'expr, 'placeholders>>,
+        inner: Box<ValueMapper<'expr, 'outer, 'placeholders>>,
         target: sql::DataType,
     },
     BinaryOp {
-        first: Box<ValueMapper<'expr, 'placeholders>>,
-        second: Box<ValueMapper<'expr, 'placeholders>>,
+        first: Box<ValueMapper<'expr, 'outer, 'placeholders>>,
+        second: Box<ValueMapper<'expr, 'outer, 'placeholders>>,
         operator: BinaryOperator,
     },
     Function {
-        func: FunctionMapper<'expr, 'placeholders>,
+        func: FunctionMapper<'expr, 'outer, 'placeholders>,
     },
     SubQuery {
         query: &'expr ra::RaExpression,
+        outer: &'outer HashMap<AttributeId, storage::Data>,
         placeholders: &'placeholders HashMap<usize, storage::Data>,
     },
 }
 
 #[derive(Debug, Clone)]
-pub enum FunctionMapper<'expr, 'placeholders> {
+pub enum FunctionMapper<'expr, 'outer, 'placeholders> {
     SetValue {
         name: String,
-        value: Box<ValueMapper<'expr, 'placeholders>>,
+        value: Box<ValueMapper<'expr, 'outer, 'placeholders>>,
         is_called: bool,
     },
     Lower {
-        value: Box<ValueMapper<'expr, 'placeholders>>,
+        value: Box<ValueMapper<'expr, 'outer, 'placeholders>>,
     },
 }
 
-impl<'expr, 'placeholders> ValueMapper<'expr, 'placeholders> {
-    pub fn evaluate<'s, 'row, 'engine, 'transaction, 'arena, 'f, S>(
+impl<'expr, 'outer, 'placeholders> ValueMapper<'expr, 'outer, 'placeholders> {
+    pub async fn evaluate<'s, 'row, 'engine, 'transaction, 'arena, 'f, S>(
         &'s self,
         row: &'row storage::Row,
         engine: &'engine NaiveEngine<S>,
         transaction: &'transaction S::TransactionGuard,
         arena: &'arena bumpalo::Bump,
-    ) -> LocalBoxFuture<'f, Option<storage::Data>>
+    ) -> Option<storage::Data>
     where
         's: 'f,
         'row: 'f,
@@ -70,127 +71,170 @@ impl<'expr, 'placeholders> ValueMapper<'expr, 'placeholders> {
         'arena: 'f,
         S: storage::Storage,
     {
-        async move {
-            match self {
-                Self::Attribute { idx } => {
-                    let tmp = row.data.get(*idx)?;
-                    Some(tmp.clone())
-                }
-                Self::Constant { value } => Some(value.clone()),
-                Self::Cast { inner, target } => {
-                    let inner_val = inner.evaluate(row, engine, transaction, arena).await?;
-                    inner_val.try_cast(target).ok()
-                }
-                Self::Function { func } => match func {
-                    FunctionMapper::Lower { value } => {
-                        let before = value.evaluate(row, engine, transaction, arena).await?;
-                        match before {
-                            storage::Data::Text(d) => Some(storage::Data::Text(d.to_lowercase())),
+            let mut pending = vec![self];
+            let mut instructions = Vec::new();
+            let mut results: Vec<storage::Data> = Vec::new();
+
+            while let Some(pend) = pending.pop() {
+                instructions.push(pend);
+
+                match pend {
+                    Self::Attribute { .. } | Self::Constant { .. } | Self::SubQuery { .. } => {}
+                    Self::Cast { inner, .. } => {
+                        pending.push(&inner);
+                    }
+                    Self::List { parts } => {
+                        pending.extend(parts.iter().rev());
+                    }
+                    Self::BinaryOp { first, second, .. } => {
+                        pending.push(second);
+                        pending.push(first);
+                    }
+                    Self::Function { func } => match func {
+                        FunctionMapper::SetValue { value, .. } => {
+                            pending.push(value);
+                        }
+                        FunctionMapper::Lower { value } => {
+                            pending.push(value);
+                        }
+                    },
+                };
+            }
+
+            while let Some(tmp) = instructions.pop() {
+                let res = match tmp {
+                    Self::Attribute { idx } => {
+                        let tmp = row.data.get(*idx)?;
+                        Some(tmp.clone())
+                    }
+                    Self::Constant { value } => Some(value.clone()),
+                    Self::Cast { inner, target } => {
+                        let inner_val = results.pop()?;
+                        inner_val.try_cast(target).ok()
+                    }
+                    Self::Function { func } => match func {
+                        FunctionMapper::Lower { value } => {
+                            let before = results.pop()?;
+                            match before {
+                                storage::Data::Text(d) => {
+                                    Some(storage::Data::Text(d.to_lowercase()))
+                                }
+                                other => {
+                                    dbg!(&other);
+                                    //Err(EvaulateRaError::Other("Unexpected Type"))
+                                    None
+                                }
+                            }
+                        }
+                        FunctionMapper::SetValue {
+                            name,
+                            value,
+                            is_called,
+                        } => {
+                            let value_res = results.pop()?;
+
+                            let value = match value_res {
+                                Data::List(mut v) => {
+                                    if v.is_empty() {
+                                        // return Err(EvaulateRaError::Other(""));
+                                        return None;
+                                    }
+
+                                    v.swap_remove(0)
+                                }
+                                other => other,
+                            };
+
+                            dbg!(&value);
+
+                            // TODO
+                            // Actually update the Sequence Value
+
+                            Some(value)
+                        }
+                    },
+                    Self::BinaryOp {
+                        first,
+                        second,
+                        operator,
+                    } => {
+                        let first_value = results.pop()?;
+                        let second_value = results.pop()?;
+
+                        match operator {
+                            BinaryOperator::Add => match (first_value, second_value) {
+                                (Data::SmallInt(f), Data::SmallInt(s)) => {
+                                    Some(Data::SmallInt(f + s))
+                                }
+                                (Data::Integer(f), Data::SmallInt(s)) => {
+                                    Some(Data::Integer(f + s as i32))
+                                }
+                                other => {
+                                    dbg!(other);
+                                    // Err(EvaulateRaError::Other("Addition"))
+                                    None
+                                }
+                            },
+                            BinaryOperator::Subtract => match (first_value, second_value) {
+                                (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f - s)),
+                                other => {
+                                    dbg!(other);
+                                    // Err(EvaulateRaError::Other("Subtracting"))
+                                    None
+                                }
+                            },
+                            BinaryOperator::Divide => match (first_value, second_value) {
+                                (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f / s)),
+                                other => {
+                                    dbg!(other);
+                                    // Err(EvaulateRaError::Other("Subtracting"))
+                                    None
+                                }
+                            },
                             other => {
-                                dbg!(&other);
-                                //Err(EvaulateRaError::Other("Unexpected Type"))
+                                dbg!(&other, first_value, second_value);
+
+                                // Err(EvaulateRaError::Other("Evaluating Binary Operator"))
                                 None
                             }
                         }
                     }
-                    FunctionMapper::SetValue {
-                        name,
-                        value,
-                        is_called,
+                    Self::SubQuery {
+                        query,
+                        outer,
+                        placeholders,
                     } => {
-                        let value_res = value.evaluate(row, engine, transaction, arena).await?;
+                        let ctes = HashMap::new();
+                        let n_outer = {
+                            let mut tmp: HashMap<_, _> = (*outer).clone();
 
-                        let value = match value_res {
-                            Data::List(mut v) => {
-                                if v.is_empty() {
-                                    // return Err(EvaulateRaError::Other(""));
-                                    return None;
-                                }
+                            // TODO
 
-                                v.swap_remove(0)
-                            }
-                            other => other,
+                            tmp
                         };
 
-                        dbg!(&value);
+                        let (_, rows) = engine
+                            .evaluate_ra(&query, placeholders, &ctes, &n_outer, transaction, &arena)
+                            .await
+                            .ok()?;
 
-                        // TODO
-                        // Actually update the Sequence Value
+                        let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
 
-                        Some(value)
+                        Some(storage::Data::List(parts))
                     }
-                },
-                Self::BinaryOp {
-                    first,
-                    second,
-                    operator,
-                } => {
-                    let first_value = first.evaluate(row, engine, transaction, arena).await?;
-                    let second_value = second.evaluate(row, engine, transaction, arena).await?;
-
-                    match operator {
-                        BinaryOperator::Add => match (first_value, second_value) {
-                            (Data::SmallInt(f), Data::SmallInt(s)) => Some(Data::SmallInt(f + s)),
-                            (Data::Integer(f), Data::SmallInt(s)) => {
-                                Some(Data::Integer(f + s as i32))
-                            }
-                            other => {
-                                dbg!(other);
-                                // Err(EvaulateRaError::Other("Addition"))
-                                None
-                            }
-                        },
-                        BinaryOperator::Subtract => match (first_value, second_value) {
-                            (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f - s)),
-                            other => {
-                                dbg!(other);
-                                // Err(EvaulateRaError::Other("Subtracting"))
-                                None
-                            }
-                        },
-                        BinaryOperator::Divide => match (first_value, second_value) {
-                            (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f / s)),
-                            other => {
-                                dbg!(other);
-                                // Err(EvaulateRaError::Other("Subtracting"))
-                                None
-                            }
-                        },
-                        other => {
-                            dbg!(&other, first_value, second_value);
-
-                            // Err(EvaulateRaError::Other("Evaluating Binary Operator"))
-                            None
+                    Self::List { parts } => {
+                        let mut values = Vec::new();
+                        for part in parts {
+                            let v = results.pop()?;
+                            values.push(v);
                         }
+                        Some(storage::Data::List(values))
                     }
-                }
-                Self::SubQuery {
-                    query,
-                    placeholders,
-                } => {
-                    let ctes = HashMap::new();
-                    let outer = HashMap::new();
-
-                    let (_, rows) = engine
-                        .evaluate_ra(&query, placeholders, &ctes, &outer, transaction, &arena)
-                        .await
-                        .ok()?;
-
-                    let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
-
-                    Some(storage::Data::List(parts))
-                }
-                Self::List { parts } => {
-                    let mut values = Vec::new();
-                    for part in parts {
-                        let v = part.evaluate(row, engine, transaction, arena).await?;
-                        values.push(v);
-                    }
-                    Some(storage::Data::List(values))
-                }
+                }?;
+                results.push(res);
             }
-        }
-        .boxed_local()
+
+            results.pop()
     }
 }
 
@@ -200,7 +244,7 @@ pub async fn construct<'rve, 'columns, 'placeholders, 'c, 'o, 't, 'r, 'f, 'arena
     placeholders: &'placeholders HashMap<usize, storage::Data>,
     ctes: &'c HashMap<String, storage::EntireRelation>,
     outer: &'o HashMap<AttributeId, storage::Data>,
-) -> Result<ValueMapper<'rve, 'placeholders>, EvaulateRaError<SE>>
+) -> Result<ValueMapper<'rve, 'o, 'placeholders>, EvaulateRaError<SE>>
 where
     'rve: 'f,
     'columns: 'f,
@@ -321,6 +365,7 @@ where
             }
             ra::RaValueExpression::SubQuery { query } => Ok(ValueMapper::SubQuery {
                 query,
+                outer,
                 placeholders,
             }),
             ra::RaValueExpression::Cast { target, .. } => {

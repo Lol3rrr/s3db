@@ -273,6 +273,8 @@ where
                         mappers.push(mapper);
                     }
 
+                    let mappers = std::rc::Rc::new(mappers);
+
                     let stream: LocalBoxStream<'_, storage::Row> =
                         StreamExt::boxed_local(StreamExt::then(rows, move |row| {
                             let mappers = mappers.clone();
