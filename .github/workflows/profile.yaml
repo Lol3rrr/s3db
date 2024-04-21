@@ -30,5 +30,5 @@ jobs:
           message: |
             # Profiling Results
             Link: ${{ steps.upload-artifacts.outputs.artifact-url }}
-          pr_number: ${{ github.event.pull_request.number }}
+          pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: profiling_results
