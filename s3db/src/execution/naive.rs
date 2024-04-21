@@ -16,8 +16,8 @@ mod aggregate;
 use aggregate::AggregateState;
 
 mod pattern;
-
 mod condition;
+mod value;
 
 pub struct NaiveEngine<S> {
     storage: S,
@@ -222,7 +222,7 @@ where
                             async move {
                                 let mut data = Vec::new();
                                 for attribute in attributes.iter() {
-                                    let tmp = self.evaluate_ra_value(&attribute.value, &row, &inner_columns, placeholders, ctes, &outer, transaction, &arena).await.unwrap(); // TODO
+                                    let tmp = value::evaluate_ra_value(self, &attribute.value, &row, &inner_columns, placeholders, ctes, &outer, transaction, &arena).await.unwrap(); // TODO
 
                                     // TODO
                                     // This is not a good fix
@@ -587,11 +587,9 @@ where
                     second,
                     comparison,
                 } => {
-                    let first_value = self
-                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer, transaction, &arena)
+                    let first_value = value::evaluate_ra_value(self, first, row, columns, placeholders, ctes, outer, transaction, &arena)
                         .await?;
-                    let second_value = self
-                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer, transaction, &arena)
+                    let second_value = value::evaluate_ra_value(self, second, row, columns, placeholders, ctes, outer, transaction, &arena)
                         .await?;
 
                     match comparison {
@@ -685,246 +683,7 @@ where
             }
         }
         .boxed_local()
-    }
-
-    fn evaluate_ra_value<'s, 'rve, 'row, 'columns, 'placeholders, 'c, 'o, 't, 'f, 'arena>(
-        &'s self,
-        expr: &'rve ra::RaValueExpression,
-        row: &'row storage::Row,
-        columns: &'columns [(String, DataType, AttributeId)],
-        placeholders: &'placeholders HashMap<usize, storage::Data>,
-        ctes: &'c HashMap<String, storage::EntireRelation>,
-        outer: &'o HashMap<AttributeId, storage::Data>,
-        transaction: &'t S::TransactionGuard,
-        arena: &'arena bumpalo::Bump,
-    ) -> LocalBoxFuture<'f, Result<storage::Data, EvaulateRaError<S::LoadingError>>>
-    where
-        's: 'f,
-        'rve: 'f,
-        'row: 'f,
-        'columns: 'f,
-        'placeholders: 'f,
-        'c: 'f,
-        'o: 'f,
-        't: 'f,
-        'arena: 'f
-    {
-        async move {
-            match expr {
-                ra::RaValueExpression::Attribute { a_id, name, .. } => {
-                    // TODO
-
-                    let column_index = columns
-                        .iter()
-                        .enumerate()
-                        .find(|(_, (_, _, id))| id == a_id)
-                        .map(|(i, _)| i)
-                        .ok_or_else(|| EvaulateRaError::UnknownAttribute { name: name.clone(), id: *a_id })?;
-
-                    Ok(row.data[column_index].clone())
-                }
-                ra::RaValueExpression::OuterAttribute { a_id, name, .. } => {
-                    dbg!(&a_id, &outer);
-
-                    let value = outer.get(a_id).ok_or_else(|| EvaulateRaError::UnknownAttribute { name: name.clone(), id: *a_id })?;
-
-                    Ok(value.clone())
-                }
-                ra::RaValueExpression::Placeholder(placeholder) => {
-                    placeholders.get(placeholder).cloned().ok_or_else(|| {
-                        dbg!(&placeholders, &placeholder);
-                        EvaulateRaError::Other("Getting Placeholder Value")
-                    })
-                }
-                ra::RaValueExpression::Literal(lit) => Ok(storage::Data::from_literal(lit)),
-                ra::RaValueExpression::List(elems) => {
-                    let mut result = Vec::with_capacity(elems.len());
-
-                    for part in elems.iter() {
-                        let tmp = self
-                            .evaluate_ra_value(part, row, columns, placeholders, ctes, outer, transaction, &arena)
-                            .await?;
-                        result.push(tmp);
-                    }
-
-                    Ok(Data::List(result))
-                }
-                ra::RaValueExpression::SubQuery { query } => {
-                    let n_outer = {
-                        let tmp = outer.clone();
-                        // TODO
-                        // dbg!(columns, row);
-                        tmp
-                    };
-                    let (_, rows) = self.evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, &arena).await?;
-
-                    let parts: Vec<_> = rows
-                        .map(|r| r.data[0].clone())
-                        .collect().await;
-
-                    Ok(storage::Data::List(parts))
-                }
-                ra::RaValueExpression::Cast { inner, target } => {
-                    let result = self
-                        .evaluate_ra_value(inner, row, columns, placeholders, ctes,outer, transaction, &arena)
-                        .await?;
-
-                    result
-                        .try_cast(target)
-                        .map_err(|(data, ty)| EvaulateRaError::CastingType {
-                            value: data,
-                            target: ty.clone(),
-                        })
-                }
-                ra::RaValueExpression::BinaryOperation {
-                    first,
-                    second,
-                    operator,
-                } => {
-                    let first_value = self
-                        .evaluate_ra_value(first, row, columns, placeholders, ctes, outer, transaction, &arena)
-                        .await?;
-                    let second_value = self
-                        .evaluate_ra_value(second, row, columns, placeholders, ctes, outer, transaction, &arena)
-                        .await?;
-
-                    match operator {
-                        BinaryOperator::Add => match (first_value, second_value) {
-                            (Data::SmallInt(f), Data::SmallInt(s)) => Ok(Data::SmallInt(f + s)),
-                            (Data::Integer(f), Data::SmallInt(s)) => Ok(Data::Integer(f + s as i32)),
-                            other => {
-                                dbg!(other);
-                                Err(EvaulateRaError::Other("Addition"))
-                            }
-                        },
-                        BinaryOperator::Subtract => match (first_value, second_value) {
-                            (Data::Integer(f), Data::Integer(s)) => Ok(Data::Integer(f - s)),
-                            other => {
-                                dbg!(other);
-                                Err(EvaulateRaError::Other("Subtracting"))
-                            }
-                        },
-                        BinaryOperator::Divide => match (first_value, second_value) {
-                            (Data::Integer(f), Data::Integer(s)) => Ok(Data::Integer(f / s)),
-                            other => {
-                                dbg!(other);
-                                Err(EvaulateRaError::Other("Subtracting"))
-                            }
-                        },
-                        other => {
-                            dbg!(&other, first_value, second_value);
-
-                            Err(EvaulateRaError::Other("Evaluating Binary Operator"))
-                        }
-                    }
-                }
-                ra::RaValueExpression::Function(fc) => match fc {
-                    ra::RaFunction::LeftPad {
-                        base,
-                        length,
-                        padding,
-                    } => {
-                        dbg!(&base, &length, &padding);
-
-                        Err(EvaulateRaError::Other("Executing LeftPad not implemented"))
-                    }
-                    ra::RaFunction::Coalesce(parts) => {
-                        dbg!(&parts);
-
-                        Err(EvaulateRaError::Other("Executing Coalesce"))
-                    }
-                    ra::RaFunction::SetValue {
-                        name,
-                        value,
-                        is_called,
-                    } => {
-                        dbg!(&name, &value, &is_called);
-
-                        let value_res = self
-                            .evaluate_ra_value(value, row, columns, placeholders, ctes, outer, transaction, &arena)
-                            .await?;
-                        dbg!(&value_res);
-
-                        let value = match value_res {
-                            Data::List(mut v) => {
-                                if v.is_empty() {
-                                    return Err(EvaulateRaError::Other(""));
-                                }
-
-                                v.swap_remove(0)
-                            }
-                            other => other,
-                        };
-
-                        dbg!(&value);
-
-                        // TODO
-                        // Actually update the Sequence Value
-
-                        Ok(value)
-                    }
-                    ra::RaFunction::Lower(val) => {
-                        dbg!(&val);
-
-                        let data = self
-                            .evaluate_ra_value(val, row, columns, placeholders, ctes, outer, transaction, &arena)
-                            .await?;
-
-                        match data {
-                            storage::Data::Text(d) => Ok(storage::Data::Text(d.to_lowercase())),
-                            other => {
-                                dbg!(&other);
-                                Err(EvaulateRaError::Other("Unexpected Type"))
-                            }
-                        }
-                    }
-                    ra::RaFunction::Substr {
-                        str_value,
-                        start,
-                        count,
-                    } => {
-                        dbg!(&str_value, &start);
-
-                        let str_value = self
-                            .evaluate_ra_value(str_value, row, columns, placeholders, ctes, outer, transaction, &arena)
-                            .await?;
-                        let start_value = self
-                            .evaluate_ra_value(start, row, columns, placeholders, ctes, outer, transaction, &arena)
-                            .await?;
-                        let count_value = match count.as_ref() {
-                            Some(c) => {
-                                let val = self
-                                    .evaluate_ra_value(c, row, columns, placeholders, ctes, outer, transaction, &arena)
-                                    .await?;
-                                Some(val)
-                            }
-                            None => None,
-                        };
-
-                        dbg!(&str_value, &start_value, &count_value);
-
-                        Err(EvaulateRaError::Other("Executing Substr function"))
-                    }
-                    ra::RaFunction::CurrentSchemas { implicit } => {
-                        dbg!(implicit);
-
-                        Err(EvaulateRaError::Other("Executing Current Schemas"))
-                    }
-                    ra::RaFunction::ArrayPosition { array, target } => {
-                        dbg!(&array, &target);
-
-                        Err(EvaulateRaError::Other("Executing ArrayPosition"))
-                    }
-                },
-                ra::RaValueExpression::Renamed { name, value } => {
-                    dbg!(&name, &value);
-
-                    Err(EvaulateRaError::Other("Renamed Value Expression"))
-                }
-            }
-        }
-        .boxed_local()
-    }
+    } 
 
     #[tracing::instrument(skip(self, cte, arena))]
     async fn execute_cte<'p, 'c, 't, 'arena>(
@@ -1524,8 +1283,8 @@ where
 
                                 let mut field_values = Vec::new();
                                 for field in fields.iter() {
-                                    let value = self
-                                        .evaluate_ra_value(
+                                    let value = value::evaluate_ra_value(
+                                            self,
                                             &field.value,
                                             &row,
                                             &table_columns,

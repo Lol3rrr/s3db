@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use futures::future::{LocalBoxFuture, FutureExt};
 
 use crate::{
     ra::{self, AttributeId, RaValueExpression},
@@ -6,7 +7,7 @@ use crate::{
 };
 use sql::DataType;
 
-use super::{EvaulateRaError, NaiveEngine};
+use super::{EvaulateRaError, NaiveEngine, value::evaluate_ra_value};
 
 pub enum AggregateState {
     CountRows {
@@ -66,17 +67,24 @@ impl AggregateState {
         }
     }
 
-    pub async fn update<S>(
-        &mut self,
-        engine: &NaiveEngine<S>,
-        row: &storage::Row,
-        outer: &HashMap<AttributeId, storage::Data>,
-        transaction: &S::TransactionGuard,
-        arena: &bumpalo::Bump,
-    ) -> Result<(), EvaulateRaError<S::LoadingError>>
+    pub fn update<'s, 'engine, 'row, 'outer, 'transaction, 'arena, 'f, S>(
+        &'s mut self,
+        engine: &'engine NaiveEngine<S>,
+        row: &'row storage::Row,
+        outer: &'outer HashMap<AttributeId, storage::Data>,
+        transaction: &'transaction S::TransactionGuard,
+        arena: &'arena bumpalo::Bump,
+    ) -> LocalBoxFuture<'f, Result<(), EvaulateRaError<S::LoadingError>>>
     where
+        's: 'f,
+        'engine: 'f,
+        'row: 'f,
+        'outer: 'f,
+        'transaction: 'f,
+        'arena: 'f,
         S: Storage,
     {
+        async move {
         match self {
             Self::CountRows {
                 attribute_index,
@@ -115,8 +123,8 @@ impl AggregateState {
                 columns,
                 ..
             } => {
-                let tmp = engine
-                    .evaluate_ra_value(
+                let tmp = evaluate_ra_value(
+                        engine,
                         expr,
                         row,
                         columns,
@@ -142,6 +150,7 @@ impl AggregateState {
                 Ok(())
             }
         }
+        }.boxed_local()
     }
 
     pub fn to_data(self) -> Option<storage::Data> {
