@@ -5,6 +5,8 @@ on:
 
 jobs:
   profile:
+    permissions:
+      pull-requests: write
     name: Profile Benchmarks
     runs-on: ubuntu-latest
     steps:
