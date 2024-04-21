@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 
 use futures::{
-    future::LocalBoxFuture,
     stream::{LocalBoxStream, StreamExt},
     FutureExt,
 };
@@ -15,7 +14,7 @@ use crate::{
     ra::{self, AttributeId, RaExpression, RaUpdate},
     storage::{self, Data, Storage, TableSchema},
 };
-use sql::{BinaryOperator, CompatibleParser, DataType, Query, TypeModifier};
+use sql::{CompatibleParser, DataType, Query, TypeModifier};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -264,14 +263,11 @@ where
                     let mut mappers = Vec::new();
                     for attribute in attributes.iter() {
                         let mapper = value::construct(
-                            self,
                             &attribute.value,
                             &inner_columns,
                             placeholders,
                             ctes,
                             &outer,
-                            transaction,
-                            &arena,
                         )
                         .await?;
                         mappers.push(mapper);

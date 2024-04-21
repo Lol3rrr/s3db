@@ -14,7 +14,7 @@ use sql::{BinaryOperator, DataType};
 use super::EvaulateRaError;
 
 #[derive(Debug, Clone)]
-pub enum ValueMapper<'placeholders> {
+pub enum ValueMapper<'expr, 'placeholders> {
     Attribute {
         idx: usize,
     },
@@ -22,39 +22,39 @@ pub enum ValueMapper<'placeholders> {
         value: storage::Data,
     },
     List {
-        parts: Vec<ValueMapper<'placeholders>>,
+        parts: Vec<ValueMapper<'expr, 'placeholders>>,
     },
     Cast {
-        inner: Box<ValueMapper<'placeholders>>,
+        inner: Box<ValueMapper<'expr, 'placeholders>>,
         target: sql::DataType,
     },
     BinaryOp {
-        first: Box<ValueMapper<'placeholders>>,
-        second: Box<ValueMapper<'placeholders>>,
+        first: Box<ValueMapper<'expr, 'placeholders>>,
+        second: Box<ValueMapper<'expr, 'placeholders>>,
         operator: BinaryOperator,
     },
     Function {
-        func: FunctionMapper<'placeholders>,
+        func: FunctionMapper<'expr, 'placeholders>,
     },
     SubQuery {
-        query: ra::RaExpression,
+        query: &'expr ra::RaExpression,
         placeholders: &'placeholders HashMap<usize, storage::Data>,
     },
 }
 
 #[derive(Debug, Clone)]
-pub enum FunctionMapper<'placeholders> {
+pub enum FunctionMapper<'expr, 'placeholders> {
     SetValue {
         name: String,
-        value: Box<ValueMapper<'placeholders>>,
+        value: Box<ValueMapper<'expr, 'placeholders>>,
         is_called: bool,
     },
     Lower {
-        value: Box<ValueMapper<'placeholders>>,
+        value: Box<ValueMapper<'expr, 'placeholders>>,
     },
 }
 
-impl<'placeholders> ValueMapper<'placeholders> {
+impl<'expr, 'placeholders> ValueMapper<'expr, 'placeholders> {
     pub fn evaluate<'s, 'row, 'engine, 'transaction, 'arena, 'f, S>(
         &'s self,
         row: &'row storage::Row,
@@ -194,18 +194,14 @@ impl<'placeholders> ValueMapper<'placeholders> {
     }
 }
 
-pub async fn construct<'engine, 's, 'rve, 'columns, 'placeholders, 'c, 'o, 't, 'r, 'f, 'arena, S>(
-    engine: &'engine NaiveEngine<S>,
+pub async fn construct<'rve, 'columns, 'placeholders, 'c, 'o, 't, 'r, 'f, 'arena, SE>(
     expr: &'rve ra::RaValueExpression,
     columns: &'columns [(String, DataType, AttributeId)],
     placeholders: &'placeholders HashMap<usize, storage::Data>,
     ctes: &'c HashMap<String, storage::EntireRelation>,
     outer: &'o HashMap<AttributeId, storage::Data>,
-    transaction: &'t S::TransactionGuard,
-    arena: &'arena bumpalo::Bump,
-) -> Result<ValueMapper<'placeholders>, EvaulateRaError<S::LoadingError>>
+) -> Result<ValueMapper<'rve, 'placeholders>, EvaulateRaError<SE>>
 where
-    's: 'f,
     'rve: 'f,
     'columns: 'f,
     'placeholders: 'f,
@@ -213,9 +209,7 @@ where
     'o: 'f,
     't: 'f,
     'arena: 'f,
-    'engine: 'f,
     'r: 'f,
-    S: Storage,
 {
     let mut pending = vec![expr];
     let mut instructions = Vec::new();
@@ -326,7 +320,7 @@ where
                 Ok(ValueMapper::List { parts: result })
             }
             ra::RaValueExpression::SubQuery { query } => Ok(ValueMapper::SubQuery {
-                query: query.clone(),
+                query,
                 placeholders,
             }),
             ra::RaValueExpression::Cast { target, .. } => {
