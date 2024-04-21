@@ -21,8 +21,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           path: target/criterion/
+      - id: pr-check
+        uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Comment artifact results
-        if: github.event_name == 'pull_request'
+        if: steps.pr-check.outputs.pr_found == 'true'
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
