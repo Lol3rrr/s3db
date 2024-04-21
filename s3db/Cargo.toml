@@ -5,6 +5,8 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+
+
 [dependencies]
 sql = { path = "../sql" }
 
@@ -19,7 +21,7 @@ bumpalo = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-criterion = { version = "0.5.1", features = ["async_futures"] }
+criterion = { version = "0.5.1", features = ["async_tokio"] }
 
 [[bench]]
 name = "parse"

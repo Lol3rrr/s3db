@@ -23,7 +23,7 @@ macro_rules! benchmark_query {
         let engine = s3db::execution::naive::NaiveEngine::new(storage);
 
         $group.bench_function(BenchmarkId::new($benchname, $columns), |b| {
-            b.to_async(criterion::async_executor::FuturesExecutor).iter_batched(|| (query.to_static(), bumpalo::Bump::with_capacity(16*1024), &engine, transaction.clone()), |(query, arena, engine, tx)| {
+            b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap()).iter_batched(|| (query.to_static(), bumpalo::Bump::with_capacity(16*1024), &engine, transaction.clone()), |(query, arena, engine, tx)| {
                 async move {
                     let mut ctx = s3db::execution::Context::new();
                     ctx.transaction = Some(tx);
