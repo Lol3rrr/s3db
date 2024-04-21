@@ -69,9 +69,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
         'arena: 'f,
         S: storage::Storage,
     {
-        let mut pending = vec![self];
-        let mut instructions = Vec::new();
-        let mut results: Vec<storage::Data> = Vec::new();
+        let mut pending = Vec::with_capacity(16);
+        pending.push(self);
+        let mut instructions = Vec::with_capacity(16);
 
         while let Some(pend) = pending.pop() {
             instructions.push(pend);
@@ -98,6 +98,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
                 },
             };
         }
+
+        let mut results: Vec<storage::Data> = Vec::with_capacity(instructions.len());
 
         while let Some(tmp) = instructions.pop() {
             let res = match tmp {
@@ -242,8 +244,9 @@ where
     'c: 'f,
     'o: 'f,
 {
-    let mut pending = vec![expr];
-    let mut instructions = Vec::new();
+    let mut pending = Vec::with_capacity(16);
+    pending.push(expr);
+    let mut instructions = Vec::with_capacity(16);
     while let Some(pend) = pending.pop() {
         instructions.push(pend);
         match pend {
