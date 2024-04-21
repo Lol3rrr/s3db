@@ -5,8 +5,6 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-
-
 [dependencies]
 sql = { path = "../sql" }
 
@@ -22,6 +20,9 @@ bumpalo = { workspace = true }
 [dev-dependencies]
 pretty_assertions = "1.4.0"
 criterion = { version = "0.5.1", features = ["async_tokio"] }
+
+[target.'cfg(flamegraph)'.dependencies]
+pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
 
 [[bench]]
 name = "parse"
