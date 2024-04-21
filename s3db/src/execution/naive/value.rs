@@ -1,4 +1,7 @@
-use futures::stream::StreamExt;
+use futures::{
+    future::{FutureExt, LocalBoxFuture},
+    stream::StreamExt,
+};
 use std::collections::HashMap;
 
 use crate::{
@@ -9,6 +12,426 @@ use crate::{
 use sql::{BinaryOperator, DataType};
 
 use super::EvaulateRaError;
+
+#[derive(Debug, Clone)]
+pub enum ValueMapper<'placeholders> {
+    Attribute {
+        idx: usize,
+    },
+    Constant {
+        value: storage::Data,
+    },
+    List {
+        parts: Vec<ValueMapper<'placeholders>>,
+    },
+    Cast {
+        inner: Box<ValueMapper<'placeholders>>,
+        target: sql::DataType,
+    },
+    BinaryOp {
+        first: Box<ValueMapper<'placeholders>>,
+        second: Box<ValueMapper<'placeholders>>,
+        operator: BinaryOperator,
+    },
+    Function {
+        func: FunctionMapper<'placeholders>,
+    },
+    SubQuery {
+        query: ra::RaExpression,
+        placeholders: &'placeholders HashMap<usize, storage::Data>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionMapper<'placeholders> {
+    SetValue {
+        name: String,
+        value: Box<ValueMapper<'placeholders>>,
+        is_called: bool,
+    },
+    Lower {
+        value: Box<ValueMapper<'placeholders>>,
+    },
+}
+
+impl<'placeholders> ValueMapper<'placeholders> {
+    pub fn evaluate<'s, 'row, 'engine, 'transaction, 'arena, 'f, S>(
+        &'s self,
+        row: &'row storage::Row,
+        engine: &'engine NaiveEngine<S>,
+        transaction: &'transaction S::TransactionGuard,
+        arena: &'arena bumpalo::Bump,
+    ) -> LocalBoxFuture<'f, Option<storage::Data>>
+    where
+        's: 'f,
+        'row: 'f,
+        'engine: 'f,
+        'transaction: 'f,
+        'arena: 'f,
+        S: storage::Storage,
+    {
+        async move {
+            match self {
+                Self::Attribute { idx } => {
+                    let tmp = row.data.get(*idx)?;
+                    Some(tmp.clone())
+                }
+                Self::Constant { value } => Some(value.clone()),
+                Self::Cast { inner, target } => {
+                    let inner_val = inner.evaluate(row, engine, transaction, arena).await?;
+                    inner_val.try_cast(target).ok()
+                }
+                Self::Function { func } => match func {
+                    FunctionMapper::Lower { value } => {
+                        let before = value.evaluate(row, engine, transaction, arena).await?;
+                        match before {
+                            storage::Data::Text(d) => Some(storage::Data::Text(d.to_lowercase())),
+                            other => {
+                                dbg!(&other);
+                                //Err(EvaulateRaError::Other("Unexpected Type"))
+                                None
+                            }
+                        }
+                    }
+                    FunctionMapper::SetValue {
+                        name,
+                        value,
+                        is_called,
+                    } => {
+                        let value_res = value.evaluate(row, engine, transaction, arena).await?;
+
+                        let value = match value_res {
+                            Data::List(mut v) => {
+                                if v.is_empty() {
+                                    // return Err(EvaulateRaError::Other(""));
+                                    return None;
+                                }
+
+                                v.swap_remove(0)
+                            }
+                            other => other,
+                        };
+
+                        dbg!(&value);
+
+                        // TODO
+                        // Actually update the Sequence Value
+
+                        Some(value)
+                    }
+                },
+                Self::BinaryOp {
+                    first,
+                    second,
+                    operator,
+                } => {
+                    let first_value = first.evaluate(row, engine, transaction, arena).await?;
+                    let second_value = second.evaluate(row, engine, transaction, arena).await?;
+
+                    match operator {
+                        BinaryOperator::Add => match (first_value, second_value) {
+                            (Data::SmallInt(f), Data::SmallInt(s)) => Some(Data::SmallInt(f + s)),
+                            (Data::Integer(f), Data::SmallInt(s)) => {
+                                Some(Data::Integer(f + s as i32))
+                            }
+                            other => {
+                                dbg!(other);
+                                // Err(EvaulateRaError::Other("Addition"))
+                                None
+                            }
+                        },
+                        BinaryOperator::Subtract => match (first_value, second_value) {
+                            (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f - s)),
+                            other => {
+                                dbg!(other);
+                                // Err(EvaulateRaError::Other("Subtracting"))
+                                None
+                            }
+                        },
+                        BinaryOperator::Divide => match (first_value, second_value) {
+                            (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f / s)),
+                            other => {
+                                dbg!(other);
+                                // Err(EvaulateRaError::Other("Subtracting"))
+                                None
+                            }
+                        },
+                        other => {
+                            dbg!(&other, first_value, second_value);
+
+                            // Err(EvaulateRaError::Other("Evaluating Binary Operator"))
+                            None
+                        }
+                    }
+                }
+                Self::SubQuery {
+                    query,
+                    placeholders,
+                } => {
+                    let ctes = HashMap::new();
+                    let outer = HashMap::new();
+
+                    let (_, rows) = engine
+                        .evaluate_ra(&query, placeholders, &ctes, &outer, transaction, &arena)
+                        .await
+                        .ok()?;
+
+                    let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
+
+                    Some(storage::Data::List(parts))
+                }
+                Self::List { parts } => {
+                    let mut values = Vec::new();
+                    for part in parts {
+                        let v = part.evaluate(row, engine, transaction, arena).await?;
+                        values.push(v);
+                    }
+                    Some(storage::Data::List(values))
+                }
+            }
+        }
+        .boxed_local()
+    }
+}
+
+pub async fn construct<'engine, 's, 'rve, 'columns, 'placeholders, 'c, 'o, 't, 'r, 'f, 'arena, S>(
+    engine: &'engine NaiveEngine<S>,
+    expr: &'rve ra::RaValueExpression,
+    columns: &'columns [(String, DataType, AttributeId)],
+    placeholders: &'placeholders HashMap<usize, storage::Data>,
+    ctes: &'c HashMap<String, storage::EntireRelation>,
+    outer: &'o HashMap<AttributeId, storage::Data>,
+    transaction: &'t S::TransactionGuard,
+    arena: &'arena bumpalo::Bump,
+) -> Result<ValueMapper<'placeholders>, EvaulateRaError<S::LoadingError>>
+where
+    's: 'f,
+    'rve: 'f,
+    'columns: 'f,
+    'placeholders: 'f,
+    'c: 'f,
+    'o: 'f,
+    't: 'f,
+    'arena: 'f,
+    'engine: 'f,
+    'r: 'f,
+    S: Storage,
+{
+    let mut pending = vec![expr];
+    let mut instructions = Vec::new();
+    while let Some(pend) = pending.pop() {
+        instructions.push(pend);
+        match pend {
+            ra::RaValueExpression::Attribute { .. } => {}
+            ra::RaValueExpression::OuterAttribute { .. } => {}
+            ra::RaValueExpression::Placeholder(_) => {}
+            ra::RaValueExpression::Literal(_) => {}
+            ra::RaValueExpression::Renamed { value, .. } => {
+                pending.push(&value);
+            }
+            ra::RaValueExpression::Cast { inner, .. } => {
+                pending.push(&inner);
+            }
+            ra::RaValueExpression::List(parts) => {
+                pending.extend(parts.iter().rev());
+            }
+            ra::RaValueExpression::BinaryOperation { first, second, .. } => {
+                pending.push(second);
+                pending.push(first);
+            }
+            ra::RaValueExpression::Function(func) => match func {
+                ra::RaFunction::Lower(l) => {
+                    pending.push(l);
+                }
+                ra::RaFunction::Substr {
+                    str_value,
+                    start,
+                    count,
+                } => {
+                    if let Some(c) = count.as_ref() {
+                        pending.push(c);
+                    }
+                    pending.push(&start);
+                    pending.push(&str_value);
+                }
+                ra::RaFunction::LeftPad { base, .. } => {
+                    pending.push(&base);
+                }
+                ra::RaFunction::Coalesce(v) => {
+                    pending.extend(v.iter().rev());
+                }
+                ra::RaFunction::SetValue { value, .. } => {
+                    pending.push(&value);
+                }
+                ra::RaFunction::ArrayPosition { array, target } => {
+                    pending.push(&target);
+                    pending.push(&array);
+                }
+                ra::RaFunction::CurrentSchemas { .. } => {}
+            },
+            ra::RaValueExpression::SubQuery { .. } => {}
+        };
+    }
+
+    let mut results: Vec<ValueMapper> = Vec::with_capacity(instructions.len());
+
+    while let Some(instruction) = instructions.pop() {
+        let partial_res: ValueMapper = match instruction {
+            ra::RaValueExpression::Attribute { a_id, name, .. } => {
+                // TODO
+
+                let column_index = columns
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (_, _, id))| id == a_id)
+                    .map(|(i, _)| i)
+                    .ok_or_else(|| EvaulateRaError::UnknownAttribute {
+                        name: name.clone(),
+                        id: *a_id,
+                    })?;
+
+                Ok(ValueMapper::Attribute { idx: column_index })
+            }
+            ra::RaValueExpression::OuterAttribute { a_id, name, .. } => {
+                dbg!(&a_id, &outer);
+
+                let value = outer
+                    .get(a_id)
+                    .ok_or_else(|| EvaulateRaError::UnknownAttribute {
+                        name: name.clone(),
+                        id: *a_id,
+                    })?;
+
+                Ok(ValueMapper::Constant {
+                    value: value.clone(),
+                })
+            }
+            ra::RaValueExpression::Placeholder(placeholder) => {
+                let value = placeholders.get(placeholder).cloned().ok_or_else(|| {
+                    dbg!(&placeholders, &placeholder);
+                    EvaulateRaError::Other("Getting Placeholder Value")
+                })?;
+
+                Ok(ValueMapper::Constant { value })
+            }
+            ra::RaValueExpression::Literal(lit) => {
+                let res = storage::Data::from_literal(lit);
+
+                Ok(ValueMapper::Constant { value: res })
+            }
+            ra::RaValueExpression::List(elems) => {
+                let results_len = results.len();
+                let result: Vec<_> = results.drain(results_len - elems.len()..).collect();
+
+                Ok(ValueMapper::List { parts: result })
+            }
+            ra::RaValueExpression::SubQuery { query } => Ok(ValueMapper::SubQuery {
+                query: query.clone(),
+                placeholders,
+            }),
+            ra::RaValueExpression::Cast { target, .. } => {
+                let result = results.pop().unwrap();
+
+                Ok(ValueMapper::Cast {
+                    inner: Box::new(result),
+                    target: target.clone(),
+                })
+            }
+            ra::RaValueExpression::BinaryOperation { operator, .. } => {
+                let first_mapping = results.pop().unwrap();
+                let second_mapping = results.pop().unwrap();
+
+                Ok(ValueMapper::BinaryOp {
+                    first: Box::new(first_mapping),
+                    second: Box::new(second_mapping),
+                    operator: operator.clone(),
+                })
+            }
+            ra::RaValueExpression::Function(fc) => match fc {
+                ra::RaFunction::LeftPad {
+                    base,
+                    length,
+                    padding,
+                } => {
+                    dbg!(&base, &length, &padding);
+
+                    Err(EvaulateRaError::Other("Executing LeftPad not implemented"))
+                }
+                ra::RaFunction::Coalesce(parts) => {
+                    dbg!(&parts);
+
+                    Err(EvaulateRaError::Other("Executing Coalesce"))
+                }
+                ra::RaFunction::SetValue {
+                    name,
+                    value,
+                    is_called,
+                } => {
+                    dbg!(&name, &value, &is_called);
+
+                    let value_res_mapping = results.pop().unwrap();
+
+                    Ok(ValueMapper::Function {
+                        func: FunctionMapper::SetValue {
+                            name: name.clone(),
+                            value: Box::new(value_res_mapping),
+                            is_called: *is_called,
+                        },
+                    })
+                }
+                ra::RaFunction::Lower(val) => {
+                    dbg!(&val);
+
+                    let data_mapper = results.pop().unwrap();
+
+                    Ok(ValueMapper::Function {
+                        func: FunctionMapper::Lower {
+                            value: Box::new(data_mapper),
+                        },
+                    })
+                }
+                ra::RaFunction::Substr {
+                    str_value,
+                    start,
+                    count,
+                } => {
+                    dbg!(&str_value, &start);
+
+                    let str_value = results.pop().unwrap();
+                    let start_value = results.pop().unwrap();
+                    let count_value = match count.as_ref() {
+                        Some(_) => results.pop(),
+                        None => None,
+                    };
+
+                    dbg!(&str_value, &start_value, &count_value);
+
+                    Err(EvaulateRaError::Other("Executing Substr function"))
+                }
+                ra::RaFunction::CurrentSchemas { implicit } => {
+                    dbg!(implicit);
+
+                    Err(EvaulateRaError::Other("Executing Current Schemas"))
+                }
+                ra::RaFunction::ArrayPosition { array, target } => {
+                    dbg!(&array, &target);
+
+                    Err(EvaulateRaError::Other("Executing ArrayPosition"))
+                }
+            },
+            ra::RaValueExpression::Renamed { name, value } => {
+                dbg!(&name, &value);
+
+                Err(EvaulateRaError::Other("Renamed Value Expression"))
+            }
+        }?;
+
+        results.push(partial_res);
+    }
+
+    let value_res = results.pop().unwrap();
+    Ok(value_res)
+}
 
 pub async fn evaluate_ra_value<
     'engine,

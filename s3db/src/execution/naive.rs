@@ -261,29 +261,34 @@ where
                         })
                         .collect();
 
+                    let mut mappers = Vec::new();
+                    for attribute in attributes.iter() {
+                        let mapper = value::construct(
+                            self,
+                            &attribute.value,
+                            &inner_columns,
+                            placeholders,
+                            ctes,
+                            &outer,
+                            transaction,
+                            &arena,
+                        )
+                        .await?;
+                        mappers.push(mapper);
+                    }
+
                     let stream: LocalBoxStream<'_, storage::Row> =
                         StreamExt::boxed_local(StreamExt::then(rows, move |row| {
-                            let inner_columns = inner_columns.clone();
-                            let attributes = attributes;
-                            async move {
-                                let mut data = Vec::new();
-                                for attribute in attributes.iter() {
-                                    let tmp = value::evaluate_ra_value(
-                                        self,
-                                        &attribute.value,
-                                        &row,
-                                        &inner_columns,
-                                        placeholders,
-                                        ctes,
-                                        &outer,
-                                        transaction,
-                                        &arena,
-                                    )
-                                    .await
-                                    .unwrap(); // TODO
+                            let mappers = mappers.clone();
 
-                                    // TODO
-                                    // This is not a good fix
+                            async move {
+                                let mut data = Vec::with_capacity(mappers.len());
+                                for mapper in mappers.iter() {
+                                    let tmp = mapper
+                                        .evaluate(&row, self, transaction, arena)
+                                        .await
+                                        .unwrap();
+
                                     let tmp = match tmp {
                                         Data::List(mut v) => {
                                             assert_eq!(1, v.len());
