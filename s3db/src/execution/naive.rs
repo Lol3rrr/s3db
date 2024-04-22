@@ -382,14 +382,23 @@ where
 
                     match aggregation_condition {
                         ra::AggregationCondition::Everything => {
-                            let mut states: Vec<_> = attributes
-                                .iter()
-                                .map(|attr| AggregateState::new(&attr.value, &inner_columns))
-                                .collect();
+                            let mut states = Vec::with_capacity(attributes.len());
+                            for attr in attributes.iter() {
+                                states.push(
+                                    AggregateState::new::<S>(
+                                        &attr.value,
+                                        &inner_columns,
+                                        placeholders,
+                                        ctes,
+                                        outer,
+                                    )
+                                    .await,
+                                );
+                            }
 
                             while let Some(row) = rows.next().await {
                                 for state in states.iter_mut() {
-                                    state.update(self, &row, outer, transaction, &arena).await?;
+                                    state.update(self, &row, transaction, &arena).await?;
                                 }
                             }
 
@@ -453,16 +462,23 @@ where
 
                             let mut result_rows: Vec<storage::Row> = Vec::new();
                             for group in groups.into_iter() {
-                                let mut states: Vec<_> = attributes
-                                    .iter()
-                                    .map(|attr| AggregateState::new(&attr.value, &inner_columns))
-                                    .collect();
+                                let mut states = Vec::with_capacity(attributes.len());
+                                for attr in attributes.iter() {
+                                    states.push(
+                                        AggregateState::new::<S>(
+                                            &attr.value,
+                                            &inner_columns,
+                                            placeholders,
+                                            ctes,
+                                            outer,
+                                        )
+                                        .await,
+                                    );
+                                }
 
                                 for row in group {
                                     for state in states.iter_mut() {
-                                        state
-                                            .update(self, &row, outer, transaction, &arena)
-                                            .await?;
+                                        state.update(self, &row, transaction, &arena).await?;
                                     }
                                 }
 
@@ -1366,6 +1382,20 @@ where
                                 None => None,
                             };
 
+                            let mut field_mappers = Vec::with_capacity(fields.len());
+                            for field in fields.iter() {
+                                let mapping = value::construct(
+                                    &field.value,
+                                    &table_columns,
+                                    &placeholder_values,
+                                    &cte_queries,
+                                    &outer,
+                                )
+                                .await
+                                .map_err(|e| ExecuteBoundError::Executing(e))?;
+                                field_mappers.push(mapping);
+                            }
+
                             let mut count = 0;
                             for mut row in
                                 relation.parts.into_iter().flat_map(|p| p.rows.into_iter())
@@ -1384,21 +1414,12 @@ where
 
                                 count += 1;
 
-                                let mut field_values = Vec::new();
-                                for field in fields.iter() {
-                                    let value = value::evaluate_ra_value(
-                                        self,
-                                        &field.value,
-                                        &row,
-                                        &table_columns,
-                                        &placeholder_values,
-                                        &cte_queries,
-                                        &HashMap::new(),
-                                        transaction,
-                                        &arena,
-                                    )
-                                    .await
-                                    .map_err(ExecuteBoundError::Executing)?;
+                                let mut field_values = Vec::with_capacity(field_mappers.len());
+                                for mapping in field_mappers.iter() {
+                                    let value = mapping
+                                        .evaluate(&row, self, transaction, arena)
+                                        .await
+                                        .ok_or_else(|| ExecuteBoundError::Other("Testing"))?;
 
                                     field_values.push(value);
                                 }

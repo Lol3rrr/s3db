@@ -7,9 +7,9 @@ use crate::{
 };
 use sql::DataType;
 
-use super::{value::evaluate_ra_value, EvaulateRaError, NaiveEngine};
+use super::{value, EvaulateRaError, NaiveEngine};
 
-pub enum AggregateState {
+pub enum AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
     CountRows {
         attribute_index: Option<usize>,
         count: i64,
@@ -20,16 +20,22 @@ pub enum AggregateState {
     },
     Max {
         value: Option<storage::Data>,
-        expr: Box<RaValueExpression>,
+        expr: value::ValueMapper<'expr, 'outer, 'placeholders, 'ctes>,
         columns: Vec<(String, DataType, ra::AttributeId)>,
     },
 }
 
-impl AggregateState {
-    pub fn new(
-        expr: &ra::AggregateExpression,
+impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
+    pub async fn new<S>(
+        expr: &'expr ra::AggregateExpression,
         columns: &[(String, DataType, ra::AttributeId)],
-    ) -> Self {
+        placeholders: &'placeholders HashMap<usize, storage::Data>,
+        ctes: &'ctes HashMap<String, storage::EntireRelation>,
+        outer: &'outer HashMap<AttributeId, storage::Data>,
+    ) -> Self
+    where
+        S: storage::Storage,
+    {
         match expr {
             ra::AggregateExpression::CountRows => Self::CountRows {
                 attribute_index: None,
@@ -55,21 +61,32 @@ impl AggregateState {
                     .unwrap(),
                 value: None,
             },
-            ra::AggregateExpression::Renamed { inner, .. } => Self::new(inner, columns),
+            ra::AggregateExpression::Renamed { inner, .. } => {
+                Self::new::<S>(inner, columns, placeholders, ctes, outer)
+                    .boxed_local()
+                    .await
+            }
             ra::AggregateExpression::Max { inner, .. } => Self::Max {
                 value: None,
-                expr: inner.clone(),
+                expr: value::construct::<S::LoadingError>(
+                    &inner,
+                    columns,
+                    placeholders,
+                    ctes,
+                    outer,
+                )
+                .await
+                .unwrap(),
                 columns: columns.to_vec(),
             },
             other => todo!("{:?}", other),
         }
     }
 
-    pub fn update<'s, 'engine, 'row, 'outer, 'transaction, 'arena, 'f, S>(
+    pub fn update<'s, 'engine, 'row, 'transaction, 'arena, 'f, S>(
         &'s mut self,
         engine: &'engine NaiveEngine<S>,
         row: &'row storage::Row,
-        outer: &'outer HashMap<AttributeId, storage::Data>,
         transaction: &'transaction S::TransactionGuard,
         arena: &'arena bumpalo::Bump,
     ) -> LocalBoxFuture<'f, Result<(), EvaulateRaError<S::LoadingError>>>
@@ -121,18 +138,10 @@ impl AggregateState {
                     columns,
                     ..
                 } => {
-                    let tmp = evaluate_ra_value(
-                        engine,
-                        expr,
-                        row,
-                        columns,
-                        &HashMap::new(),
-                        &HashMap::new(),
-                        outer,
-                        transaction,
-                        arena,
-                    )
-                    .await?;
+                    let tmp = expr
+                        .evaluate(row, engine, transaction, arena)
+                        .await
+                        .ok_or_else(|| EvaulateRaError::Other("Test"))?;
 
                     match value.as_mut() {
                         Some(v) => {
