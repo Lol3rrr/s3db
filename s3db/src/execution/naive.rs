@@ -59,18 +59,19 @@ where
         condition: &ra::RaCondition,
         row: &storage::Row,
     ) -> Result<bool, EvaulateRaError<S::LoadingError>> {
-        condition::evaluate_ra_cond(
-            &self.engine,
+        let mapper = condition::construct_condition(
             condition,
-            row,
-            self.columns,
+            self.columns.to_vec(),
             self.placeholders,
             self.ctes,
             self.outer,
-            self.transaction,
-            self.arena,
         )
-        .await
+        .await?;
+
+        mapper
+            .evaluate(row, self.engine, self.transaction, self.arena)
+            .await
+            .ok_or_else(|| EvaulateRaError::Other("testing"))
     }
 }
 
@@ -1348,24 +1349,32 @@ where
 
                     match ra_update {
                         ra::RaUpdate::Standard { fields, condition } => {
+                            let outer = HashMap::new();
+                            let mapper = match condition.as_ref() {
+                                Some(cond) => {
+                                    let m = condition::construct_condition(
+                                        cond,
+                                        table_columns.clone(),
+                                        &placeholder_values,
+                                        &cte_queries,
+                                        &outer,
+                                    )
+                                    .await
+                                    .map_err(|ev| ExecuteBoundError::Executing(ev))?;
+                                    Some(m)
+                                }
+                                None => None,
+                            };
+
                             let mut count = 0;
                             for mut row in
                                 relation.parts.into_iter().flat_map(|p| p.rows.into_iter())
                             {
-                                let should_update = match condition.as_ref() {
-                                    Some(cond) => condition::evaluate_ra_cond(
-                                        self,
-                                        cond,
-                                        &row,
-                                        &table_columns,
-                                        &placeholder_values,
-                                        &cte_queries,
-                                        &HashMap::new(),
-                                        transaction,
-                                        &arena,
-                                    )
-                                    .await
-                                    .map_err(ExecuteBoundError::Executing)?,
+                                let should_update = match mapper.as_ref() {
+                                    Some(mapper) => mapper
+                                        .evaluate(&row, self, transaction, arena)
+                                        .await
+                                        .ok_or_else(|| ExecuteBoundError::Other("Testing"))?,
                                     None => true,
                                 };
 
@@ -1502,21 +1511,30 @@ where
                     let to_delete = {
                         let mut tmp = Vec::new();
 
-                        for row in relation.parts.into_iter().flat_map(|p| p.rows.into_iter()) {
-                            if let Some(condition) = ra_delete.condition.as_ref() {
-                                let condition_result = condition::evaluate_ra_cond(
-                                    self,
-                                    condition,
-                                    &row,
-                                    &table_columns,
+                        let placeholders = HashMap::new();
+                        let outer = HashMap::new();
+                        let mapper = match ra_delete.condition.as_ref() {
+                            Some(cond) => {
+                                let m = condition::construct_condition(
+                                    cond,
+                                    table_columns,
                                     &placeholders,
                                     &cte_queries,
-                                    &HashMap::new(),
-                                    transaction,
-                                    &arena,
+                                    &outer,
                                 )
                                 .await
-                                .map_err(ExecuteBoundError::Executing)?;
+                                .map_err(|ev| ExecuteBoundError::Executing(ev))?;
+                                Some(m)
+                            }
+                            None => None,
+                        };
+
+                        for row in relation.parts.into_iter().flat_map(|p| p.rows.into_iter()) {
+                            if let Some(mapper) = mapper.as_ref() {
+                                let condition_result = mapper
+                                    .evaluate(&row, self, transaction, arena)
+                                    .await
+                                    .ok_or_else(|| ExecuteBoundError::Other("Testing"))?;
 
                                 if !condition_result {
                                     continue;

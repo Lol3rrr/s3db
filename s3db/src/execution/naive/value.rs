@@ -1,4 +1,4 @@
-use futures::stream::StreamExt;
+use futures::{future::FutureExt, stream::StreamExt};
 use std::collections::HashMap;
 
 use crate::{
@@ -201,13 +201,18 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
                         tmp
                     };
 
-                    let (_, rows) = engine
-                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, &arena)
-                        .await
-                        .ok()?;
+                    let local_fut = async {
+                        let (_, rows) = engine
+                            .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, &arena)
+                            .await
+                            .ok()?;
 
-                    let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
+                        let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
+                        Some(parts)
+                    }
+                    .boxed_local();
 
+                    let parts = local_fut.await?;
                     Some(storage::Data::List(parts))
                 }
                 Self::List { parts } => {
