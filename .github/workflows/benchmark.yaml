@@ -17,7 +17,7 @@ jobs:
           toolchain: nightly
           override: true
       - name: Install valgrind
-        run: apt install valgrind -y
+        run: sudo apt install valgrind -y
       - name: Track base branch benchmarks with Bencher
         run: |
           bencher run \
