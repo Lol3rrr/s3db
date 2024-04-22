@@ -22,6 +22,7 @@ mod aggregate;
 use aggregate::AggregateState;
 
 mod condition;
+mod mapping;
 mod pattern;
 mod value;
 
@@ -263,14 +264,14 @@ where
 
                     let mut mappers = Vec::new();
                     for attribute in attributes.iter() {
-                        let mapper = value::construct_mapper(
+                        let mapper = value::Mapper::construct(
                             &attribute.value,
-                            &inner_columns,
+                            (&inner_columns,
                             placeholders,
                             ctes,
-                            &outer,
+                            &outer,)
                         )
-                        .await?;
+                        ?;
                         mappers.push(mapper);
                     }
 
@@ -1384,14 +1385,13 @@ where
 
                             let mut field_mappers = Vec::with_capacity(fields.len());
                             for field in fields.iter() {
-                                let mapping = value::construct_mapper(
+                                let mapping = value::Mapper::construct(
                                     &field.value,
-                                    &table_columns,
+                                    (&table_columns,
                                     &placeholder_values,
                                     &cte_queries,
-                                    &outer,
+                                    &outer,)
                                 )
-                                .await
                                 .map_err(|e| ExecuteBoundError::Executing(e))?;
                                 field_mappers.push(mapping);
                             }

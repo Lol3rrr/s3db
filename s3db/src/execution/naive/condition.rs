@@ -1,7 +1,7 @@
 use super::{pattern, value, EvaulateRaError, NaiveEngine};
 
 use futures::{
-    future::{FutureExt, LocalBoxFuture},
+    future::FutureExt,
     stream::StreamExt,
 };
 use std::collections::HashMap;
@@ -185,9 +185,9 @@ where
                 comparison,
             } => {
                 let first_mapper =
-                    value::construct_mapper(first, columns, placeholders, ctes, outer).await?;
+                    value::Mapper::construct(first, (columns, placeholders, ctes, outer))?;
                 let second_mapper =
-                    value::construct_mapper(second, columns, placeholders, ctes, outer).await?;
+                    value::Mapper::construct(second, (columns, placeholders, ctes, outer))?;
 
                 CondValueMapping::Comparison {
                     first: Box::new(first_mapper),

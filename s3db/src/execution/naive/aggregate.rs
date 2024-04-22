@@ -68,14 +68,13 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
             }
             ra::AggregateExpression::Max { inner, .. } => Self::Max {
                 value: None,
-                expr: value::construct_mapper::<S::LoadingError>(
+                expr: value::Mapper::construct::<S::LoadingError>(
                     &inner,
-                    columns,
+                    (columns,
                     placeholders,
                     ctes,
-                    outer,
+                    outer,)
                 )
-                .await
                 .unwrap(),
                 columns: columns.to_vec(),
             },
