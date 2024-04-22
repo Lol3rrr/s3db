@@ -1,4 +1,6 @@
 use iai_callgrind::{main, library_benchmark_group, library_benchmark};
+use iai_callgrind::{LibraryBenchmarkConfig, FlamegraphConfig};
+
 use std::hint::black_box;
 
 use sql::CompatibleParser;
@@ -62,4 +64,7 @@ library_benchmark_group!(
     benchmarks = select_1_column
 );
 
-main!(library_benchmark_groups = queries);
+main!(
+    config = LibraryBenchmarkConfig::default();
+    library_benchmark_groups = queries
+);
