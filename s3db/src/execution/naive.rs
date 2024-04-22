@@ -263,7 +263,7 @@ where
 
                     let mut mappers = Vec::new();
                     for attribute in attributes.iter() {
-                        let mapper = value::construct(
+                        let mapper = value::construct_mapper(
                             &attribute.value,
                             &inner_columns,
                             placeholders,
