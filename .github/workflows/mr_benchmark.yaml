@@ -18,8 +18,6 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Install valgrind
-        run: sudo apt update && sudo apt install -y valgrind
       - name: Track PR Benchmarks with Bencher
         run: |
           bencher run \
@@ -34,6 +32,30 @@ jobs:
           --err \
           --github-actions '${{ secrets.GITHUB_TOKEN }}' \
           cargo bench --bench execute --bench parse
+  benchmark_iai_pr_branch:
+    name: Continuous Benchmarking PRs with Bencher
+    # DO NOT REMOVE: For handling Fork PRs see Pull Requests from Forks
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bencherdev/bencher@main
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install valgrind
+        run: sudo apt update && sudo apt install -y valgrind 
+      - name: Install iai-callgrind
+        run: |
+          version=$(cargo metadata --format-version=1 |\
+          jq '.packages[] | select(.name == "iai-callgrind").version' |\
+          tr -d '"'
+          )
+          cargo install iai-callgrind-runner --version $version
       - name: Track IAI PR Benchmarks with Bencher
         run: |
           bencher run \

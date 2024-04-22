@@ -16,8 +16,6 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Install valgrind
-        run: sudo apt update && sudo apt install -y valgrind
       - name: Track base branch benchmarks with Bencher
         run: |
           bencher run \
@@ -29,6 +27,26 @@ jobs:
           --adapter rust_criterion \
           --err \
           cargo bench --bench execute --bench parse
+  benchmark_iai_base_branch:
+    name: Continuous Benchmarking with Bencher
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bencherdev/bencher@main
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install valgrind
+        run: sudo apt update && sudo apt install -y valgrind 
+      - name: Install iai-callgrind
+        run: |
+          version=$(cargo metadata --format-version=1 |\
+          jq '.packages[] | select(.name == "iai-callgrind").version' |\
+          tr -d '"'
+          )
+          cargo install iai-callgrind-runner --version $version
       - name: Track base branch IAI benchmarks with Bencher
         run: |
           bencher run \
