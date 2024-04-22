@@ -19,7 +19,7 @@ jobs:
           toolchain: nightly
           override: true
       - name: Install valgrind
-        run: sudo apt install valgrind -y
+        run: sudo apt update && sudo apt install -y valgrind
       - name: Track PR Benchmarks with Bencher
         run: |
           bencher run \
