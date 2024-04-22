@@ -16,6 +16,8 @@ jobs:
         with:
           toolchain: nightly
           override: true
+      - name: Install valgrind
+        run: apt install valgrind -y
       - name: Track base branch benchmarks with Bencher
         run: |
           bencher run \
@@ -26,4 +28,15 @@ jobs:
           --testbed gh-ci-ubuntu-lastest \
           --adapter rust_criterion \
           --err \
-          cargo bench
+          cargo bench --bench execute --bench parse
+      - name: Track base branch IAI benchmarks with Bencher
+        run: |
+          bencher run \
+          --host https://api.bencher.lol3r.com \
+          --project s3db \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch main \
+          --testbed gh-ci-ubuntu-lastest \
+          --adapter rust_iai_callgrind \
+          --err \
+          cargo bench --bench execute-iai

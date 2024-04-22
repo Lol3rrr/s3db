@@ -18,6 +18,8 @@ jobs:
         with:
           toolchain: nightly
           override: true
+      - name: Install valgrind
+        run: apt install valgrind -y
       - name: Track PR Benchmarks with Bencher
         run: |
           bencher run \
@@ -31,4 +33,18 @@ jobs:
           --adapter rust_criterion \
           --err \
           --github-actions '${{ secrets.GITHUB_TOKEN }}' \
-          cargo bench
+          cargo bench --bench execute --bench parse
+      - name: Track IAI PR Benchmarks with Bencher
+        run: |
+          bencher run \
+          --host https://api.bencher.lol3r.com \
+          --project s3db \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch '${{ github.head_ref }}' \
+          --branch-start-point '${{ github.base_ref }}' \
+          --branch-start-point-hash '${{ github.event.pull_request.base.sha }}' \
+          --testbed gh-ci-ubuntu-lastest \
+          --adapter rust_iai_callgrind \
+          --err \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+          cargo bench --bench execute-iai
