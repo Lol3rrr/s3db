@@ -4,7 +4,7 @@ use s3db::{execution::Execute, storage::Storage};
 use sql::CompatibleParser;
 
 macro_rules! benchmark_query {
-    ($query:expr, $columns:expr, $group:expr, $benchname:literal) => {{
+    ($query:expr, $rows:expr, $group:expr, $benchname:literal) => {{
         let query = sql::Query::parse($query.as_bytes(), &bumpalo::Bump::new())
             .unwrap()
             .to_static();
@@ -28,7 +28,7 @@ macro_rules! benchmark_query {
                 .await
                 .unwrap();
 
-            let mut row_iter = (0..$columns).map(|i| {
+            let mut row_iter = (0..$rows).map(|i| {
                 vec![
                     s3db::storage::Data::Integer(i),
                     s3db::storage::Data::Text(format!("name-{}", i)),
@@ -44,7 +44,8 @@ macro_rules! benchmark_query {
 
         let engine = s3db::execution::naive::NaiveEngine::new(storage);
 
-        $group.bench_function(BenchmarkId::new($benchname, $columns), |b| {
+        $group.throughput(criterion::Throughput::Elements($rows.try_into().unwrap()));
+        $group.bench_function(BenchmarkId::new($benchname, $rows), |b| {
             b.to_async(
                 tokio::runtime::Builder::new_current_thread()
                     .build()
