@@ -108,7 +108,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
                     Some(tmp.clone())
                 }
                 Self::Constant { value } => Some(value.clone()),
-                Self::Cast {  target , ..} => {
+                Self::Cast { target, .. } => {
                     let inner_val = results.pop()?;
                     inner_val.try_cast(target).ok()
                 }
@@ -124,9 +124,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
                             }
                         }
                     }
-                    FunctionMapper::SetValue {
-                        ..
-                    } => {
+                    FunctionMapper::SetValue { .. } => {
                         let value_res = results.pop()?;
 
                         let value = match value_res {
@@ -149,9 +147,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
                         Some(value)
                     }
                 },
-                Self::BinaryOp {
-                    operator, ..
-                } => {
+                Self::BinaryOp { operator, .. } => {
                     let first_value = results.pop()?;
                     let second_value = results.pop()?;
 
@@ -195,7 +191,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
                     query,
                     outer,
                     placeholders,
-                    ctes
+                    ctes,
                 } => {
                     let n_outer = {
                         let mut tmp: HashMap<_, _> = (*outer).clone();
@@ -357,7 +353,7 @@ where
                 query,
                 outer,
                 placeholders,
-                ctes
+                ctes,
             }),
             ra::RaValueExpression::Cast { target, .. } => {
                 let result = results.pop().unwrap();

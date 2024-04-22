@@ -21,7 +21,7 @@ pub enum ConditionMapping<'expr, 'outer, 'placeholders, 'ctes> {
         parts: Vec<Self>,
     },
     Value {
-        mapping: CondValueMapping<'expr, 'outer, 'placeholders, 'ctes>
+        mapping: CondValueMapping<'expr, 'outer, 'placeholders, 'ctes>,
     },
 }
 
@@ -406,7 +406,6 @@ where
     .boxed_local()
 }
 
-
 pub async fn construct_condition<'rve, 'placeholders, 'c, 'o, 'f, SE>(
     condition: &'rve ra::RaCondition,
     columns: Vec<(String, DataType, AttributeId)>,
@@ -441,18 +440,22 @@ where
     while let Some(instruction) = instructions.pop() {
         let mapping = match instruction {
             ra::RaCondition::And(parts) => {
-                let tmp: Vec<_> = mappings.drain(mappings.len() -parts.len()..).rev().collect();
-                ConditionMapping::And{ parts: tmp }
+                let tmp: Vec<_> = mappings
+                    .drain(mappings.len() - parts.len()..)
+                    .rev()
+                    .collect();
+                ConditionMapping::And { parts: tmp }
             }
             ra::RaCondition::Or(parts) => {
-                let tmp: Vec<_> = mappings.drain(mappings.len()-parts.len()..).rev().collect();
-                ConditionMapping::Or{ parts: tmp }
+                let tmp: Vec<_> = mappings
+                    .drain(mappings.len() - parts.len()..)
+                    .rev()
+                    .collect();
+                ConditionMapping::Or { parts: tmp }
             }
-            ra::RaCondition::Value(p) => {
-                ConditionMapping::Value {
-                    mapping: construct_value(p, &columns, placeholders,ctes,outer).await?
-                }
-            }
+            ra::RaCondition::Value(p) => ConditionMapping::Value {
+                mapping: construct_value(p, &columns, placeholders, ctes, outer).await?,
+            },
         };
 
         mappings.push(mapping);
@@ -495,19 +498,34 @@ where
     let mut results: Vec<CondValueMapping<'_, '_, '_, '_>> = Vec::new();
     while let Some(instruction) = instructions.pop() {
         let mapper = match instruction {
-            ra::RaConditionValue::Constant { value } => CondValueMapping::Constant { value: *value },
+            ra::RaConditionValue::Constant { value } => {
+                CondValueMapping::Constant { value: *value }
+            }
             ra::RaConditionValue::Attribute { a_id, .. } => {
-                let idx = columns.iter().enumerate().find(|(_, (_, _, cid))| cid == a_id).map(|(i, _)| i).unwrap();
+                let idx = columns
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (_, _, cid))| cid == a_id)
+                    .map(|(i, _)| i)
+                    .unwrap();
 
                 CondValueMapping::Attribute { idx }
             }
             ra::RaConditionValue::Negation { .. } => {
                 let inner_mapper = results.pop().unwrap();
-                CondValueMapping::Negation { inner: Box::new(inner_mapper) }
+                CondValueMapping::Negation {
+                    inner: Box::new(inner_mapper),
+                }
             }
-            ra::RaConditionValue::Comparison { first, second, comparison } => {
-                let first_mapper = value::construct(first, columns, placeholders, ctes, outer).await?;
-                let second_mapper = value::construct(second, columns, placeholders, ctes, outer).await?;
+            ra::RaConditionValue::Comparison {
+                first,
+                second,
+                comparison,
+            } => {
+                let first_mapper =
+                    value::construct(first, columns, placeholders, ctes, outer).await?;
+                let second_mapper =
+                    value::construct(second, columns, placeholders, ctes, outer).await?;
 
                 CondValueMapping::Comparison {
                     first: Box::new(first_mapper),
@@ -515,15 +533,13 @@ where
                     comparison: comparison.clone(),
                 }
             }
-            ra::RaConditionValue::Exists { query } => {
-                CondValueMapping::Exists {
-                    query,
-                    columns: columns.to_vec(),
-                    outer,
-                    ctes,
-                    placeholders,
-                }
-            }
+            ra::RaConditionValue::Exists { query } => CondValueMapping::Exists {
+                query,
+                columns: columns.to_vec(),
+                outer,
+                ctes,
+                placeholders,
+            },
         };
 
         results.push(mapper);
@@ -531,7 +547,6 @@ where
 
     results.pop().ok_or_else(|| EvaulateRaError::Other(""))
 }
-
 
 impl<'expr, 'outer, 'placeholders, 'ctes> ConditionMapping<'expr, 'outer, 'placeholders, 'ctes> {
     pub async fn evaluate<'s, 'row, 'engine, 'transaction, 'arena, 'f, S>(
@@ -550,127 +565,126 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ConditionMapping<'expr, 'outer, 'place
         S: storage::Storage,
     {
         let mut pending = vec![(0, 0, self)];
-    let mut instructions = Vec::new();
-    let mut expressions = Vec::new();
-    while let Some((src, idx, tmp)) = pending.pop() {
-        match tmp {
-            ConditionMapping::Or { parts } => {
-                instructions.push(ConditionInstruction::Or {
-                    count: parts.len(),
-                    source: src,
-                    idx,
-                });
-                pending.extend(
-                    parts
-                        .iter()
-                        .enumerate()
-                        .rev()
-                        .map(|(idx, p)| (instructions.len(), idx, p)),
-                );
-            }
-            ConditionMapping::And { parts } => {
-                instructions.push(ConditionInstruction::And {
-                    count: parts.len(),
-                    source: src,
-                    idx,
-                });
-                pending.extend(
-                    parts
-                        .iter()
-                        .enumerate()
-                        .rev()
-                        .map(|(idx, p)| (instructions.len(), idx, p)),
-                );
-            }
-            ConditionMapping::Value { mapping } => {
-                expressions.push(mapping);
-                instructions.push(ConditionInstruction::Value { source: src, idx });
-            }
-        };
-    }
-
-    let mut results = Vec::new();
-    while let Some(instruction) = instructions.pop() {
-        let (src, instr_idx, outcome) = match instruction {
-            ConditionInstruction::Value { source, idx } => {
-                let value = expressions.pop().unwrap();
-                let res = value.evaluate(row,engine,transaction,arena).await?;
-
-                (source, idx, res)
-            }
-            ConditionInstruction::And { count, source, idx } => {
-                let mut outcome = true;
-                for _ in 0..count {
-                    outcome = outcome && results.pop().unwrap();
+        let mut instructions = Vec::new();
+        let mut expressions = Vec::new();
+        while let Some((src, idx, tmp)) = pending.pop() {
+            match tmp {
+                ConditionMapping::Or { parts } => {
+                    instructions.push(ConditionInstruction::Or {
+                        count: parts.len(),
+                        source: src,
+                        idx,
+                    });
+                    pending.extend(
+                        parts
+                            .iter()
+                            .enumerate()
+                            .rev()
+                            .map(|(idx, p)| (instructions.len(), idx, p)),
+                    );
                 }
-
-                (source, idx, outcome)
-            }
-            ConditionInstruction::Or { count, source, idx } => {
-                let mut outcome = false;
-                for _ in 0..count {
-                    outcome = outcome || results.pop().unwrap();
+                ConditionMapping::And { parts } => {
+                    instructions.push(ConditionInstruction::And {
+                        count: parts.len(),
+                        source: src,
+                        idx,
+                    });
+                    pending.extend(
+                        parts
+                            .iter()
+                            .enumerate()
+                            .rev()
+                            .map(|(idx, p)| (instructions.len(), idx, p)),
+                    );
                 }
+                ConditionMapping::Value { mapping } => {
+                    expressions.push(mapping);
+                    instructions.push(ConditionInstruction::Value { source: src, idx });
+                }
+            };
+        }
 
-                (source, idx, outcome)
-            }
-        };
+        let mut results = Vec::new();
+        while let Some(instruction) = instructions.pop() {
+            let (src, instr_idx, outcome) = match instruction {
+                ConditionInstruction::Value { source, idx } => {
+                    let value = expressions.pop().unwrap();
+                    let res = value.evaluate(row, engine, transaction, arena).await?;
 
-        let src_index = match src.checked_sub(1) {
-            Some(idx) => idx,
-            None => {
-                return Some(outcome);
-            }
-        };
-        match instructions.get(src_index).unwrap() {
-            ConditionInstruction::And { count, .. } => {
-                if outcome {
-                    results.push(true);
-                } else {
-                    let count = *count;
-
-                    let removed_instructions = instructions.drain(src_index + 1..);
-                    for instr in removed_instructions {
-                        match instr {
-                            ConditionInstruction::Value { .. } => {
-                                expressions.pop();
-                            }
-                            _ => {}
-                        };
+                    (source, idx, res)
+                }
+                ConditionInstruction::And { count, source, idx } => {
+                    let mut outcome = true;
+                    for _ in 0..count {
+                        outcome = outcome && results.pop().unwrap();
                     }
 
-                    results.push(false);
-                    results.extend(core::iter::repeat(false).take(count - instr_idx - 1));
+                    (source, idx, outcome)
                 }
-            }
-            ConditionInstruction::Or { count, .. } => {
-                if !outcome {
-                    results.push(false);
-                } else {
-                    let count = *count;
-
-                    let removed_instructions = instructions.drain(src_index + 1..);
-                    for instr in removed_instructions {
-                        match instr {
-                            ConditionInstruction::Value { .. } => {
-                                expressions.pop();
-                            }
-                            _ => {}
-                        };
+                ConditionInstruction::Or { count, source, idx } => {
+                    let mut outcome = false;
+                    for _ in 0..count {
+                        outcome = outcome || results.pop().unwrap();
                     }
 
-                    results.push(true);
-                    results.extend(core::iter::repeat(true).take(count - instr_idx - 1));
+                    (source, idx, outcome)
                 }
-            }
-            ConditionInstruction::Value { .. } => unreachable!(),
-        };
-    }
+            };
 
-    Some(false)
+            let src_index = match src.checked_sub(1) {
+                Some(idx) => idx,
+                None => {
+                    return Some(outcome);
+                }
+            };
+            match instructions.get(src_index).unwrap() {
+                ConditionInstruction::And { count, .. } => {
+                    if outcome {
+                        results.push(true);
+                    } else {
+                        let count = *count;
+
+                        let removed_instructions = instructions.drain(src_index + 1..);
+                        for instr in removed_instructions {
+                            match instr {
+                                ConditionInstruction::Value { .. } => {
+                                    expressions.pop();
+                                }
+                                _ => {}
+                            };
+                        }
+
+                        results.push(false);
+                        results.extend(core::iter::repeat(false).take(count - instr_idx - 1));
+                    }
+                }
+                ConditionInstruction::Or { count, .. } => {
+                    if !outcome {
+                        results.push(false);
+                    } else {
+                        let count = *count;
+
+                        let removed_instructions = instructions.drain(src_index + 1..);
+                        for instr in removed_instructions {
+                            match instr {
+                                ConditionInstruction::Value { .. } => {
+                                    expressions.pop();
+                                }
+                                _ => {}
+                            };
+                        }
+
+                        results.push(true);
+                        results.extend(core::iter::repeat(true).take(count - instr_idx - 1));
+                    }
+                }
+                ConditionInstruction::Value { .. } => unreachable!(),
+            };
+        }
+
+        Some(false)
     }
 }
-
 
 impl<'expr, 'outer, 'placeholders, 'ctes> CondValueMapping<'expr, 'outer, 'placeholders, 'ctes> {
     pub async fn evaluate<'s, 'row, 'engine, 'transaction, 'arena, 'f, S>(
@@ -695,7 +709,10 @@ impl<'expr, 'outer, 'placeholders, 'ctes> CondValueMapping<'expr, 'outer, 'place
             instructions.push(pend);
 
             match pend {
-                Self::Constant { .. } | Self::Attribute { .. } | Self::Exists { .. } | Self::Comparison { .. } => {}
+                Self::Constant { .. }
+                | Self::Attribute { .. }
+                | Self::Exists { .. }
+                | Self::Comparison { .. } => {}
                 Self::Negation { inner } => {
                     pending.push(&inner);
                 }
@@ -714,100 +731,122 @@ impl<'expr, 'outer, 'placeholders, 'ctes> CondValueMapping<'expr, 'outer, 'place
                         other => {
                             dbg!(other);
                             None
-                        },
+                        }
                     }
                 }
                 Self::Negation { inner } => {
                     let before = results.pop()?;
                     Some(!before)
                 }
-                Self::Comparison { first, second, comparison } => {
+                Self::Comparison {
+                    first,
+                    second,
+                    comparison,
+                } => {
                     let first_value = first.evaluate(row, engine, transaction, arena).await?;
                     let second_value = second.evaluate(row, engine, transaction, arena).await?;
 
                     match comparison {
-                    ra::RaComparisonOperator::Equals => Some(first_value == second_value),
-                    ra::RaComparisonOperator::NotEquals => Some(first_value != second_value),
-                    ra::RaComparisonOperator::Greater => Some(first_value > second_value),
-                    ra::RaComparisonOperator::GreaterEqual => Some(first_value >= second_value),
-                    ra::RaComparisonOperator::Less => Some(first_value < second_value),
-                    ra::RaComparisonOperator::LessEqual => Some(first_value <= second_value),
-                    ra::RaComparisonOperator::In => {
-                        dbg!(&first_value, &second_value);
+                        ra::RaComparisonOperator::Equals => Some(first_value == second_value),
+                        ra::RaComparisonOperator::NotEquals => Some(first_value != second_value),
+                        ra::RaComparisonOperator::Greater => Some(first_value > second_value),
+                        ra::RaComparisonOperator::GreaterEqual => Some(first_value >= second_value),
+                        ra::RaComparisonOperator::Less => Some(first_value < second_value),
+                        ra::RaComparisonOperator::LessEqual => Some(first_value <= second_value),
+                        ra::RaComparisonOperator::In => {
+                            dbg!(&first_value, &second_value);
 
-                        let parts = match second_value {
-                            Data::List(ps) => ps,
-                            other => {
-                                dbg!(other);
-                                // return Err(EvaulateRaError::Other(
-                                //    "Attempting IN comparison on non List",
-                                //));
-                                return None;
-                            }
-                        };
+                            let parts = match second_value {
+                                Data::List(ps) => ps,
+                                other => {
+                                    dbg!(other);
+                                    // return Err(EvaulateRaError::Other(
+                                    //    "Attempting IN comparison on non List",
+                                    //));
+                                    return None;
+                                }
+                            };
 
-                        Some(parts.iter().any(|p| p == &first_value))
-                    }
-                    ra::RaComparisonOperator::NotIn => match second_value {
-                        storage::Data::List(d) => Some(d.iter().all(|v| v != &first_value)),
-                        other => {
-                            tracing::error!("Cannot perform NotIn Operation on not List Data");
-                            dbg!(other);
-                            // Err(EvaulateRaError::Other("Incompatible Error"))
-                                None
+                            Some(parts.iter().any(|p| p == &first_value))
                         }
-                    },
-                    ra::RaComparisonOperator::Like => {
-                        let haystack = match first_value {
-                            Data::Text(t) => t,
+                        ra::RaComparisonOperator::NotIn => match second_value {
+                            storage::Data::List(d) => Some(d.iter().all(|v| v != &first_value)),
                             other => {
-                                tracing::warn!("Expected Text Data, got {:?}", other);
-                                // return Err(EvaulateRaError::Other("Wrong Type for Haystack"));
-                                return None;
+                                tracing::error!("Cannot perform NotIn Operation on not List Data");
+                                dbg!(other);
+                                // Err(EvaulateRaError::Other("Incompatible Error"))
+                                None
                             }
-                        };
-                        let raw_pattern = match second_value {
-                            Data::Text(p) => p,
-                            other => {
-                                tracing::warn!("Expected Text Data, got {:?}", other);
-                                // return Err(EvaulateRaError::Other("Wrong Type for Pattern"));
-                                return None;
+                        },
+                        ra::RaComparisonOperator::Like => {
+                            let haystack = match first_value {
+                                Data::Text(t) => t,
+                                other => {
+                                    tracing::warn!("Expected Text Data, got {:?}", other);
+                                    // return Err(EvaulateRaError::Other("Wrong Type for Haystack"));
+                                    return None;
+                                }
+                            };
+                            let raw_pattern = match second_value {
+                                Data::Text(p) => p,
+                                other => {
+                                    tracing::warn!("Expected Text Data, got {:?}", other);
+                                    // return Err(EvaulateRaError::Other("Wrong Type for Pattern"));
+                                    return None;
+                                }
+                            };
+
+                            let result = pattern::like_match(&haystack, &raw_pattern);
+
+                            Some(result)
+                        }
+                        ra::RaComparisonOperator::ILike => {
+                            todo!("Perforing ILike Comparison")
+                        }
+                        ra::RaComparisonOperator::Is => match (first_value, second_value) {
+                            (storage::Data::Boolean(val), storage::Data::Boolean(true)) => {
+                                Some(val)
                             }
-                        };
+                            (storage::Data::Boolean(val), storage::Data::Boolean(false)) => {
+                                Some(!val)
+                            }
+                            _ => Some(false),
+                        },
+                        ra::RaComparisonOperator::IsNot => {
+                            dbg!(&first_value, &second_value);
 
-                        let result = pattern::like_match(&haystack, &raw_pattern);
-
-                        Some(result)
-                    }
-                    ra::RaComparisonOperator::ILike => {
-                        todo!("Perforing ILike Comparison")
-                    }
-                    ra::RaComparisonOperator::Is => match (first_value, second_value) {
-                        (storage::Data::Boolean(val), storage::Data::Boolean(true)) => Some(val),
-                        (storage::Data::Boolean(val), storage::Data::Boolean(false)) => Some(!val),
-                        _ => Some(false),
-                    },
-                    ra::RaComparisonOperator::IsNot => {
-                        dbg!(&first_value, &second_value);
-
-                        // Err(EvaulateRaError::Other("Not implemented - IsNot Operator "))
-                        None
+                            // Err(EvaulateRaError::Other("Not implemented - IsNot Operator "))
+                            None
+                        }
                     }
                 }
-                }
-                Self::Exists { query, columns, outer, placeholders, ctes } => {
+                Self::Exists {
+                    query,
+                    columns,
+                    outer,
+                    placeholders,
+                    ctes,
+                } => {
                     let n_outer = {
                         let mut tmp: HashMap<_, _> = (*outer).clone();
-                       
-                        tmp.extend(columns.iter().map(|(_, _, id)| *id).zip(row.data.iter().cloned()));
+
+                        tmp.extend(
+                            columns
+                                .iter()
+                                .map(|(_, _, id)| *id)
+                                .zip(row.data.iter().cloned()),
+                        );
 
                         tmp
                     };
 
-                    let (_, mut rows) = engine.evaluate_ra(&query, placeholders,ctes,&n_outer,transaction,arena).await.ok()?;
+                    let (_, mut rows) = engine
+                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, arena)
+                        .await
+                        .ok()?;
                     let exists = rows.next().await.is_some();
                     Some(exists)
-                } 
+                }
             }?;
             results.push(res);
         }
@@ -829,48 +868,70 @@ mod tests {
         let p = HashMap::new();
         let ctes = HashMap::new();
         let outer = HashMap::new();
-        let constructed = construct_condition::<()>(&condition, Vec::new(), &p, &ctes, &outer).await.unwrap();
+        let constructed = construct_condition::<()>(&condition, Vec::new(), &p, &ctes, &outer)
+            .await
+            .unwrap();
 
         assert_eq!(ConditionMapping::And { parts: Vec::new() }, constructed);
     }
 
     #[tokio::test]
     async fn construct_and_two_values() {
-        let condition = RaCondition::And(vec![RaCondition::Value (Box::new(RaConditionValue::Constant {
-            value: true,
-        })), RaCondition::Value (Box::new(RaConditionValue::Constant {
-            value: false,
-        }))]);
+        let condition = RaCondition::And(vec![
+            RaCondition::Value(Box::new(RaConditionValue::Constant { value: true })),
+            RaCondition::Value(Box::new(RaConditionValue::Constant { value: false })),
+        ]);
 
         let p = HashMap::new();
         let ctes = HashMap::new();
         let outer = HashMap::new();
-        let constructed = construct_condition::<()>(&condition, Vec::new(), &p, &ctes, &outer).await.unwrap();
+        let constructed = construct_condition::<()>(&condition, Vec::new(), &p, &ctes, &outer)
+            .await
+            .unwrap();
 
-        assert_eq!(ConditionMapping::And { parts: vec![ConditionMapping::Value {
-            mapping: CondValueMapping::Constant { value: true }, 
-        }, ConditionMapping::Value {
-            mapping: CondValueMapping::Constant { value: false }, 
-        }] }, constructed);
+        assert_eq!(
+            ConditionMapping::And {
+                parts: vec![
+                    ConditionMapping::Value {
+                        mapping: CondValueMapping::Constant { value: true },
+                    },
+                    ConditionMapping::Value {
+                        mapping: CondValueMapping::Constant { value: false },
+                    }
+                ]
+            },
+            constructed
+        );
     }
 
     #[tokio::test]
     async fn construct_nested() {
-        let condition = RaCondition::And(vec![RaCondition::Value (Box::new(RaConditionValue::Constant {
-            value: true,
-        })), RaCondition::Or(vec![]), RaCondition::Value (Box::new(RaConditionValue::Constant {
-            value: false,
-        }))]);
+        let condition = RaCondition::And(vec![
+            RaCondition::Value(Box::new(RaConditionValue::Constant { value: true })),
+            RaCondition::Or(vec![]),
+            RaCondition::Value(Box::new(RaConditionValue::Constant { value: false })),
+        ]);
 
         let p = HashMap::new();
         let ctes = HashMap::new();
         let outer = HashMap::new();
-        let constructed = construct_condition::<()>(&condition, Vec::new(), &p, &ctes, &outer).await.unwrap();
+        let constructed = construct_condition::<()>(&condition, Vec::new(), &p, &ctes, &outer)
+            .await
+            .unwrap();
 
-        assert_eq!(ConditionMapping::And { parts: vec![ConditionMapping::Value {
-            mapping: CondValueMapping::Constant { value: true }, 
-        }, ConditionMapping::Or { parts: vec![] }, ConditionMapping::Value {
-            mapping: CondValueMapping::Constant { value: false }, 
-        }] }, constructed);
+        assert_eq!(
+            ConditionMapping::And {
+                parts: vec![
+                    ConditionMapping::Value {
+                        mapping: CondValueMapping::Constant { value: true },
+                    },
+                    ConditionMapping::Or { parts: vec![] },
+                    ConditionMapping::Value {
+                        mapping: CondValueMapping::Constant { value: false },
+                    }
+                ]
+            },
+            constructed
+        );
     }
 }

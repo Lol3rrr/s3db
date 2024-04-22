@@ -324,14 +324,25 @@ where
                             .collect::<Vec<_>>()
                     );
 
-                    let condition_mapper = condition::construct_condition::<S::LoadingError>(filter, inner_columns, placeholders, ctes, outer).await?;
+                    let condition_mapper = condition::construct_condition::<S::LoadingError>(
+                        filter,
+                        inner_columns,
+                        placeholders,
+                        ctes,
+                        outer,
+                    )
+                    .await?;
                     let condition_mapper = std::rc::Rc::new(condition_mapper);
 
                     let stream = StreamExt::filter_map(rows, move |row| {
                         let condition_mapper = condition_mapper.clone();
 
                         async move {
-                            if condition_mapper.evaluate(&row, self, transaction, arena).await.unwrap() {
+                            if condition_mapper
+                                .evaluate(&row, self, transaction, arena)
+                                .await
+                                .unwrap()
+                            {
                                 Some(row)
                             } else {
                                 None
