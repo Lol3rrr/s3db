@@ -1,5 +1,6 @@
 #![feature(variant_count)]
 #![feature(alloc_layout_extra)]
+#![deny(deprecated)]
 
 pub mod endpoint;
 pub mod execution;

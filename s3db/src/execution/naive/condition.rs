@@ -34,8 +34,8 @@ pub enum CondValueMapping<'expr, 'outer, 'placeholders, 'ctes> {
         value: bool,
     },
     Comparison {
-        first: Box<value::ValueMapper<'expr, 'outer, 'placeholders, 'ctes>>,
-        second: Box<value::ValueMapper<'expr, 'outer, 'placeholders, 'ctes>>,
+        first: Box<value::Mapper<'expr, 'outer, 'placeholders, 'ctes>>,
+        second: Box<value::Mapper<'expr, 'outer, 'placeholders, 'ctes>>,
         comparison: ra::RaComparisonOperator,
     },
     Negation {
@@ -185,9 +185,9 @@ where
                 comparison,
             } => {
                 let first_mapper =
-                    value::construct(first, columns, placeholders, ctes, outer).await?;
+                    value::construct_mapper(first, columns, placeholders, ctes, outer).await?;
                 let second_mapper =
-                    value::construct(second, columns, placeholders, ctes, outer).await?;
+                    value::construct_mapper(second, columns, placeholders, ctes, outer).await?;
 
                 CondValueMapping::Comparison {
                     first: Box::new(first_mapper),

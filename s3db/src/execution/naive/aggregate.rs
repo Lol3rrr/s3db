@@ -20,7 +20,7 @@ pub enum AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
     },
     Max {
         value: Option<storage::Data>,
-        expr: value::ValueMapper<'expr, 'outer, 'placeholders, 'ctes>,
+        expr: value::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
         columns: Vec<(String, DataType, ra::AttributeId)>,
     },
 }
@@ -68,7 +68,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
             }
             ra::AggregateExpression::Max { inner, .. } => Self::Max {
                 value: None,
-                expr: value::construct::<S::LoadingError>(
+                expr: value::construct_mapper::<S::LoadingError>(
                     &inner,
                     columns,
                     placeholders,

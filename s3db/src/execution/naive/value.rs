@@ -45,10 +45,7 @@ pub enum ValueInstruction<'expr, 'outer, 'placeholders, 'ctes> {
 
 #[derive(Debug, PartialEq)]
 pub enum FunctionInstruction {
-    SetValue {
-        name: String,
-        is_called: bool,
-    },
+    SetValue { name: String, is_called: bool },
     Lower {},
 }
 
@@ -273,6 +270,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ValueMapper<'expr, 'outer, 'placeholde
     }
 }
 
+#[deprecated]
 pub async fn construct<'rve, 'columns, 'placeholders, 'c, 'o, 'f, SE>(
     expr: &'rve ra::RaValueExpression,
     columns: &'columns [(String, DataType, AttributeId)],
@@ -701,10 +699,8 @@ where
                         Err(EvaulateRaError::Other("Executing ArrayPosition"))
                     }
                 }?;
-                
-                Ok(ValueInstruction::Function {
-                    func,
-                })
+
+                Ok(ValueInstruction::Function { func })
             }
             ra::RaValueExpression::Renamed { name, value } => {
                 dbg!(&name, &value);
@@ -841,17 +837,19 @@ impl<'rve, 'columns, 'placeholders, 'c, 'o, 'f> Mapper<'rve, 'o, 'placeholders, 
 
                             value
                         }
-                        FunctionInstruction::Lower {  } => {
+                        FunctionInstruction::Lower {} => {
                             let value = value_stack.pop()?;
 
                             match value {
-                            storage::Data::Text(d) => Some(storage::Data::Text(d.to_lowercase())),
-                            other => {
-                                dbg!(&other);
-                                //Err(EvaulateRaError::Other("Unexpected Type"))
-                                None
-                            }
-                        }?
+                                storage::Data::Text(d) => {
+                                    Some(storage::Data::Text(d.to_lowercase()))
+                                }
+                                other => {
+                                    dbg!(&other);
+                                    //Err(EvaulateRaError::Other("Unexpected Type"))
+                                    None
+                                }
+                            }?
                         }
                     }
                 }

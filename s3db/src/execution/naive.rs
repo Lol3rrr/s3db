@@ -1384,7 +1384,7 @@ where
 
                             let mut field_mappers = Vec::with_capacity(fields.len());
                             for field in fields.iter() {
-                                let mapping = value::construct(
+                                let mapping = value::construct_mapper(
                                     &field.value,
                                     &table_columns,
                                     &placeholder_values,
