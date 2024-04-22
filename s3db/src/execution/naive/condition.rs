@@ -10,6 +10,12 @@ use crate::{
 use sql::DataType;
 
 #[derive(Debug, PartialEq)]
+pub struct ConditionMapper<'expr, 'outer, 'placeholders, 'ctes> {
+    start: ConditionMapping<'expr, 'outer, 'placeholders, 'ctes>,
+    len: usize,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ConditionMapping<'expr, 'outer, 'placeholders, 'ctes> {
     And {
         parts: Vec<Self>,
@@ -31,8 +37,8 @@ pub enum CondValueMapping<'expr, 'outer, 'placeholders, 'ctes> {
         value: bool,
     },
     Comparison {
-        first: Box<value::Mapper<'expr, 'outer, 'placeholders, 'ctes>>,
-        second: Box<value::Mapper<'expr, 'outer, 'placeholders, 'ctes>>,
+        first: value::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
+        second: value::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
         comparison: ra::RaComparisonOperator,
     },
     Negation {
@@ -71,7 +77,7 @@ pub async fn construct_condition<'rve, 'placeholders, 'c, 'o, 'f, SE>(
     placeholders: &'placeholders HashMap<usize, storage::Data>,
     ctes: &'c HashMap<String, storage::EntireRelation>,
     outer: &'o HashMap<AttributeId, storage::Data>,
-) -> Result<ConditionMapping<'rve, 'o, 'placeholders, 'c>, EvaulateRaError<SE>>
+) -> Result<ConditionMapper<'rve, 'o, 'placeholders, 'c>, EvaulateRaError<SE>>
 where
     'rve: 'f,
     'placeholders: 'f,
@@ -94,6 +100,8 @@ where
             ra::RaCondition::Value(_) => {}
         };
     }
+
+    let max_size = instructions.len();
 
     let mut mappings = Vec::new();
     while let Some(instruction) = instructions.pop() {
@@ -120,7 +128,12 @@ where
         mappings.push(mapping);
     }
 
-    mappings.pop().ok_or_else(|| EvaulateRaError::Other(""))
+    let root = mappings.pop().ok_or_else(|| EvaulateRaError::Other(""))?;
+
+    Ok(ConditionMapper {
+        start: root,
+        len: max_size
+    })
 }
 
 pub async fn construct_value<'rve, 'columns, 'placeholders, 'c, 'o, 'f, SE>(
@@ -187,8 +200,8 @@ where
                     value::Mapper::construct(second, (columns, placeholders, ctes, outer))?;
 
                 CondValueMapping::Comparison {
-                    first: Box::new(first_mapper),
-                    second: Box::new(second_mapper),
+                    first: first_mapper,
+                    second: second_mapper,
                     comparison: comparison.clone(),
                 }
             }
@@ -207,7 +220,7 @@ where
     results.pop().ok_or_else(|| EvaulateRaError::Other(""))
 }
 
-impl<'expr, 'outer, 'placeholders, 'ctes> ConditionMapping<'expr, 'outer, 'placeholders, 'ctes> {
+impl<'expr, 'outer, 'placeholders, 'ctes> ConditionMapper<'expr, 'outer, 'placeholders, 'ctes> {
     pub async fn evaluate<'s, 'row, 'engine, 'transaction, 'arena, 'f, S>(
         &'s self,
         row: &'row storage::Row,
@@ -223,10 +236,10 @@ impl<'expr, 'outer, 'placeholders, 'ctes> ConditionMapping<'expr, 'outer, 'place
         'arena: 'f,
         S: storage::Storage,
     {
-        let mut pending = Vec::with_capacity(16);
-        pending.push((0, 0, self));
-        let mut instructions = Vec::with_capacity(16);
-        let mut expressions = Vec::with_capacity(16);
+        let mut pending = Vec::with_capacity(self.len);
+        pending.push((0, 0, &self.start));
+        let mut instructions = Vec::with_capacity(self.len);
+        let mut expressions = Vec::with_capacity(self.len);
         while let Some((src, idx, tmp)) = pending.pop() {
             match tmp {
                 ConditionMapping::Or { parts } => {
@@ -537,7 +550,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(ConditionMapping::And { parts: Vec::new() }, constructed);
+        assert_eq!(ConditionMapping::And { parts: Vec::new() }, constructed.start);
     }
 
     #[tokio::test]
@@ -565,7 +578,7 @@ mod tests {
                     }
                 ]
             },
-            constructed
+            constructed.start
         );
     }
 
@@ -596,7 +609,7 @@ mod tests {
                     }
                 ]
             },
-            constructed
+            constructed.start
         );
     }
 }
