@@ -266,26 +266,23 @@ where
                     for attribute in attributes.iter() {
                         let mapper = value::Mapper::construct(
                             &attribute.value,
-                            (&inner_columns,
-                            placeholders,
-                            ctes,
-                            &outer,)
-                        )
-                        ?;
+                            (&inner_columns, placeholders, ctes, &outer),
+                        )?;
                         mappers.push(mapper);
                     }
 
-                    let mappers = std::rc::Rc::new(mappers);
+                    let mappers = std::rc::Rc::new(std::cell::RefCell::new(mappers));
 
                     let stream: LocalBoxStream<'_, storage::Row> =
                         StreamExt::boxed_local(StreamExt::then(rows, move |row| {
                             let mappers = mappers.clone();
 
                             async move {
+                                let mut mappers = mappers.try_borrow_mut().expect("");
                                 let mut data = Vec::with_capacity(mappers.len());
-                                for mapper in mappers.iter() {
+                                for mapper in mappers.iter_mut() {
                                     let tmp = mapper
-                                        .evaluate(&row, self, transaction, arena)
+                                        .evaluate_mut(&row, self, transaction, arena)
                                         .await
                                         .unwrap();
 
@@ -1387,10 +1384,7 @@ where
                             for field in fields.iter() {
                                 let mapping = value::Mapper::construct(
                                     &field.value,
-                                    (&table_columns,
-                                    &placeholder_values,
-                                    &cte_queries,
-                                    &outer,)
+                                    (&table_columns, &placeholder_values, &cte_queries, &outer),
                                 )
                                 .map_err(|e| ExecuteBoundError::Executing(e))?;
                                 field_mappers.push(mapping);
@@ -1415,9 +1409,9 @@ where
                                 count += 1;
 
                                 let mut field_values = Vec::with_capacity(field_mappers.len());
-                                for mapping in field_mappers.iter() {
+                                for mapping in field_mappers.iter_mut() {
                                     let value = mapping
-                                        .evaluate(&row, self, transaction, arena)
+                                        .evaluate_mut(&row, self, transaction, arena)
                                         .await
                                         .ok_or_else(|| ExecuteBoundError::Other("Testing"))?;
 

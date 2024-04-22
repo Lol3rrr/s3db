@@ -2,7 +2,7 @@ use futures::future::{FutureExt, LocalBoxFuture};
 use std::collections::HashMap;
 
 use crate::{
-    ra::{self, AttributeId, RaValueExpression},
+    ra::{self, AttributeId},
     storage::{self, Storage},
 };
 use sql::DataType;
@@ -21,7 +21,6 @@ pub enum AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
     Max {
         value: Option<storage::Data>,
         expr: value::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
-        columns: Vec<(String, DataType, ra::AttributeId)>,
     },
 }
 
@@ -70,13 +69,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                 value: None,
                 expr: value::Mapper::construct::<S::LoadingError>(
                     &inner,
-                    (columns,
-                    placeholders,
-                    ctes,
-                    outer,)
+                    (columns, placeholders, ctes, outer),
                 )
                 .unwrap(),
-                columns: columns.to_vec(),
             },
             other => todo!("{:?}", other),
         }
@@ -131,12 +126,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                         }
                     }
                 }
-                Self::Max {
-                    value,
-                    expr,
-                    columns,
-                    ..
-                } => {
+                Self::Max { value, expr, .. } => {
                     let tmp = expr
                         .evaluate(row, engine, transaction, arena)
                         .await

@@ -2,7 +2,6 @@ use futures::{future::FutureExt, stream::StreamExt};
 use std::collections::HashMap;
 
 use crate::{
-    execution::naive::NaiveEngine,
     ra::{self, AttributeId},
     storage::{self, Data},
 };
@@ -10,9 +9,16 @@ use sql::{BinaryOperator, DataType};
 
 use super::EvaulateRaError;
 
-impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'expr> for ValueInstruction<'expr, 'outer, 'placeholders, 'ctes> {
+impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'expr>
+    for ValueInstruction<'expr, 'outer, 'placeholders, 'ctes>
+{
     type Input = ra::RaValueExpression;
-    type ConstructContext<'ctx> = (&'ctx [(String, DataType, AttributeId)], &'placeholders HashMap<usize, storage::Data>, &'ctes HashMap<String, storage::EntireRelation>, &'outer HashMap<AttributeId, storage::Data>);
+    type ConstructContext<'ctx> = (
+        &'ctx [(String, DataType, AttributeId)],
+        &'placeholders HashMap<usize, storage::Data>,
+        &'ctes HashMap<String, storage::EntireRelation>,
+        &'outer HashMap<AttributeId, storage::Data>,
+    );
 
     fn push_nested(input: &'expr Self::Input, pending: &mut Vec<&'expr Self::Input>) {
         match input {
@@ -66,8 +72,11 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
             ra::RaValueExpression::SubQuery { .. } => {}
         }
     }
-    
-    fn construct<'ctx, SE>(input: &'expr Self::Input, (columns, placeholders, ctes, outer): &Self::ConstructContext<'ctx>) -> Result<Self, EvaulateRaError<SE>> {
+
+    fn construct<'ctx, SE>(
+        input: &'expr Self::Input,
+        (columns, placeholders, ctes, outer): &Self::ConstructContext<'ctx>,
+    ) -> Result<Self, EvaulateRaError<SE>> {
         match input {
             ra::RaValueExpression::Attribute { a_id, name, .. } => {
                 // TODO
@@ -164,7 +173,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         start,
                         count,
                     } => {
-                        dbg!(&str_value, &start);
+                        dbg!(&str_value, &start, count);
 
                         Err(EvaulateRaError::Other("Executing Substr function"))
                     }
@@ -190,132 +199,139 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         }
     }
 
-    async fn evaluate<S>(&self, value_stack: &mut Vec<storage::Data>, row: &storage::Row, engine: &super::NaiveEngine<S>, transaction: &S::TransactionGuard, arena: &bumpalo::Bump) -> Option<storage::Data>  where S: storage::Storage{
+    async fn evaluate<S>(
+        &self,
+        value_stack: &mut Vec<storage::Data>,
+        row: &storage::Row,
+        engine: &super::NaiveEngine<S>,
+        transaction: &S::TransactionGuard,
+        arena: &bumpalo::Bump,
+    ) -> Option<storage::Data>
+    where
+        S: storage::Storage,
+    {
         match self {
-                ValueInstruction::Constant { value } => Some(value.clone()),
-                ValueInstruction::Attribute { idx } => Some(row.data[*idx].clone()),
-                ValueInstruction::Cast { target } => {
-                    let input = value_stack.pop()?;
-                    input.try_cast(target).ok()
-                }
-                ValueInstruction::List { len } => {
-                    let stack_len = value_stack.len();
-                    let values: Vec<_> = value_stack.drain(stack_len - len..).collect();
-                    Some(storage::Data::List(values))
-                }
-                ValueInstruction::BinaryOp { operator } => {
-                    let first_value = value_stack.pop()?;
-                    let second_value = value_stack.pop()?;
+            ValueInstruction::Constant { value } => Some(value.clone()),
+            ValueInstruction::Attribute { idx } => Some(row.data[*idx].clone()),
+            ValueInstruction::Cast { target } => {
+                let input = value_stack.pop()?;
+                input.try_cast(target).ok()
+            }
+            ValueInstruction::List { len } => {
+                let stack_len = value_stack.len();
+                let values: Vec<_> = value_stack.drain(stack_len - len..).collect();
+                Some(storage::Data::List(values))
+            }
+            ValueInstruction::BinaryOp { operator } => {
+                let first_value = value_stack.pop()?;
+                let second_value = value_stack.pop()?;
 
-                    match operator {
-                        BinaryOperator::Add => match (first_value, second_value) {
-                            (Data::SmallInt(f), Data::SmallInt(s)) => Some(Data::SmallInt(f + s)),
-                            (Data::Integer(f), Data::SmallInt(s)) => {
-                                Some(Data::Integer(f + s as i32))
-                            }
-                            other => {
-                                dbg!(other);
-                                // Err(EvaulateRaError::Other("Addition"))
-                                None
-                            }
-                        },
-                        BinaryOperator::Subtract => match (first_value, second_value) {
-                            (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f - s)),
-                            other => {
-                                dbg!(other);
-                                // Err(EvaulateRaError::Other("Subtracting"))
-                                None
-                            }
-                        },
-                        BinaryOperator::Divide => match (first_value, second_value) {
-                            (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f / s)),
-                            other => {
-                                dbg!(other);
-                                // Err(EvaulateRaError::Other("Subtracting"))
-                                None
-                            }
-                        },
+                match operator {
+                    BinaryOperator::Add => match (first_value, second_value) {
+                        (Data::SmallInt(f), Data::SmallInt(s)) => Some(Data::SmallInt(f + s)),
+                        (Data::Integer(f), Data::SmallInt(s)) => Some(Data::Integer(f + s as i32)),
                         other => {
-                            dbg!(&other, first_value, second_value);
-
-                            // Err(EvaulateRaError::Other("Evaluating Binary Operator"))
+                            dbg!(other);
+                            // Err(EvaulateRaError::Other("Addition"))
                             None
                         }
+                    },
+                    BinaryOperator::Subtract => match (first_value, second_value) {
+                        (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f - s)),
+                        other => {
+                            dbg!(other);
+                            // Err(EvaulateRaError::Other("Subtracting"))
+                            None
+                        }
+                    },
+                    BinaryOperator::Divide => match (first_value, second_value) {
+                        (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f / s)),
+                        other => {
+                            dbg!(other);
+                            // Err(EvaulateRaError::Other("Subtracting"))
+                            None
+                        }
+                    },
+                    other => {
+                        dbg!(&other, first_value, second_value);
+
+                        // Err(EvaulateRaError::Other("Evaluating Binary Operator"))
+                        None
                     }
                 }
-                ValueInstruction::SubQuery {
-                    query,
-                    outer,
-                    placeholders,
-                    ctes,
-                } => {
-                    let n_outer = {
-                        let mut tmp: HashMap<_, _> = (*outer).clone();
+            }
+            ValueInstruction::SubQuery {
+                query,
+                outer,
+                placeholders,
+                ctes,
+            } => {
+                let n_outer = {
+                    let tmp: HashMap<_, _> = (*outer).clone();
+
+                    // TODO
+
+                    tmp
+                };
+
+                let local_fut = async {
+                    let (_, rows) = engine
+                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, &arena)
+                        .await
+                        .ok()?;
+
+                    let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
+                    Some(parts)
+                }
+                .boxed_local();
+
+                let parts = local_fut.await?;
+                Some(storage::Data::List(parts))
+            }
+            ValueInstruction::Function { func } => {
+                match func {
+                    FunctionInstruction::SetValue { name, is_called } => {
+                        let value = value_stack.pop()?;
+
+                        let value = match value {
+                            Data::List(mut v) => {
+                                if v.is_empty() {
+                                    // return Err(EvaulateRaError::Other(""));
+                                    return None;
+                                }
+
+                                v.swap_remove(0)
+                            }
+                            other => other,
+                        };
+
+                        dbg!(name, &value, is_called);
 
                         // TODO
+                        // Actually update the Sequence Value
 
-                        tmp
-                    };
-
-                    let local_fut = async {
-                        let (_, rows) = engine
-                            .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, &arena)
-                            .await
-                            .ok()?;
-
-                        let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
-                        Some(parts)
+                        Some(value)
                     }
-                    .boxed_local();
+                    FunctionInstruction::Lower {} => {
+                        let value = value_stack.pop()?;
 
-                    let parts = local_fut.await?;
-                    Some(storage::Data::List(parts))
-                }
-                ValueInstruction::Function { func } => {
-                    match func {
-                        FunctionInstruction::SetValue { name, is_called } => {
-                            let value = value_stack.pop()?;
-
-                            let value = match value {
-                                Data::List(mut v) => {
-                                    if v.is_empty() {
-                                        // return Err(EvaulateRaError::Other(""));
-                                        return None;
-                                    }
-
-                                    v.swap_remove(0)
-                                }
-                                other => other,
-                            };
-
-                            dbg!(&value);
-
-                            // TODO
-                            // Actually update the Sequence Value
-
-                            Some(value)
-                        }
-                        FunctionInstruction::Lower {} => {
-                            let value = value_stack.pop()?;
-
-                            match value {
-                                storage::Data::Text(d) => {
-                                    Some(storage::Data::Text(d.to_lowercase()))
-                                }
-                                other => {
-                                    dbg!(&other);
-                                    //Err(EvaulateRaError::Other("Unexpected Type"))
-                                    None
-                                }
+                        match value {
+                            storage::Data::Text(d) => Some(storage::Data::Text(d.to_lowercase())),
+                            other => {
+                                dbg!(&other);
+                                //Err(EvaulateRaError::Other("Unexpected Type"))
+                                None
                             }
                         }
                     }
                 }
             }
+        }
     }
 }
 
-pub type Mapper<'expr, 'outer, 'placeholders, 'ctes> = super::mapping::Mapper<ValueInstruction<'expr, 'outer, 'placeholders, 'ctes>>;
+pub type Mapper<'expr, 'outer, 'placeholders, 'ctes> =
+    super::mapping::Mapper<ValueInstruction<'expr, 'outer, 'placeholders, 'ctes>>;
 
 #[derive(Debug, PartialEq)]
 pub enum ValueInstruction<'expr, 'outer, 'placeholders, 'ctes> {
@@ -365,10 +381,7 @@ mod tests {
         let outer = HashMap::new();
         let mapper = Mapper::construct::<()>(
             &RaValueExpression::Literal(Literal::BigInteger(123)),
-            (&[],
-            &placeholders,
-            &ctes,
-            &outer,)
+            (&[], &placeholders, &ctes, &outer),
         )
         .unwrap();
 
@@ -377,6 +390,7 @@ mod tests {
                 instruction_stack: vec![ValueInstruction::Constant {
                     value: storage::Data::BigInt(123),
                 }],
+                value_stack: Vec::new(),
             },
             mapper
         );
@@ -391,8 +405,7 @@ mod tests {
             inner: Box::new(RaValueExpression::Literal(Literal::Integer(123))),
             target: sql::DataType::BigInteger,
         };
-        let mapper = Mapper::construct::<()>(&expr, (&[], &placeholders, &ctes, &outer))
-            .unwrap();
+        let mapper = Mapper::construct::<()>(&expr, (&[], &placeholders, &ctes, &outer)).unwrap();
 
         assert_eq!(
             Mapper {
@@ -404,6 +417,7 @@ mod tests {
                         value: storage::Data::Integer(123),
                     }
                 ],
+                value_stack: Vec::new(),
             },
             mapper
         );
@@ -419,8 +433,7 @@ mod tests {
             second: Box::new(RaValueExpression::Literal(Literal::Integer(234))),
             operator: sql::BinaryOperator::Add,
         };
-        let mapper = Mapper::construct::<()>(&expr, (&[], &placeholders, &ctes, &outer))
-            .unwrap();
+        let mapper = Mapper::construct::<()>(&expr, (&[], &placeholders, &ctes, &outer)).unwrap();
 
         assert_eq!(
             Mapper {
@@ -435,6 +448,7 @@ mod tests {
                         value: storage::Data::Integer(234),
                     }
                 ],
+                value_stack: Vec::new(),
             },
             mapper
         );

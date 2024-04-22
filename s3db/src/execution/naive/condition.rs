@@ -1,9 +1,6 @@
 use super::{pattern, value, EvaulateRaError, NaiveEngine};
 
-use futures::{
-    future::FutureExt,
-    stream::StreamExt,
-};
+use futures::{future::FutureExt, stream::StreamExt};
 use std::collections::HashMap;
 
 use crate::{
@@ -398,7 +395,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> CondValueMapping<'expr, 'outer, 'place
                         }
                     }
                 }
-                Self::Negation { inner } => {
+                Self::Negation { .. } => {
                     let before = results.pop()?;
                     Some(!before)
                 }
