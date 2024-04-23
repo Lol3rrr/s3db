@@ -1,5 +1,5 @@
 use bumpalo::Bump;
-use pretty_assertions::{assert_eq, assert_str_eq};
+use pretty_assertions::assert_eq;
 
 use s3db::{
     execution::{naive::NaiveEngine, Context, Execute, ExecuteResult},
@@ -266,7 +266,7 @@ async fn left_outer_join() {
             .await
             .unwrap();
 
-        storage.commit_transaction(trans).await;
+        storage.commit_transaction(trans).await.unwrap();
 
         storage
     };
@@ -773,6 +773,7 @@ async fn delete_with_placeholders() {
     let prepared = engine.prepare(&query, &mut ctx).await.unwrap();
 
     // TODO
+    drop(prepared);
 }
 
 #[tokio::test]

@@ -351,7 +351,7 @@ where
                     attributes,
                     aggregation_condition,
                 } => {
-                    let (table_schema, mut rows) = results.pop().unwrap();
+                    let (_, mut rows) = results.pop().unwrap();
 
                     let inner_columns = inner
                         .get_columns()
@@ -1176,8 +1176,7 @@ where
                             let content = match self
                                 .execute(&Query::Select(select.to_static()), ctx, &arena)
                                 .boxed_local()
-                                .await
-                                .map_err(|e| ExecuteBoundError::Other("Executing Query"))?
+                                .await.map_err(|_e| ExecuteBoundError::Other("Executing Query"))?
                             {
                                 ExecuteResult::Select { content, .. } => content,
                                 other => {
@@ -1516,7 +1515,6 @@ where
                     let to_delete = {
                         let mut tmp = Vec::new();
 
-                        let placeholders = HashMap::new();
                         let outer = HashMap::new();
                         let mapper = match ra_delete.condition.as_ref() {
                             Some(cond) => {
@@ -1900,7 +1898,7 @@ where
     }
 
     async fn insert(&mut self, raw_column: &[u8]) -> Result<(), ()> {
-        let raw_str = core::str::from_utf8(raw_column).map_err(|e| ())?;
+        let raw_str = core::str::from_utf8(raw_column).map_err(|_e| ())?;
 
         let parts: Vec<_> = raw_str.split('\t').collect();
 
@@ -1912,7 +1910,7 @@ where
 
         let mut row_data = Vec::with_capacity(parts.len());
         for (column, raw) in self.schema.rows.iter().zip(parts) {
-            let tmp = Data::realize(&column.ty, raw.as_bytes()).map_err(|e| ())?;
+            let tmp = Data::realize(&column.ty, raw.as_bytes()).map_err(|_e| ())?;
             row_data.push(tmp);
         }
 
@@ -2036,7 +2034,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            storage.commit_transaction(trans).await;
+            storage.commit_transaction(trans).await.unwrap();
 
             storage
         };

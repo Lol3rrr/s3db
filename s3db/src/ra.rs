@@ -338,12 +338,11 @@ impl RaExpression {
             Self::EmptyRelation => None,
             Self::Aggregation {
                 inner,
-                attributes,
-                aggregation_condition,
-            } => None, // TODO
+                ..
+            } => inner.get_source(attribute), // TODO
             Self::Limit { inner, .. } => inner.get_source(attribute),
             Self::OrderBy { inner, .. } => inner.get_source(attribute),
-            Self::CTE { name, columns } => None, // TODO
+            Self::CTE { name: _name, columns: _columns } => None, // TODO
             Self::Chain { parts } => parts.iter().find_map(|p| p.get_source(attribute)),
         }
     }
@@ -585,7 +584,7 @@ impl RaExpression {
                         let columns: Vec<_> = inner_columns
                             .into_iter()
                             .zip(columns.iter())
-                            .map(|((n1, n2, ty, id), renamed)| ProjectionAttribute {
+                            .map(|((_, n2, ty, id), renamed)| ProjectionAttribute {
                                 id: scope.attribute_id(),
                                 name: renamed.0.to_string(),
                                 value: RaValueExpression::Attribute {
@@ -1557,7 +1556,7 @@ mod error_tests {
         .into_iter()
         .collect();
 
-        let err = RaExpression::parse_select(&select_query, &schemas).unwrap_err();
+        let _err = RaExpression::parse_select(&select_query, &schemas).unwrap_err();
 
         // TODO
     }

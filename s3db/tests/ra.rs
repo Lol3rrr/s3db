@@ -601,6 +601,8 @@ fn group_by_primary_key() {
     let (select, parameter_types) = RaExpression::parse_select(&select_query, &schemas).unwrap();
     assert_eq!(HashMap::new(), parameter_types);
 
+    let _ = select;
+
     // TODO
     /*
     let (inner, attributes, aggregation_condition) = match select {
@@ -660,6 +662,9 @@ fn select_with_lower_paramater() {
         [(1, DataType::Text)].into_iter().collect::<HashMap<_, _>>(),
         parameter_types
     );
+
+    // TODO
+    let _ = select;
 }
 
 #[test]
@@ -890,6 +895,10 @@ fn select_as_single_value() {
     .collect();
 
     let (select, placeholders) = RaExpression::parse_select(&select, &schemas).unwrap();
+    assert_eq!(HashMap::new(), placeholders);
+    
+    // TODO
+    let _ = select;
 }
 
 #[test]
