@@ -94,7 +94,6 @@ where
 
         let mut idx = self.instruction_stack.len() - 1;
         loop {
-            dbg!(idx, self.instruction_stack.len());
             let instr = self.instruction_stack.get(idx).expect("We just know");
             let value = instr
                 .evaluate(&mut value_stack, row, engine, transaction, arena)
