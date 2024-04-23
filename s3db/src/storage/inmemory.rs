@@ -480,7 +480,7 @@ impl Storage for &InMemoryStorage {
     async fn relation_exists(
         &self,
         name: &str,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<bool, LoadingError> {
         Ok(self
             .tables
@@ -552,7 +552,7 @@ impl Storage for &InMemoryStorage {
         &self,
         name: &str,
         target: &str,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<(), LoadingError> {
         let mut tables = self
             .tables
@@ -576,7 +576,7 @@ impl Storage for &InMemoryStorage {
     async fn remove_relation(
         &self,
         name: &str,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<(), LoadingError> {
         let mut tables = self
             .tables
@@ -592,7 +592,7 @@ impl Storage for &InMemoryStorage {
         &self,
         name: &str,
         modification: super::ModifyRelation,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<(), LoadingError> {
         let mut tables = self
             .tables

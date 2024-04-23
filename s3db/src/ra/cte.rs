@@ -95,7 +95,7 @@ impl CTE {
                     };
 
                     match scope.context.as_mut() {
-                        Some(ctx) => {
+                        Some(_ctx) => {
                             return Err(ParseSelectError::NotImplemented(
                                 "Parse Recursive with Context",
                             ));

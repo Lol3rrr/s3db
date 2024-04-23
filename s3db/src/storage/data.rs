@@ -204,15 +204,15 @@ impl Data {
                 Ok(Self::Varchar(d.chars().collect()))
             }
             (Self::Text(d), sql::DataType::BigInteger) => {
-                let val = d.parse::<i64>().map_err(|e| (Self::Text(d), target))?;
+                let val = d.parse::<i64>().map_err(|_| (Self::Text(d), target))?;
                 Ok(Self::BigInt(val))
             }
             (Self::Text(d), sql::DataType::Integer) => {
-                let val = d.parse::<i32>().map_err(|e| (Self::Text(d), target))?;
+                let val = d.parse::<i32>().map_err(|_| (Self::Text(d), target))?;
                 Ok(Self::Integer(val))
             }
             (Self::Text(d), sql::DataType::SmallInteger) => {
-                let val = d.parse::<i16>().map_err(|e| (Self::Text(d), target))?;
+                let val = d.parse::<i16>().map_err(|_| (Self::Text(d), target))?;
                 Ok(Self::SmallInt(val))
             }
             (Self::Text(d), sql::DataType::Timestamp) => {

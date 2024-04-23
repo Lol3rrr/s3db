@@ -121,10 +121,10 @@ pub fn parse_aggregate(
                                 let mut tmp = &tmp.value;
                                 loop {
                                     match tmp {
-                                        AggregateExpression::Column { name, dtype, a_id } => {
+                                        AggregateExpression::Column { name, a_id, .. } => {
                                             break (name.clone(), a_id.clone())
                                         }
-                                        AggregateExpression::Renamed { inner, name } => {
+                                        AggregateExpression::Renamed { inner, .. } => {
                                             tmp = &inner;
                                         }
                                         other => {
@@ -140,7 +140,7 @@ pub fn parse_aggregate(
 
                 let extra_fields_from_primary_keys: Vec<_> = fields
                     .iter()
-                    .filter_map(|(f_name, f_id)| base.get_source(*f_id).zip(Some(f_id)))
+                    .filter_map(|(_, f_id)| base.get_source(*f_id).zip(Some(f_id)))
                     .filter_map(|(src_expr, f_id)| {
                         let (table_name, column_name) = match src_expr {
                             RaExpression::BaseRelation { name, columns } => {

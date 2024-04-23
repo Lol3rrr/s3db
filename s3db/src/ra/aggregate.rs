@@ -95,7 +95,7 @@ impl AggregateExpression {
                         &mut Vec::new(),
                     )?;
 
-                    let inner_ty = inner.possible_type(scope).map_err(|e| {
+                    let inner_ty = inner.possible_type(scope).map_err(|_| {
                         ParseSelectError::DeterminePossibleTypes {
                             expr: inner.clone(),
                         }
