@@ -80,9 +80,33 @@ fn select_1_column(
     ))
 }
 
+#[library_benchmark]
+#[benches::with_setup(args = [("SELECT name FROM users WHERE id < 5", 10), ("SELECT name FROM users WHERE id < 50", 100), ("SELECT name FROM users WHERE id < 500", 1000)], setup = setup)]
+fn condition_less_than(
+    (query, engine, transaction): (
+        sql::Query<'static, 'static>,
+        s3db::execution::naive::NaiveEngine<s3db::storage::inmemory::InMemoryStorage>,
+        s3db::storage::inmemory::InMemoryTransactionGuard,
+    ),
+) -> Result<
+    s3db::execution::ExecuteResult,
+    s3db::execution::ExecuteError<
+        s3db::execution::naive::PrepareError<s3db::storage::inmemory::LoadingError>,
+        (),
+        s3db::execution::naive::ExecuteBoundError<s3db::storage::inmemory::LoadingError>,
+    >,
+> {
+    let mut ctx = s3db::execution::Context::new();
+    ctx.transaction = Some(transaction);
+    let arena = bumpalo::Bump::new();
+    black_box(futures::executor::block_on(
+        engine.execute(&query, &mut ctx, &arena),
+    ))
+}
+
 library_benchmark_group!(
     name = queries;
-    benchmarks = select_1_column
+    benchmarks = select_1_column, condition_less_than
 );
 
 main!(
