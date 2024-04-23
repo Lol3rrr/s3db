@@ -336,13 +336,13 @@ impl RaExpression {
                 }
             }
             Self::EmptyRelation => None,
-            Self::Aggregation {
-                inner,
-                ..
-            } => inner.get_source(attribute), // TODO
+            Self::Aggregation { inner, .. } => inner.get_source(attribute), // TODO
             Self::Limit { inner, .. } => inner.get_source(attribute),
             Self::OrderBy { inner, .. } => inner.get_source(attribute),
-            Self::CTE { name: _name, columns: _columns } => None, // TODO
+            Self::CTE {
+                name: _name,
+                columns: _columns,
+            } => None, // TODO
             Self::Chain { parts } => parts.iter().find_map(|p| p.get_source(attribute)),
         }
     }

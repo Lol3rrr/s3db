@@ -1176,7 +1176,8 @@ where
                             let content = match self
                                 .execute(&Query::Select(select.to_static()), ctx, &arena)
                                 .boxed_local()
-                                .await.map_err(|_e| ExecuteBoundError::Other("Executing Query"))?
+                                .await
+                                .map_err(|_e| ExecuteBoundError::Other("Executing Query"))?
                             {
                                 ExecuteResult::Select { content, .. } => content,
                                 other => {

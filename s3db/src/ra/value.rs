@@ -457,11 +457,11 @@ impl RaValueExpression {
                 dbg!(&base, &target_ty);
                 let ra_base = Self::parse_internal(scope, base, placeholders, ra_expr, outer)?;
 
-                let base_types = ra_base
-                    .possible_type(scope)
-                    .map_err(|_| ParseSelectError::DeterminePossibleTypes {
+                let base_types = ra_base.possible_type(scope).map_err(|_| {
+                    ParseSelectError::DeterminePossibleTypes {
                         expr: ra_base.clone(),
-                    })?;
+                    }
+                })?;
                 dbg!(&base_types);
 
                 let compatible_types =
@@ -591,13 +591,11 @@ impl RaValueExpression {
                 }
             },
             Self::Function(fc) => match fc {
-                RaFunction::LeftPad {
-                    ..
-                } => Ok(types::PossibleTypes::fixed(DataType::Text)),
+                RaFunction::LeftPad { .. } => Ok(types::PossibleTypes::fixed(DataType::Text)),
                 RaFunction::Coalesce(tmp) => tmp.first().unwrap().possible_type(scope),
-                RaFunction::SetValue {
-                    ..
-                } => Ok(types::PossibleTypes::fixed(DataType::BigInteger)),
+                RaFunction::SetValue { .. } => {
+                    Ok(types::PossibleTypes::fixed(DataType::BigInteger))
+                }
                 RaFunction::Lower(_) => Ok(types::PossibleTypes::fixed(DataType::Text)),
                 RaFunction::Substr { .. } => Ok(types::PossibleTypes::fixed(DataType::Text)),
                 RaFunction::CurrentSchemas { .. } => {
@@ -618,13 +616,14 @@ impl RaValueExpression {
             Self::Placeholder(_) => None,
             Self::Literal(lit) => lit.datatype(),
             Self::List(elems) => {
-                let mut types: Vec<_> = elems.iter().map(|e| e.datatype()).collect::<Option<_>>()?;
+                let mut types: Vec<_> =
+                    elems.iter().map(|e| e.datatype()).collect::<Option<_>>()?;
                 if types.windows(2).any(|tys| tys[0] != tys[1]) {
                     todo!()
                 }
 
                 types.pop()
-            },
+            }
             Self::SubQuery { query } => {
                 let mut columns = query.get_columns();
 

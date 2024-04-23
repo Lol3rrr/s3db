@@ -896,7 +896,7 @@ fn select_as_single_value() {
 
     let (select, placeholders) = RaExpression::parse_select(&select, &schemas).unwrap();
     assert_eq!(HashMap::new(), placeholders);
-    
+
     // TODO
     let _ = select;
 }
