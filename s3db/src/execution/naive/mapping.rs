@@ -1,8 +1,14 @@
 use super::EvaulateRaError;
 use crate::storage;
 
+pub enum ShortCircuit<V> {
+    Nothing(V),
+    Skip { amount: usize, result: V },
+}
+
 pub trait MappingInstruction<'expr>: Sized {
     type Input;
+    type Output;
     type ConstructContext<'ctx>;
 
     fn push_nested(input: &'expr Self::Input, pending: &mut Vec<&'expr Self::Input>);
@@ -11,25 +17,35 @@ pub trait MappingInstruction<'expr>: Sized {
         input: &'expr Self::Input,
         ctx: &Self::ConstructContext<'ctx>,
     ) -> Result<Self, EvaulateRaError<SE>>;
+
     fn evaluate<S>(
         &self,
-        result_stack: &mut Vec<storage::Data>,
+        result_stack: &mut Vec<Self::Output>,
         row: &storage::Row,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
-    ) -> impl core::future::Future<Output = Option<storage::Data>>
+    ) -> impl core::future::Future<Output = Option<Self::Output>>
     where
         S: storage::Storage;
+
+    fn peek_short_circuit(
+        &self,
+        outcome: Self::Output,
+        _own_index: usize,
+        _values: &Vec<Self::Output>,
+    ) -> ShortCircuit<Self::Output> {
+        ShortCircuit::Nothing(outcome)
+    }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Mapper<I> {
+pub struct Mapper<I, V> {
     pub instruction_stack: Vec<I>,
-    pub value_stack: Vec<storage::Data>,
+    pub value_stack: Vec<V>,
 }
 
-impl<'expr, I> Mapper<I>
+impl<'expr, I> Mapper<I, I::Output>
 where
     I: MappingInstruction<'expr>,
 {
@@ -70,20 +86,34 @@ where
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
-    ) -> Option<storage::Data>
+    ) -> Option<I::Output>
     where
         S: storage::Storage,
     {
-        let mut value_stack: Vec<storage::Data> = Vec::with_capacity(self.instruction_stack.len());
+        let mut value_stack: Vec<I::Output> = Vec::with_capacity(self.instruction_stack.len());
 
-        for instr in self.instruction_stack.iter().rev() {
+        let mut idx = self.instruction_stack.len() - 1;
+        loop {
+            dbg!(idx, self.instruction_stack.len());
+            let instr = self.instruction_stack.get(idx).expect("We just know");
             let value = instr
                 .evaluate(&mut value_stack, row, engine, transaction, arena)
                 .await?;
+
+            let (n_idx, value) = match instr.peek_short_circuit(value, idx, &value_stack) {
+                ShortCircuit::Nothing(v) => match idx.checked_sub(1) {
+                    Some(i) => (i, v),
+                    None => return Some(v),
+                },
+                ShortCircuit::Skip { amount, result } => match idx.checked_sub(amount) {
+                    Some(i) => (i, result),
+                    None => return Some(result),
+                },
+            };
+
+            idx = n_idx;
             value_stack.push(value);
         }
-
-        value_stack.pop()
     }
 
     pub async fn evaluate_mut<S>(
@@ -92,7 +122,7 @@ where
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
-    ) -> Option<storage::Data>
+    ) -> Option<I::Output>
     where
         S: storage::Storage,
     {

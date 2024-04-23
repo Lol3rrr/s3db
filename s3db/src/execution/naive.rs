@@ -60,14 +60,10 @@ where
         condition: &ra::RaCondition,
         row: &storage::Row,
     ) -> Result<bool, EvaulateRaError<S::LoadingError>> {
-        let mapper = condition::construct_condition(
+        let mapper = condition::Mapper::construct(
             condition,
-            self.columns.to_vec(),
-            self.placeholders,
-            self.ctes,
-            self.outer,
-        )
-        .await?;
+            (self.columns, self.placeholders, self.ctes, self.outer),
+        )?;
 
         mapper
             .evaluate(row, self.engine, self.transaction, self.arena)
@@ -323,14 +319,10 @@ where
                             .collect::<Vec<_>>()
                     );
 
-                    let condition_mapper = condition::construct_condition::<S::LoadingError>(
+                    let condition_mapper = condition::Mapper::construct::<S::LoadingError>(
                         filter,
-                        inner_columns,
-                        placeholders,
-                        ctes,
-                        outer,
-                    )
-                    .await?;
+                        (&inner_columns, placeholders, ctes, outer),
+                    )?;
                     let condition_mapper = std::rc::Rc::new(condition_mapper);
 
                     let stream = StreamExt::filter_map(rows, move |row| {
@@ -1366,14 +1358,10 @@ where
                             let outer = HashMap::new();
                             let mapper = match condition.as_ref() {
                                 Some(cond) => {
-                                    let m = condition::construct_condition(
+                                    let m = condition::Mapper::construct(
                                         cond,
-                                        table_columns.clone(),
-                                        &placeholder_values,
-                                        &cte_queries,
-                                        &outer,
+                                        (&table_columns, &placeholder_values, &cte_queries, &outer),
                                     )
-                                    .await
                                     .map_err(|ev| ExecuteBoundError::Executing(ev))?;
                                     Some(m)
                                 }

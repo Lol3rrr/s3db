@@ -13,6 +13,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     for ValueInstruction<'expr, 'outer, 'placeholders, 'ctes>
 {
     type Input = ra::RaValueExpression;
+    type Output = storage::Data;
     type ConstructContext<'ctx> = (
         &'ctx [(String, DataType, AttributeId)],
         &'placeholders HashMap<usize, storage::Data>,
@@ -331,7 +332,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
 }
 
 pub type Mapper<'expr, 'outer, 'placeholders, 'ctes> =
-    super::mapping::Mapper<ValueInstruction<'expr, 'outer, 'placeholders, 'ctes>>;
+    super::mapping::Mapper<ValueInstruction<'expr, 'outer, 'placeholders, 'ctes>, storage::Data>;
 
 #[derive(Debug, PartialEq)]
 pub enum ValueInstruction<'expr, 'outer, 'placeholders, 'ctes> {
