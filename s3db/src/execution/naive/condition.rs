@@ -231,6 +231,139 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
             }
         }
     }
+
+    async fn evaluate_mut<S>(
+        &mut self,
+        result_stack: &mut Vec<Self::Output>,
+        row: &storage::Row,
+        engine: &super::NaiveEngine<S>,
+        transaction: &S::TransactionGuard,
+        arena: &bumpalo::Bump,
+    ) -> Option<Self::Output>
+    where
+        S: storage::Storage,
+    {
+        match self {
+            Self::Negation {} => {
+                let before = result_stack.pop()?;
+                Some(!before)
+            }
+            Self::Constant { value } => Some(*value),
+            Self::Attribute { idx } => match row.data.get(*idx) {
+                Some(storage::Data::Boolean(v)) => Some(*v),
+                _ => None,
+            },
+            Self::Comparison {
+                first,
+                second,
+                comparison,
+            } => {
+                let first_value = first.evaluate_mut(row, engine, transaction, arena).await?;
+                let second_value = second.evaluate_mut(row, engine, transaction, arena).await?;
+
+                match comparison {
+                    ra::RaComparisonOperator::Equals => Some(first_value == second_value),
+                    ra::RaComparisonOperator::NotEquals => Some(first_value != second_value),
+                    ra::RaComparisonOperator::Greater => Some(first_value > second_value),
+                    ra::RaComparisonOperator::GreaterEqual => Some(first_value >= second_value),
+                    ra::RaComparisonOperator::Less => Some(first_value < second_value),
+                    ra::RaComparisonOperator::LessEqual => Some(first_value <= second_value),
+                    ra::RaComparisonOperator::In => {
+                        dbg!(&first_value, &second_value);
+
+                        let parts = match second_value {
+                            Data::List(ps) => ps,
+                            other => {
+                                dbg!(other);
+                                // return Err(EvaulateRaError::Other(
+                                //    "Attempting IN comparison on non List",
+                                //));
+                                return None;
+                            }
+                        };
+
+                        Some(parts.iter().any(|p| p == &first_value))
+                    }
+                    ra::RaComparisonOperator::NotIn => match second_value {
+                        storage::Data::List(d) => Some(d.iter().all(|v| v != &first_value)),
+                        other => {
+                            tracing::error!("Cannot perform NotIn Operation on not List Data");
+                            dbg!(other);
+                            // Err(EvaulateRaError::Other("Incompatible Error"))
+                            None
+                        }
+                    },
+                    ra::RaComparisonOperator::Like => {
+                        let haystack = match first_value {
+                            Data::Text(t) => t,
+                            other => {
+                                tracing::warn!("Expected Text Data, got {:?}", other);
+                                // return Err(EvaulateRaError::Other("Wrong Type for Haystack"));
+                                return None;
+                            }
+                        };
+                        let raw_pattern = match second_value {
+                            Data::Text(p) => p,
+                            other => {
+                                tracing::warn!("Expected Text Data, got {:?}", other);
+                                // return Err(EvaulateRaError::Other("Wrong Type for Pattern"));
+                                return None;
+                            }
+                        };
+
+                        let result = pattern::like_match(&haystack, &raw_pattern);
+
+                        Some(result)
+                    }
+                    ra::RaComparisonOperator::ILike => {
+                        todo!("Perforing ILike Comparison")
+                    }
+                    ra::RaComparisonOperator::Is => match (first_value, second_value) {
+                        (storage::Data::Boolean(val), storage::Data::Boolean(true)) => Some(val),
+                        (storage::Data::Boolean(val), storage::Data::Boolean(false)) => Some(!val),
+                        _ => Some(false),
+                    },
+                    ra::RaComparisonOperator::IsNot => {
+                        dbg!(&first_value, &second_value);
+
+                        // Err(EvaulateRaError::Other("Not implemented - IsNot Operator "))
+                        None
+                    }
+                }
+            }
+            Self::Exists {
+                query,
+                columns,
+                outer,
+                placeholders,
+                ctes,
+            } => {
+                let n_outer = {
+                    let mut tmp: HashMap<_, _> = (*outer).clone();
+
+                    tmp.extend(
+                        columns
+                            .iter()
+                            .map(|(_, _, id)| *id)
+                            .zip(row.data.iter().cloned()),
+                    );
+
+                    tmp
+                };
+
+                let local_fut = async {
+                    let (_, mut rows) = engine
+                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, arena)
+                        .await
+                        .ok()?;
+                    Some(rows.next().await.is_some())
+                }
+                .boxed_local();
+                let exists = local_fut.await?;
+                Some(exists)
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -311,6 +444,32 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 Some(values.any(|v| v))
             }
             Self::Expression(expr) => expr.evaluate(row, engine, transaction, arena).await,
+        }
+    }
+
+    async fn evaluate_mut<S>(
+        &mut self,
+        result_stack: &mut Vec<Self::Output>,
+        row: &storage::Row,
+        engine: &super::NaiveEngine<S>,
+        transaction: &S::TransactionGuard,
+        arena: &bumpalo::Bump,
+    ) -> Option<Self::Output>
+    where
+        S: storage::Storage,
+    {
+        match self {
+            Self::And { part_count } => {
+                let stack_len = result_stack.len();
+                let mut values = result_stack.drain(stack_len - *part_count..);
+                Some(values.all(|v| v))
+            }
+            Self::Or { part_count } => {
+                let stack_len = result_stack.len();
+                let mut values = result_stack.drain(stack_len - *part_count..);
+                Some(values.any(|v| v))
+            }
+            Self::Expression(expr) => expr.evaluate_mut(row, engine, transaction, arena).await,
         }
     }
 

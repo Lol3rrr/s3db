@@ -323,14 +323,16 @@ where
                         filter,
                         (&inner_columns, placeholders, ctes, outer),
                     )?;
-                    let condition_mapper = std::rc::Rc::new(condition_mapper);
+                    let condition_mapper =
+                        std::rc::Rc::new(std::cell::RefCell::new(condition_mapper));
 
                     let stream = StreamExt::filter_map(rows, move |row| {
                         let condition_mapper = condition_mapper.clone();
 
                         async move {
+                            let mut condition_mapper = condition_mapper.try_borrow_mut().unwrap();
                             if condition_mapper
-                                .evaluate(&row, self, transaction, arena)
+                                .evaluate_mut(&row, self, transaction, arena)
                                 .await
                                 .unwrap()
                             {
@@ -1518,14 +1520,10 @@ where
                         let outer = HashMap::new();
                         let mapper = match ra_delete.condition.as_ref() {
                             Some(cond) => {
-                                let m = condition::construct_condition(
+                                let m = condition::Mapper::construct(
                                     cond,
-                                    table_columns,
-                                    &placeholders,
-                                    &cte_queries,
-                                    &outer,
+                                    (&table_columns, &placeholders, &cte_queries, &outer),
                                 )
-                                .await
                                 .map_err(|ev| ExecuteBoundError::Executing(ev))?;
                                 Some(m)
                             }

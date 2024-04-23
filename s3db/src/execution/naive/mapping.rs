@@ -29,6 +29,20 @@ pub trait MappingInstruction<'expr>: Sized {
     where
         S: storage::Storage;
 
+    fn evaluate_mut<S>(
+        &mut self,
+        result_stack: &mut Vec<Self::Output>,
+        row: &storage::Row,
+        engine: &super::NaiveEngine<S>,
+        transaction: &S::TransactionGuard,
+        arena: &bumpalo::Bump,
+    ) -> impl core::future::Future<Output = Option<Self::Output>>
+    where
+        S: storage::Storage,
+    {
+        self.evaluate(result_stack, row, engine, transaction, arena)
+    }
+
     fn peek_short_circuit(
         &self,
         outcome: Self::Output,
@@ -127,13 +141,26 @@ where
     {
         self.value_stack.clear();
 
-        for instr in self.instruction_stack.iter().rev() {
+        let mut idx = self.instruction_stack.len() - 1;
+        loop {
+            let instr = self.instruction_stack.get_mut(idx).expect("We just know");
             let value = instr
-                .evaluate(&mut self.value_stack, row, engine, transaction, arena)
+                .evaluate_mut(&mut self.value_stack, row, engine, transaction, arena)
                 .await?;
+
+            let (n_idx, value) = match instr.peek_short_circuit(value, idx, &self.value_stack) {
+                ShortCircuit::Nothing(v) => match idx.checked_sub(1) {
+                    Some(i) => (i, v),
+                    None => return Some(v),
+                },
+                ShortCircuit::Skip { amount, result } => match idx.checked_sub(amount) {
+                    Some(i) => (i, result),
+                    None => return Some(result),
+                },
+            };
+
+            idx = n_idx;
             self.value_stack.push(value);
         }
-
-        self.value_stack.pop()
     }
 }
