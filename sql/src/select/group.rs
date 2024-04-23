@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{ColumnReference, Literal, Parser as _, CompatibleParser};
+use crate::{ColumnReference, CompatibleParser, Literal, Parser as _};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum GroupAttribute<'s> {
@@ -35,7 +35,11 @@ impl<'i, 'a> crate::ArenaParser<'i, 'a> for crate::arenas::Vec<'a, GroupAttribut
 }
 
 #[deprecated]
-pub fn parse<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], crate::arenas::Vec<'a, GroupAttribute<'i>>, nom::error::VerboseError<&'i [u8]>> {
+pub fn parse<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], crate::arenas::Vec<'a, GroupAttribute<'i>>, nom::error::VerboseError<&'i [u8]>>
+{
     let (rem, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("GROUP"),
         nom::character::complete::multispace1,

@@ -117,13 +117,12 @@ pub enum ParseQueryError<'i> {
         remaining: &'i [u8],
     },
     ParserError {
-        error: nom::Err<nom::error::VerboseError<&'i [u8]>>
+        error: nom::Err<nom::error::VerboseError<&'i [u8]>>,
     },
     Other,
 }
 
-impl<'i, 'a> ArenaParser<'i, 'a> for Query<'i, 'a>
-{
+impl<'i, 'a> ArenaParser<'i, 'a> for Query<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -190,9 +189,7 @@ impl<'i, 'a> ArenaParser<'i, 'a> for arenas::Vec<'a, Query<'i, 'a>> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            crate::nom_util::bump_many1(a, move |i| query(i, a))(i)
-        }
+        move |i| crate::nom_util::bump_many1(a, move |i| query(i, a))(i)
     }
 }
 
@@ -205,16 +202,11 @@ impl<'s, 'a> Query<'s, 'a> {
         'r: 's,
         'outer_a: 'a,
     {
-        let (remaining, query) = Query::parse_arena(arena)(raw).map_err(|e| {
-            ParseQueryError::ParserError {
-                error: e
-            }
-        })?;
+        let (remaining, query) = Query::parse_arena(arena)(raw)
+            .map_err(|e| ParseQueryError::ParserError { error: e })?;
 
         if !remaining.is_empty() {
-            return Err(ParseQueryError::NotEverythingWasParsed {
-                remaining
-            });
+            return Err(ParseQueryError::NotEverythingWasParsed { remaining });
         }
 
         Ok(query)
@@ -229,20 +221,15 @@ impl<'s, 'a> Query<'s, 'a> {
         'outer_a: 'a,
     {
         let (remaining, queries) =
-            crate::nom_util::bump_many1(arena, move |i| query(i, arena))(raw).map_err(|e| {
-                ParseQueryError::ParserError {
-                    error: e
-                }
-            })?;
+            crate::nom_util::bump_many1(arena, move |i| query(i, arena))(raw)
+                .map_err(|e| ParseQueryError::ParserError { error: e })?;
 
         if !remaining.is_empty() {
-            return Err(ParseQueryError::NotEverythingWasParsed {
-                remaining,
-            });
+            return Err(ParseQueryError::NotEverythingWasParsed { remaining });
         }
 
         Ok(queries)
-    } 
+    }
 }
 
 fn query<'i, 'a>(
@@ -298,14 +285,15 @@ pub(crate) mod macros {
     macro_rules! arena_parser_parse {
         ($target_ty:ty, $input:expr) => {{
             use crate::ArenaParser as _;
-            let arena = bumpalo::Bump::new();{
-            let (remaining, _) = <$target_ty>::parse_arena(&arena)($input.as_bytes()).unwrap();
-            assert_eq!(
-                &[] as &[u8],
-                remaining,
-                "{:?}",
-                core::str::from_utf8(remaining).unwrap()
-            );
+            let arena = bumpalo::Bump::new();
+            {
+                let (remaining, _) = <$target_ty>::parse_arena(&arena)($input.as_bytes()).unwrap();
+                assert_eq!(
+                    &[] as &[u8],
+                    remaining,
+                    "{:?}",
+                    core::str::from_utf8(remaining).unwrap()
+                );
             }
         }};
         ($target_ty:ty, $input:expr, $expected:expr) => {
@@ -334,7 +322,6 @@ pub(crate) mod macros {
         }};
     }
     pub(crate) use arena_parser_parse_err;
-
 
     macro_rules! parser_parse {
         ($target_ty:ty, $input:expr) => {{
@@ -368,9 +355,9 @@ pub(crate) mod macros {
 #[cfg(test)]
 mod tests {
     use crate::{
+        arenas::Boxed,
         macros::arena_parser_parse,
         select::{GroupAttribute, OrderAttribute},
-        arenas::Boxed
     };
 
     use super::*;
@@ -456,10 +443,7 @@ mod tests {
 
     #[test]
     fn alter_table() {
-        arena_parser_parse!(
-            Query,
-            "ALTER TABLE \"user\" RENAME TO \"user_v1\""
-        );
+        arena_parser_parse!(Query, "ALTER TABLE \"user\" RENAME TO \"user_v1\"");
     }
 
     #[test]
@@ -472,10 +456,7 @@ mod tests {
 
     #[test]
     fn drop_index() {
-        arena_parser_parse!(
-            Query,
-            "DROP INDEX \"UQE_user_login\" CASCADE"
-        );
+        arena_parser_parse!(Query, "DROP INDEX \"UQE_user_login\" CASCADE");
     }
 
     #[test]
@@ -503,7 +484,8 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: Some(Identifier("p".into())),
                     column: Identifier("name".into())
-                })].into(),
+                })]
+                .into(),
                 table: Some(TableExpression::Renamed {
                     inner: Boxed::new(TableExpression::Relation(Identifier("permission".into()))),
                     name: Identifier("p".into()),
@@ -532,7 +514,8 @@ mod tests {
                         column: Identifier("name".into())
                     })),
                     name: Identifier("pname".into())
-                }].into(),
+                }]
+                .into(),
                 table: Some(TableExpression::Relation(Identifier("permission".into()))),
                 where_condition: None,
                 order_by: None,
@@ -560,24 +543,33 @@ mod tests {
                         relation: Some(Identifier("password".into())),
                         column: Identifier("hash".into())
                     })
-                ].into(),
+                ]
+                .into(),
                 table: Some(TableExpression::Join {
                     left: Boxed::new(TableExpression::Relation(Identifier("user".into()))),
                     right: Boxed::new(TableExpression::Relation(Identifier("password".into()))),
                     kind: JoinKind::Inner,
-                    condition: Condition::And(vec![Condition::Value(Box::new(
-                        ValueExpression::Operator {
-                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: Some(Identifier("user".into())),
-                                column: Identifier("id".into()),
-                            })),
-                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: Some(Identifier("password".into())),
-                                column: Identifier("uid".into())
-                            })),
-                            operator: BinaryOperator::Equal
-                        }
-                    ).into())].into()),
+                    condition: Condition::And(
+                        vec![Condition::Value(
+                            Box::new(ValueExpression::Operator {
+                                first: Boxed::new(ValueExpression::ColumnReference(
+                                    ColumnReference {
+                                        relation: Some(Identifier("user".into())),
+                                        column: Identifier("id".into()),
+                                    }
+                                )),
+                                second: Boxed::new(ValueExpression::ColumnReference(
+                                    ColumnReference {
+                                        relation: Some(Identifier("password".into())),
+                                        column: Identifier("uid".into())
+                                    }
+                                )),
+                                operator: BinaryOperator::Equal
+                            })
+                            .into()
+                        )]
+                        .into()
+                    ),
                     lateral: false,
                 }),
                 where_condition: None,
@@ -616,17 +608,21 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
-                })].into(),
+                })]
+                .into(),
                 table: Some(TableExpression::Relation(Identifier("alert_rule".into()))),
                 where_condition: None,
-                order_by: Some(vec![Ordering {
-                    column: OrderAttribute::ColumnRef(ColumnReference {
-                        relation: None,
-                        column: Identifier("id".into())
-                    }),
-                    order: OrderBy::Ascending,
-                    nulls: NullOrdering::Last
-                }].into()),
+                order_by: Some(
+                    vec![Ordering {
+                        column: OrderAttribute::ColumnRef(ColumnReference {
+                            relation: None,
+                            column: Identifier("id".into())
+                        }),
+                        order: OrderBy::Ascending,
+                        nulls: NullOrdering::Last
+                    }]
+                    .into()
+                ),
                 group_by: None,
                 having: None,
                 limit: None,
@@ -645,14 +641,18 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("id".into())
-                })].into(),
+                })]
+                .into(),
                 table: Some(TableExpression::Relation(Identifier("alert_rule".into()))),
                 where_condition: None,
                 order_by: None,
-                group_by: Some(vec![GroupAttribute::ColumnRef(ColumnReference {
-                    relation: None,
-                    column: Identifier("id".into())
-                })].into()),
+                group_by: Some(
+                    vec![GroupAttribute::ColumnRef(ColumnReference {
+                        relation: None,
+                        column: Identifier("id".into())
+                    })]
+                    .into()
+                ),
                 having: None,
                 limit: None,
                 for_update: None,
@@ -670,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn select_complex2() {    
+    fn select_complex2() {
         arena_parser_parse!(
             Query,
             "\n\tSELECT res.uid, res.is_folder, res.org_id\n\tFROM (SELECT dashboard.id, dashboard.uid, dashboard.is_folder, dashboard.org_id, count(dashboard_acl.id) as count\n\t\t  FROM dashboard\n\t\t\t\tLEFT JOIN dashboard_acl ON dashboard.id = dashboard_acl.dashboard_id\n\t\t  WHERE dashboard.has_acl IS TRUE\n\t\t  GROUP BY dashboard.id) as res\n\tWHERE res.count = 0\n\t"

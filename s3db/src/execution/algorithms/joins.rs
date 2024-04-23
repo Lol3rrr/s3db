@@ -29,13 +29,21 @@ where
 {
     fn compatible(&self, args: &JoinArguments<'_>, ctx: &JoinContext) -> bool;
 
-    fn execute(
+    fn execute<'lr, 'rr>(
         &self,
         args: JoinArguments<'_>,
         ctx: JoinContext,
-        result_columns: Vec<(String, sql::DataType, Vec<sql::TypeModifier>)>,
-        left_result: storage::EntireRelation,
-        right_result: storage::EntireRelation,
+        result_columns: Vec<storage::ColumnSchema>,
+        left_rows: futures::stream::LocalBoxStream<'lr, storage::Row>,
+        right_rows: futures::stream::LocalBoxStream<'rr, storage::Row>,
         condition_eval: &CE,
-    ) -> impl Future<Output = Result<storage::EntireRelation, EvaulateRaError<SE>>>;
+    ) -> impl Future<
+        Output = Result<
+            (
+                storage::TableSchema,
+                futures::stream::BoxStream<storage::Row>,
+            ),
+            EvaulateRaError<SE>,
+        >,
+    >;
 }

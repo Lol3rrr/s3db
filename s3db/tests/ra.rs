@@ -601,6 +601,8 @@ fn group_by_primary_key() {
     let (select, parameter_types) = RaExpression::parse_select(&select_query, &schemas).unwrap();
     assert_eq!(HashMap::new(), parameter_types);
 
+    let _ = select;
+
     // TODO
     /*
     let (inner, attributes, aggregation_condition) = match select {
@@ -660,6 +662,9 @@ fn select_with_lower_paramater() {
         [(1, DataType::Text)].into_iter().collect::<HashMap<_, _>>(),
         parameter_types
     );
+
+    // TODO
+    let _ = select;
 }
 
 #[test]
@@ -727,7 +732,8 @@ fn parse_with_context_cte() {
         values: vec![ValueExpression::ColumnReference(ColumnReference {
             relation: None,
             column: "name".into(),
-        })].into(),
+        })]
+        .into(),
         table: Some(sql::TableExpression::Relation("cte".into())),
         where_condition: None,
         order_by: None,
@@ -889,11 +895,15 @@ fn select_as_single_value() {
     .collect();
 
     let (select, placeholders) = RaExpression::parse_select(&select, &schemas).unwrap();
+    assert_eq!([(1, sql::DataType::Text)].into_iter().collect::<HashMap<_, _>>(), placeholders);
+
+    // TODO
+    let _ = select;
 }
 
 #[test]
 fn select_group_by_number() {
-    let arena =Bump::new();
+    let arena = Bump::new();
     let query_str = "SELECT COUNT(balance), plz FROM users GROUP BY 2";
 
     let select = match Query::parse(query_str.as_bytes(), &arena) {

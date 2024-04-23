@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _, ArenaParser};
+use crate::{ArenaParser, CompatibleParser, Parser as _};
 
 use super::{common::Identifier, ColumnReference, Select, ValueExpression};
 
@@ -19,19 +19,21 @@ pub struct ConflictHandling<'s, 'a> {
     pub update: crate::arenas::Vec<'a, (ColumnReference<'s>, ValueExpression<'s, 'a>)>,
 }
 
-impl<'s,'a> ConflictHandling<'s, 'a> {
+impl<'s, 'a> ConflictHandling<'s, 'a> {
     pub fn to_static(&self) -> ConflictHandling<'static, 'static> {
         ConflictHandling {
-            attributes: crate::arenas::Vec::Heap(self
-                .attributes
-                .iter()
-                .map(|ident| ident.to_static())
-                .collect()),
-            update: crate::arenas::Vec::Heap(self
-                .update
-                .iter()
-                .map(|(cr, val)| (cr.to_static(), val.to_static()))
-                .collect()),
+            attributes: crate::arenas::Vec::Heap(
+                self.attributes
+                    .iter()
+                    .map(|ident| ident.to_static())
+                    .collect(),
+            ),
+            update: crate::arenas::Vec::Heap(
+                self.update
+                    .iter()
+                    .map(|(cr, val)| (cr.to_static(), val.to_static()))
+                    .collect(),
+            ),
         }
     }
 }
@@ -47,18 +49,25 @@ impl<'i, 'a> CompatibleParser for InsertValues<'i, 'a> {
 
     fn to_static(&self) -> Self::StaticVersion {
         match self {
-            Self::Values(vs) => InsertValues::Values(
-                crate::arenas::Vec::Heap(vs.iter()
-                    .map(|row| crate::arenas::Vec::Heap(row.iter().map(|v| v.to_static()).collect()))
-                    .collect()),
-            ),
+            Self::Values(vs) => InsertValues::Values(crate::arenas::Vec::Heap(
+                vs.iter()
+                    .map(|row| {
+                        crate::arenas::Vec::Heap(row.iter().map(|v| v.to_static()).collect())
+                    })
+                    .collect(),
+            )),
             Self::Select(s) => InsertValues::Select(s.to_static()),
         }
     }
 
     fn parameter_count(&self) -> usize {
         match self {
-            Self::Values(parts) => parts.iter().flat_map(|i| i.iter()).map(|v| v.parameter_count()).max().unwrap_or(0),
+            Self::Values(parts) => parts
+                .iter()
+                .flat_map(|i| i.iter())
+                .map(|v| v.parameter_count())
+                .max()
+                .unwrap_or(0),
             Self::Select(s) => s.parameter_count(),
         }
     }
@@ -102,7 +111,10 @@ impl<'i, 'a> ArenaParser<'i, 'a> for Insert<'i, 'a> {
 }
 
 #[deprecated]
-pub fn insert<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], Insert<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+pub fn insert<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Insert<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, (_, _, ident, _, _, fields, _, _, values, returning, on_conflict)) =
         nom::sequence::tuple((
             nom::sequence::tuple((
@@ -167,7 +179,7 @@ pub fn insert<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8]
                         nom::character::complete::multispace1,
                     )),
                     crate::nom_util::bump_separated_list1(
-                        arena,    
+                        arena,
                         nom::sequence::tuple((
                             nom::character::complete::multispace0,
                             nom::bytes::complete::tag(","),
@@ -202,7 +214,10 @@ pub fn insert<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8]
     ))
 }
 
-fn insert_values<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], InsertValues<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+fn insert_values<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], InsertValues<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::tuple((
@@ -256,10 +271,14 @@ mod tests {
             Insert {
                 table: Identifier("testing".into()),
                 fields: vec![Identifier("first".into()), Identifier("second".into())].into(),
-                values: InsertValues::Values(vec![vec![
-                    ValueExpression::Literal(Literal::Str("fval".into())),
-                    ValueExpression::Literal(Literal::Str("sval".into()))
-                ].into()].into()),
+                values: InsertValues::Values(
+                    vec![vec![
+                        ValueExpression::Literal(Literal::Str("fval".into())),
+                        ValueExpression::Literal(Literal::Str("sval".into()))
+                    ]
+                    .into()]
+                    .into()
+                ),
                 returning: None,
                 on_conflict: None,
             }
@@ -274,16 +293,21 @@ mod tests {
             Insert {
                 table: Identifier("testing".into()),
                 fields: vec![Identifier("first".into()), Identifier("second".into())].into(),
-                values: InsertValues::Values(vec![
+                values: InsertValues::Values(
                     vec![
-                        ValueExpression::Literal(Literal::Str("fval".into())),
-                        ValueExpression::Literal(Literal::Str("sval".into()))
-                    ].into(),
-                    vec![
-                        ValueExpression::Literal(Literal::Str("fval2".into())),
-                        ValueExpression::Literal(Literal::Str("sval2".into()))
-                    ].into()
-                ].into()),
+                        vec![
+                            ValueExpression::Literal(Literal::Str("fval".into())),
+                            ValueExpression::Literal(Literal::Str("sval".into()))
+                        ]
+                        .into(),
+                        vec![
+                            ValueExpression::Literal(Literal::Str("fval2".into())),
+                            ValueExpression::Literal(Literal::Str("sval2".into()))
+                        ]
+                        .into()
+                    ]
+                    .into()
+                ),
                 returning: None,
                 on_conflict: None,
             }

@@ -72,8 +72,8 @@ mod tests {
         AttributeId, ProjectionAttribute, RaComparisonOperator, RaCondition, RaConditionValue,
         RaExpression, RaValueExpression,
     };
-    use sql::{Literal, Query};
     use bumpalo::Bump;
+    use sql::{Literal, Query};
 
     use super::*;
 

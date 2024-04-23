@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{Parser as _Parser, CompatibleParser};
+use crate::{CompatibleParser, Parser as _Parser};
 
 use super::{DataType, Identifier, Literal, TypeModifier};
 
@@ -66,10 +66,12 @@ impl<'s, 'a> CompatibleParser for AlterTable<'s, 'a> {
             },
             Self::AlterColumnTypes { table, columns } => AlterTable::AlterColumnTypes {
                 table: table.to_static(),
-                columns: crate::arenas::Vec::Heap(columns
-                    .iter()
-                    .map(|(cn, ct)| (cn.to_static(), ct.clone()))
-                    .collect()),
+                columns: crate::arenas::Vec::Heap(
+                    columns
+                        .iter()
+                        .map(|(cn, ct)| (cn.to_static(), ct.clone()))
+                        .collect(),
+                ),
             },
             Self::AtlerColumnDropNotNull { table, column } => AlterTable::AtlerColumnDropNotNull {
                 table: table.to_static(),
@@ -97,7 +99,10 @@ impl<'s, 'a> CompatibleParser for AlterTable<'s, 'a> {
     }
 }
 
-impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for AlterTable<'s, 'a> where 'i: 's {
+impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for AlterTable<'s, 'a>
+where
+    'i: 's,
+{
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -109,7 +114,13 @@ impl<'i, 's, 'a> crate::ArenaParser<'i, 'a> for AlterTable<'s, 'a> where 'i: 's 
 }
 
 #[deprecated]
-pub fn alter_table<'i, 's, 'a>(i: &'i [u8], a: &'a bumpalo::Bump) -> IResult<&'i [u8], AlterTable<'s, 'a>, nom::error::VerboseError<&'i [u8]>> where 'i: 's {
+pub fn alter_table<'i, 's, 'a>(
+    i: &'i [u8],
+    a: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], AlterTable<'s, 'a>, nom::error::VerboseError<&'i [u8]>>
+where
+    'i: 's,
+{
     let (remaining, (_, _, table, _)) = nom::sequence::tuple((
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("ALTER"),
@@ -299,7 +310,8 @@ mod tests {
                     TypeModifier::DefaultValue {
                         value: Some(Literal::SmallInteger(0))
                     }
-                ].into()
+                ]
+                .into()
             }
         );
     }

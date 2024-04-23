@@ -136,13 +136,6 @@ impl RaValueExpression {
                 outer.pop();
                 Ok(Self::SubQuery { query: s })
             }
-            ValueExpression::All => {
-                // TODO
-
-                Err(ParseSelectError::NotImplemented(
-                    "Parse ALL(*) Value Expression",
-                ))
-            }
             ValueExpression::List(elems) => {
                 let ra_elems: Vec<_> = elems
                     .iter()
@@ -402,11 +395,15 @@ impl RaValueExpression {
 
                         let first_possible_types = ra_first
                             .possible_type(scope)
-                            .map_err(|e| ParseSelectError::Other("Determine Type"))?
+                            .map_err(|_| ParseSelectError::DeterminePossibleTypes {
+                                expr: ra_first.clone(),
+                            })?
                             .compatible(&numeric_types);
                         let second_possible_types = ra_second
                             .possible_type(scope)
-                            .map_err(|e| ParseSelectError::Other("Determine Type"))?
+                            .map_err(|_| ParseSelectError::DeterminePossibleTypes {
+                                expr: ra_second.clone(),
+                            })?
                             .compatible(&numeric_types);
 
                         let resolved_type = first_possible_types
@@ -460,9 +457,11 @@ impl RaValueExpression {
                 dbg!(&base, &target_ty);
                 let ra_base = Self::parse_internal(scope, base, placeholders, ra_expr, outer)?;
 
-                let base_types = ra_base
-                    .possible_type(scope)
-                    .map_err(|e| ParseSelectError::Other("Getting Possible Types"))?;
+                let base_types = ra_base.possible_type(scope).map_err(|_| {
+                    ParseSelectError::DeterminePossibleTypes {
+                        expr: ra_base.clone(),
+                    }
+                })?;
                 dbg!(&base_types);
 
                 let compatible_types =
@@ -584,11 +583,7 @@ impl RaValueExpression {
             Self::Cast { target, .. } => {
                 Ok(types::PossibleTypes::fixed_with_conversions(target.clone()))
             }
-            Self::BinaryOperation {
-                first,
-                second,
-                operator,
-            } => match operator {
+            Self::BinaryOperation { operator, .. } => match operator {
                 BinaryOperator::Concat => Ok(types::PossibleTypes::fixed(DataType::Text)),
                 other => {
                     dbg!(&other);
@@ -596,27 +591,21 @@ impl RaValueExpression {
                 }
             },
             Self::Function(fc) => match fc {
-                RaFunction::LeftPad {
-                    base,
-                    length,
-                    padding,
-                } => Ok(types::PossibleTypes::fixed(DataType::Text)),
+                RaFunction::LeftPad { .. } => Ok(types::PossibleTypes::fixed(DataType::Text)),
                 RaFunction::Coalesce(tmp) => tmp.first().unwrap().possible_type(scope),
-                RaFunction::SetValue {
-                    name,
-                    value,
-                    is_called,
-                } => Ok(types::PossibleTypes::fixed(DataType::BigInteger)),
-                RaFunction::Lower(val) => Ok(types::PossibleTypes::fixed(DataType::Text)),
+                RaFunction::SetValue { .. } => {
+                    Ok(types::PossibleTypes::fixed(DataType::BigInteger))
+                }
+                RaFunction::Lower(_) => Ok(types::PossibleTypes::fixed(DataType::Text)),
                 RaFunction::Substr { .. } => Ok(types::PossibleTypes::fixed(DataType::Text)),
-                RaFunction::CurrentSchemas { implicit } => {
+                RaFunction::CurrentSchemas { .. } => {
                     todo!("CurrentSchemas type");
                 }
-                RaFunction::ArrayPosition { array, target } => {
+                RaFunction::ArrayPosition { .. } => {
                     todo!("ArrayPosition");
                 }
             },
-            Self::Renamed { name, value } => value.possible_type(scope),
+            Self::Renamed { value, .. } => value.possible_type(scope),
         }
     }
 
@@ -626,7 +615,15 @@ impl RaValueExpression {
             Self::OuterAttribute { ty, .. } => Some(ty.clone()),
             Self::Placeholder(_) => None,
             Self::Literal(lit) => lit.datatype(),
-            Self::List(elems) => todo!(),
+            Self::List(elems) => {
+                let mut types: Vec<_> =
+                    elems.iter().map(|e| e.datatype()).collect::<Option<_>>()?;
+                if types.windows(2).any(|tys| tys[0] != tys[1]) {
+                    todo!()
+                }
+
+                types.pop()
+            }
             Self::SubQuery { query } => {
                 let mut columns = query.get_columns();
 

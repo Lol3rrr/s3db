@@ -123,7 +123,6 @@ INNER JOIN dashboard ON ids.id = dashboard.id
 LEFT OUTER JOIN dashboard AS folder ON folder.id = dashboard.folder_id
 LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id
 ORDER BY dashboard.title ASC NULLS FIRST", Query::Select(_));
-
 }
 
 #[test]
@@ -133,7 +132,8 @@ fn grafana_query_4() {
 
 #[test]
 fn grafana_query_5() {
-    try_parse!("SELECT
+    try_parse!(
+        "SELECT
     dashboard.id,
     dashboard.uid,
     dashboard.title,
@@ -172,7 +172,9 @@ FROM (
 INNER JOIN dashboard ON ids.id = dashboard.id
 LEFT OUTER JOIN dashboard AS folder ON folder.id = dashboard.folder_id
 LEFT OUTER JOIN dashboard_tag ON dashboard.id = dashboard_tag.dashboard_id
-ORDER BY dashboard.title ASC NULLS FIRST", Query::Select(_));
+ORDER BY dashboard.title ASC NULLS FIRST",
+        Query::Select(_)
+    );
 }
 
 #[test]
@@ -216,7 +218,8 @@ fn vacuum() {
 
 #[test]
 fn pgbench_1() {
-    try_parse!("
+    try_parse!(
+        "
 select o.n, p.partstrat, pg_catalog.count(i.inhparent)
 from pg_catalog.pg_class as c
 join pg_catalog.pg_namespace as n on (n.oid = c.relnamespace)
@@ -228,12 +231,15 @@ left join pg_catalog.pg_inherits as i on (c.oid = i.inhparent)
 where c.relname = 'pgbench_accounts' and o.n is not null
 group by 1, 2
 order by 1 asc
-limit 1", Query::Select(_));
+limit 1",
+        Query::Select(_)
+    );
 }
 
 #[test]
 fn pgbench_1_altered() {
-    try_parse!("
+    try_parse!(
+        "
 select o.n, p.partstrat, pg_catalog.count(i.inhparent)
 from pg_catalog.pg_class as c
 join pg_catalog.pg_namespace as n on (n.oid = c.relnamespace)
@@ -244,12 +250,17 @@ left join pg_catalog.pg_partitioned_table as p on (p.partrelid = c.oid)
 left join pg_catalog.pg_inherits as i on (c.oid = i.inhparent)
 where c.relname = 'pgbench_accounts' and o.n is not null
 group by 1, 2
-order by 1 asc", Query::Select(_));
+order by 1 asc",
+        Query::Select(_)
+    );
 }
 
 #[test]
 fn alter_add_primary_key() {
-    try_parse!("alter table pgbench_branches add primary key (bid)", Query::AlterTable(_));
+    try_parse!(
+        "alter table pgbench_branches add primary key (bid)",
+        Query::AlterTable(_)
+    );
 }
 
 #[test]

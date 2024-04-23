@@ -14,7 +14,7 @@ pub use datatype::DataType;
 mod value;
 pub use value::ValueExpression;
 
-use crate::{Parser as _Parser, ArenaParser, CompatibleParser, arenas::Boxed};
+use crate::{arenas::Boxed, ArenaParser, CompatibleParser, Parser as _Parser};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOperator {
@@ -185,7 +185,7 @@ impl<'i, 'a> CompatibleParser for AggregateExpression<'i, 'a> {
             Self::Count(c) => AggregateExpression::Count(c.to_static()),
             Self::Sum(s) => AggregateExpression::Sum(s.to_static()),
             Self::AnyValue(v) => AggregateExpression::AnyValue(v.to_static()),
-            Self::Max(m) => AggregateExpression::Max(m.to_static())
+            Self::Max(m) => AggregateExpression::Max(m.to_static()),
         }
     }
 
@@ -203,13 +203,14 @@ impl<'i, 'a> ArenaParser<'i, 'a> for AggregateExpression<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
-        move |i| {
-            aggregate(i, a)
-        }
+        move |i| aggregate(i, a)
     }
 }
 
-fn aggregate<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], AggregateExpression<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+fn aggregate<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], AggregateExpression<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     nom::branch::alt((
         nom::combinator::map(
             nom::sequence::delimited(
@@ -334,7 +335,7 @@ pub fn type_modifier(i: &[u8]) -> IResult<&[u8], TypeModifier, nom::error::Verbo
 mod tests {
     use crate::select::{Select, TableExpression};
 
-    use crate::{macros::parser_parse, macros::arena_parser_parse, Condition, arenas::Boxed};
+    use crate::{arenas::Boxed, macros::arena_parser_parse, macros::parser_parse, Condition};
 
     use super::*;
 
@@ -394,10 +395,13 @@ mod tests {
                     relation: None,
                     column: Identifier("name".into())
                 })),
-                second: Boxed::new(ValueExpression::List(vec![
-                    ValueExpression::Literal(Literal::Str("first".into())),
-                    ValueExpression::Literal(Literal::Str("second".into()))
-                ].into())),
+                second: Boxed::new(ValueExpression::List(
+                    vec![
+                        ValueExpression::Literal(Literal::Str("first".into())),
+                        ValueExpression::Literal(Literal::Str("second".into()))
+                    ]
+                    .into()
+                )),
                 operator: BinaryOperator::In
             }
         );
@@ -514,19 +518,27 @@ mod tests {
                         name: "a".into(),
                         column_rename: None,
                     }),
-                    where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                        ValueExpression::Operator {
-                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: Some("d".into()),
-                                column: "uid".into()
-                            })),
-                            second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: Some("a".into()),
-                                column: "namespace_uid".into()
-                            })),
-                            operator: BinaryOperator::Equal
-                        }
-                    ).into())].into())),
+                    where_condition: Some(Condition::And(
+                        vec![Condition::Value(
+                            Box::new(ValueExpression::Operator {
+                                first: Boxed::new(ValueExpression::ColumnReference(
+                                    ColumnReference {
+                                        relation: Some("d".into()),
+                                        column: "uid".into()
+                                    }
+                                )),
+                                second: Boxed::new(ValueExpression::ColumnReference(
+                                    ColumnReference {
+                                        relation: Some("a".into()),
+                                        column: "namespace_uid".into()
+                                    }
+                                )),
+                                operator: BinaryOperator::Equal
+                            })
+                            .into()
+                        )]
+                        .into()
+                    )),
                     order_by: None,
                     group_by: None,
                     having: None,
@@ -601,7 +613,8 @@ mod tests {
                     values: vec![ValueExpression::ColumnReference(ColumnReference {
                         relation: None,
                         column: "name".into(),
-                    })].into(),
+                    })]
+                    .into(),
                     table: Some(TableExpression::Relation("users".into())),
                     where_condition: None,
                     order_by: None,
@@ -618,7 +631,6 @@ mod tests {
 
     #[test]
     fn case_when_then() {
-
         arena_parser_parse!(
             ValueExpression,
             "CASE field WHEN 'first' THEN 123 WHEN 'second' THEN 234 ELSE 0 END",
@@ -636,8 +648,11 @@ mod tests {
                         vec![ValueExpression::Literal(Literal::Str("second".into()))].into(),
                         ValueExpression::Literal(Literal::SmallInteger(234))
                     )
-                ].into(),
-                else_case: Some(Boxed::new(ValueExpression::Literal(Literal::SmallInteger(0)))),
+                ]
+                .into(),
+                else_case: Some(Boxed::new(ValueExpression::Literal(Literal::SmallInteger(
+                    0
+                )))),
             }
         );
     }

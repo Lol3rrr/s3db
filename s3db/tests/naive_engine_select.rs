@@ -1,5 +1,5 @@
-use pretty_assertions::{assert_eq, assert_str_eq};
 use bumpalo::Bump;
+use pretty_assertions::assert_eq;
 
 use s3db::{
     execution::{naive::NaiveEngine, Context, Execute, ExecuteResult},
@@ -53,7 +53,10 @@ async fn basic_select() {
     let arena = bumpalo::Bump::new();
 
     let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -63,11 +66,17 @@ async fn basic_select() {
     assert_eq!(0, content.parts.iter().flat_map(|p| p.rows.iter()).count());
 
     let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
     assert!(matches!(res, ExecuteResult::Create), "{:?}", res);
 
     let query = Query::parse("SELECT tablename FROM pg_tables".as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -89,7 +98,10 @@ async fn select_with_literal_return() {
     let arena = bumpalo::Bump::new();
 
     let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     let content = match res {
         ExecuteResult::Select { content, .. } => content,
@@ -106,11 +118,17 @@ async fn select_with_literal_return() {
     assert_eq!(0, content.parts.iter().flat_map(|p| p.rows.iter()).count());
 
     let query = Query::parse("CREATE TABLE testing (\"id\" TEXT)".as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
     assert!(matches!(res, ExecuteResult::Create), "{:?}", res);
 
     let query = Query::parse("SELECT tablename, 1 FROM pg_tables".as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
     dbg!(&res);
 
     let content = match res {
@@ -163,7 +181,10 @@ async fn execute_inner_join() {
     let query = Query::parse(query.as_bytes(), &arena).unwrap();
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -245,7 +266,7 @@ async fn left_outer_join() {
             .await
             .unwrap();
 
-        storage.commit_transaction(trans).await;
+        storage.commit_transaction(trans).await.unwrap();
 
         storage
     };
@@ -254,7 +275,10 @@ async fn left_outer_join() {
     let arena = bumpalo::Bump::new();
 
     let query = Query::parse(query.as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut Context::new(), &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut Context::new(), &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -320,7 +344,10 @@ async fn group_by_single_attribute() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     dbg!(&res);
 
@@ -359,7 +386,10 @@ async fn select_count_all() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -396,7 +426,10 @@ async fn select_count_attribute() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -432,7 +465,10 @@ async fn select_with_limit() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -474,7 +510,10 @@ async fn select_with_order() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -498,7 +537,10 @@ async fn select_with_order() {
 
     let query = "SELECT id, name FROM users ORDER BY id DESC";
     let query = Query::parse(query.as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -522,7 +564,10 @@ async fn select_with_order() {
 
     let query = "SELECT id, name FROM users ORDER BY id";
     let query = Query::parse(query.as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -596,7 +641,10 @@ async fn update_basic() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(ExecuteResult::Update { updated_rows: 1 }, res);
 
@@ -690,7 +738,10 @@ async fn update_with_from() {
 
     let query = "UPDATE orders SET completed = deliveries.delivered FROM deliveries WHERE orders.id = deliveries.order_id";
     let query = Query::parse(query.as_bytes(), &arena).unwrap();
-    let res = engine.execute(&query, &mut Context::new(), &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut Context::new(), &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(ExecuteResult::Update { updated_rows: 1 }, res);
 }
@@ -722,6 +773,7 @@ async fn delete_with_placeholders() {
     let prepared = engine.prepare(&query, &mut ctx).await.unwrap();
 
     // TODO
+    drop(prepared);
 }
 
 #[tokio::test]
@@ -745,7 +797,10 @@ async fn select_with_standard_cte() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -773,7 +828,10 @@ async fn select_with_recursive_cte() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -818,7 +876,10 @@ async fn select_all() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -858,7 +919,10 @@ async fn select_1() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -891,7 +955,10 @@ async fn setval() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -930,7 +997,10 @@ async fn like_operation() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -970,7 +1040,10 @@ async fn select_subquery_as_value() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     dbg!(&res);
 
@@ -1012,7 +1085,10 @@ async fn select_with_in_filter() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     dbg!(&res);
 
@@ -1057,7 +1133,10 @@ async fn select_with_table_column_rename() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     dbg!(&res);
 
@@ -1117,7 +1196,10 @@ async fn lateral_join() {
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     dbg!(&res);
 
@@ -1174,7 +1256,10 @@ from kickstarter_data;";
 
     let mut ctx = Context::new();
     ctx.transaction = Some(transaction);
-    let res = engine.execute(&query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(
         ExecuteResult::Select {
@@ -1208,7 +1293,10 @@ from kickstarter_data
     join lateral (select (goal_usd - pledged_usd) as amt_from_goal) ufg ON true;";
     let lateral_query = Query::parse(lateral_query_str.as_bytes(), &arena).unwrap();
 
-    let lateral_res = engine.execute(&lateral_query, &mut ctx, &bumpalo::Bump::new()).await.unwrap();
+    let lateral_res = engine
+        .execute(&lateral_query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
 
     assert_eq!(res, lateral_res);
 }

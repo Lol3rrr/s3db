@@ -8,7 +8,10 @@ macro_rules! execute {
     ($engine:expr, $ctx:expr, $query:literal) => {{
         let arena = bumpalo::Bump::new();
         let query = Query::parse($query.as_bytes(), &arena).unwrap();
-        $engine.execute(&query, $ctx, &bumpalo::Bump::new()).await.unwrap()
+        $engine
+            .execute(&query, $ctx, &bumpalo::Bump::new())
+            .await
+            .unwrap()
     }};
 }
 

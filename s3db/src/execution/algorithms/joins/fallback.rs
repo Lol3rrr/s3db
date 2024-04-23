@@ -1,4 +1,5 @@
 use super::{EvaluateConditions, Join};
+use crate::storage;
 
 pub struct Fallback<P, F> {
     primary: P,
@@ -21,15 +22,21 @@ where
         self.primary.compatible(args, ctx) || self.fallback.compatible(args, ctx)
     }
 
-    async fn execute(
+    async fn execute<'lr, 'rr>(
         &self,
         args: super::JoinArguments<'_>,
         ctx: super::JoinContext,
-        result_columns: Vec<(String, sql::DataType, Vec<sql::TypeModifier>)>,
-        left_result: crate::storage::EntireRelation,
-        right_result: crate::storage::EntireRelation,
+        result_columns: Vec<storage::ColumnSchema>,
+        left_result: futures::stream::LocalBoxStream<'lr, storage::Row>,
+        right_result: futures::stream::LocalBoxStream<'rr, storage::Row>,
         condition_eval: &CE,
-    ) -> Result<crate::storage::EntireRelation, crate::execution::naive::EvaulateRaError<SE>> {
+    ) -> Result<
+        (
+            storage::TableSchema,
+            futures::stream::BoxStream<storage::Row>,
+        ),
+        crate::execution::naive::EvaulateRaError<SE>,
+    > {
         assert!(
             <Self as Join<CE, SE>>::compatible(self, &args, &ctx),
             "Not compatible"

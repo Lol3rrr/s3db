@@ -84,6 +84,21 @@ pub trait Storage {
         transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<EntireRelation, Self::LoadingError>>;
 
+    fn stream_relation<'own, 'name, 'transaction, 'stream>(
+        &'own self,
+        name: &'name str,
+        transaction: &'transaction Self::TransactionGuard,
+    ) -> impl Future<
+        Output = Result<
+            (TableSchema, futures::stream::LocalBoxStream<'stream, Row>),
+            Self::LoadingError,
+        >,
+    >
+    where
+        'own: 'stream,
+        'name: 'stream,
+        'transaction: 'stream;
+
     fn relation_exists(
         &self,
         name: &str,
@@ -212,5 +227,16 @@ impl ModifyRelation {
 impl EntireRelation {
     pub fn into_rows(self) -> impl Iterator<Item = Row> {
         self.parts.into_iter().flat_map(|p| p.rows.into_iter())
+    }
+
+    pub fn from_parts(schema: TableSchema, rows: Vec<Row>) -> Self {
+        Self {
+            columns: schema
+                .rows
+                .into_iter()
+                .map(|c| (c.name, c.ty, c.mods))
+                .collect(),
+            parts: vec![PartialRelation { rows }],
+        }
     }
 }

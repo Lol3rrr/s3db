@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{ArenaParser as _, CompatibleParser, Parser as _, arenas::Boxed};
+use crate::{arenas::Boxed, ArenaParser as _, CompatibleParser, Parser as _};
 
 use super::{common::ValueExpression, condition::Condition};
 
@@ -51,24 +51,25 @@ impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
             table: self.table.as_ref().map(|t| t.to_static()),
             where_condition: self.where_condition.as_ref().map(|c| c.to_static()),
             order_by: self.order_by.as_ref().map(|orders| {
-                crate::arenas::Vec::Heap(orders
-                    .iter()
-                    .map(|order| Ordering {
-                        column: match &order.column {
-                            OrderAttribute::ColumnRef(c) => {
-                                OrderAttribute::ColumnRef(c.to_static())
-                            }
-                            OrderAttribute::ColumnIndex(i) => OrderAttribute::ColumnIndex(*i),
-                        },
-                        order: order.order.clone(),
-                        nulls: order.nulls.clone(),
-                    })
-                    .collect())
+                crate::arenas::Vec::Heap(
+                    orders
+                        .iter()
+                        .map(|order| Ordering {
+                            column: match &order.column {
+                                OrderAttribute::ColumnRef(c) => {
+                                    OrderAttribute::ColumnRef(c.to_static())
+                                }
+                                OrderAttribute::ColumnIndex(i) => OrderAttribute::ColumnIndex(*i),
+                            },
+                            order: order.order.clone(),
+                            nulls: order.nulls.clone(),
+                        })
+                        .collect(),
+                )
             }),
-            group_by: self
-                .group_by
-                .as_ref()
-                .map(|idents| crate::arenas::Vec::Heap(idents.iter().map(|i| i.to_static()).collect())),
+            group_by: self.group_by.as_ref().map(|idents| {
+                crate::arenas::Vec::Heap(idents.iter().map(|i| i.to_static()).collect())
+            }),
             having: self.having.as_ref().map(|h| h.to_static()),
             limit: self.limit.clone(),
             for_update: self.for_update,
@@ -86,7 +87,11 @@ impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
             .map(|v| v.parameter_count())
             .max()
             .unwrap_or(0);
-        let table_max = self.table.as_ref().map(|t| t.parameter_count()).unwrap_or(0);
+        let table_max = self
+            .table
+            .as_ref()
+            .map(|t| t.parameter_count())
+            .unwrap_or(0);
         let where_max = self
             .where_condition
             .as_ref()
@@ -105,8 +110,7 @@ impl<'s, 'a> CompatibleParser for Select<'s, 'a> {
     }
 }
 
-impl<'i, 'a> crate::ArenaParser<'i, 'a> for Select<'i, 'a>
-{
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for Select<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -121,8 +125,7 @@ impl<'i, 'a> crate::ArenaParser<'i, 'a> for Select<'i, 'a>
 pub fn select<'i, 'a>(
     i: &'i [u8],
     a: &'a bumpalo::Bump,
-) -> IResult<&'i [u8], Select<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
-{
+) -> IResult<&'i [u8], Select<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("SELECT"),
         nom::character::complete::multispace1,
@@ -295,7 +298,8 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("name".into())
-                })].into(),
+                })]
+                .into(),
                 table: Some(TableExpression::Relation(Identifier("users".into()))),
                 where_condition: None,
                 order_by: None,
@@ -313,14 +317,15 @@ mod tests {
 
     #[test]
     fn select_with_alias_without_as() {
-       arena_parser_parse!(
+        arena_parser_parse!(
             Select,
             "SELECT u.name FROM user u",
             Select {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: Some(Identifier("u".into())),
                     column: Identifier("name".into())
-                })].into(),
+                })]
+                .into(),
                 table: Some(TableExpression::Renamed {
                     inner: Boxed::new(TableExpression::Relation(Identifier("user".into()))),
                     name: Identifier("u".into()),
@@ -345,18 +350,23 @@ mod tests {
             Select {
                 values: vec![ValueExpression::AggregateExpression(
                     AggregateExpression::Count(Boxed::new(ValueExpression::All))
-                )].into(),
+                )]
+                .into(),
                 table: Some(TableExpression::Relation(Identifier("api_key".into()))),
-                where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                    ValueExpression::Operator {
-                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier("service_account_id".into())
-                        })),
-                        second: Boxed::new(ValueExpression::Null),
-                        operator: sql::BinaryOperator::IsNot
-                    }
-                ).into())].into())),
+                where_condition: Some(Condition::And(
+                    vec![Condition::Value(
+                        Box::new(ValueExpression::Operator {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: Identifier("service_account_id".into())
+                            })),
+                            second: Boxed::new(ValueExpression::Null),
+                            operator: sql::BinaryOperator::IsNot
+                        })
+                        .into()
+                    )]
+                    .into()
+                )),
                 order_by: None,
                 group_by: None,
                 having: None,
@@ -494,17 +504,21 @@ mod tests {
                 values: vec![ValueExpression::ColumnReference(ColumnReference {
                     relation: None,
                     column: Identifier("name".into())
-                })].into(),
+                })]
+                .into(),
                 table: Some(TableExpression::Relation(Identifier("users".into()))),
                 where_condition: None,
-                order_by: Some(vec![Ordering {
-                    column: OrderAttribute::ColumnRef(ColumnReference {
-                        relation: Some("users".into()),
-                        column: "age".into(),
-                    }),
-                    order: OrderBy::Ascending,
-                    nulls: NullOrdering::Last
-                }].into()),
+                order_by: Some(
+                    vec![Ordering {
+                        column: OrderAttribute::ColumnRef(ColumnReference {
+                            relation: Some("users".into()),
+                            column: "age".into(),
+                        }),
+                        order: OrderBy::Ascending,
+                        nulls: NullOrdering::Last
+                    }]
+                    .into()
+                ),
                 group_by: None,
                 having: None,
                 limit: None,
@@ -536,33 +550,39 @@ mod tests {
                                 relation: None,
                                 column: "n".into()
                             })),
-                            second: Boxed::new(ValueExpression::Literal(sql::Literal::SmallInteger(
-                                1
-                            ))),
+                            second: Boxed::new(ValueExpression::Literal(
+                                sql::Literal::SmallInteger(1)
+                            )),
                             operator: BinaryOperator::Add,
-                        }].into(),
+                        }]
+                        .into(),
                         table: Some(TableExpression::Relation("cte".into())),
-                        where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                            ValueExpression::Operator {
-                                first: Boxed::new(ValueExpression::ColumnReference(
-                                    ColumnReference {
-                                        relation: None,
-                                        column: "n".into()
-                                    }
-                                )),
-                                second: Boxed::new(ValueExpression::Literal(
-                                    sql::Literal::SmallInteger(2)
-                                )),
-                                operator: BinaryOperator::Less
-                            }
-                        ).into())].into())),
+                        where_condition: Some(Condition::And(
+                            vec![Condition::Value(
+                                Box::new(ValueExpression::Operator {
+                                    first: Boxed::new(ValueExpression::ColumnReference(
+                                        ColumnReference {
+                                            relation: None,
+                                            column: "n".into()
+                                        }
+                                    )),
+                                    second: Boxed::new(ValueExpression::Literal(
+                                        sql::Literal::SmallInteger(2)
+                                    )),
+                                    operator: BinaryOperator::Less
+                                })
+                                .into()
+                            )]
+                            .into()
+                        )),
                         order_by: None,
                         group_by: None,
                         having: None,
                         limit: None,
                         for_update: None,
                         combine: None
-                    }).into()
+                    })
+                    .into()
                 )),
             }
         );
@@ -576,24 +596,32 @@ mod tests {
             Select {
                 values: vec![ValueExpression::AggregateExpression(
                     AggregateExpression::Count(Boxed::new(ValueExpression::All))
-                )].into(),
+                )]
+                .into(),
                 table: Some(TableExpression::Relation("orders".into())),
                 where_condition: None,
                 order_by: None,
-                group_by: Some(vec![GroupAttribute::ColumnRef(ColumnReference {
-                    relation: None,
-                    column: "uid".into(),
-                })].into()),
-                having: Some(Condition::And(vec![Condition::Value(Box::new(
-                    ValueExpression::Operator {
-                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: "uid".into(),
-                        })),
-                        second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(0))),
-                        operator: BinaryOperator::Greater
-                    }
-                ).into())].into())),
+                group_by: Some(
+                    vec![GroupAttribute::ColumnRef(ColumnReference {
+                        relation: None,
+                        column: "uid".into(),
+                    })]
+                    .into()
+                ),
+                having: Some(Condition::And(
+                    vec![Condition::Value(
+                        Box::new(ValueExpression::Operator {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: "uid".into(),
+                            })),
+                            second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(0))),
+                            operator: BinaryOperator::Greater
+                        })
+                        .into()
+                    )]
+                    .into()
+                )),
                 limit: None,
                 for_update: None,
                 combine: None,

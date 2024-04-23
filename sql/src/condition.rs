@@ -1,7 +1,7 @@
 use nom::{IResult, Parser};
 
 use super::ValueExpression;
-use crate::{ArenaParser, CompatibleParser, arenas::Boxed};
+use crate::{arenas::Boxed, ArenaParser, CompatibleParser};
 
 #[derive(Debug, PartialEq)]
 pub enum Condition<'s, 'a> {
@@ -29,14 +29,18 @@ impl<'s, 'a> CompatibleParser for Condition<'s, 'a> {
 
     fn to_static(&self) -> Self::StaticVersion {
         match self {
-            Self::And(parts) => Condition::And(crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())),
-            Self::Or(parts) => Condition::Or(crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())),
+            Self::And(parts) => Condition::And(crate::arenas::Vec::Heap(
+                parts.iter().map(|p| p.to_static()).collect(),
+            )),
+            Self::Or(parts) => Condition::Or(crate::arenas::Vec::Heap(
+                parts.iter().map(|p| p.to_static()).collect(),
+            )),
             Self::Value(v) => Condition::Value(v.to_static()),
         }
     }
 }
 
-impl<'i, 'a> ArenaParser<'i, 'a> for Condition<'i, 'a>  {
+impl<'i, 'a> ArenaParser<'i, 'a> for Condition<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -48,7 +52,10 @@ impl<'i, 'a> ArenaParser<'i, 'a> for Condition<'i, 'a>  {
 }
 
 #[deprecated]
-pub fn condition<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], Condition<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+pub fn condition<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Condition<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     #[derive(Debug, PartialEq)]
     enum Connector {
         And,
@@ -64,7 +71,8 @@ pub fn condition<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [
             nom::bytes::complete::tag(")"),
         ))
         .map(|(_, _, c, _, _)| c),
-        ValueExpression::parse_arena(arena).map(|v| Condition::Value(crate::arenas::Boxed::arena(arena, v))),
+        ValueExpression::parse_arena(arena)
+            .map(|v| Condition::Value(crate::arenas::Boxed::arena(arena, v))),
     ))(i)?;
 
     let mut conditions = bumpalo::vec![in arena; tmp];
@@ -99,7 +107,8 @@ pub fn condition<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [
                 nom::bytes::complete::tag(")"),
             ))
             .map(|(_, _, c, _, _)| c),
-            ValueExpression::parse_arena(arena).map(|v| Condition::Value(crate::arenas::Boxed::arena(arena, v))),
+            ValueExpression::parse_arena(arena)
+                .map(|v| Condition::Value(crate::arenas::Boxed::arena(arena, v))),
         ))(rem)
         {
             Ok(c) => c,
@@ -162,24 +171,37 @@ mod tests {
         arena_parser_parse!(
             Condition,
             "name = 'first' AND id = 132",
-            Condition::And(vec![
-                Condition::Value(Boxed::new(ValueExpression::Operator {
-                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                        relation: None,
-                        column: Identifier("name".into())
-                    })),
-                    second: Boxed::new(ValueExpression::Literal(Literal::Str("first".into()))),
-                    operator: BinaryOperator::Equal
-                }).into()),
-                Condition::Value(Boxed::new(ValueExpression::Operator {
-                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                        relation: None,
-                        column: Identifier("id".into())
-                    })),
-                    second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(132))),
-                    operator: BinaryOperator::Equal
-                }).into())
-            ].into())
+            Condition::And(
+                vec![
+                    Condition::Value(
+                        Boxed::new(ValueExpression::Operator {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: Identifier("name".into())
+                            })),
+                            second: Boxed::new(ValueExpression::Literal(Literal::Str(
+                                "first".into()
+                            ))),
+                            operator: BinaryOperator::Equal
+                        })
+                        .into()
+                    ),
+                    Condition::Value(
+                        Boxed::new(ValueExpression::Operator {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: Identifier("id".into())
+                            })),
+                            second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(
+                                132
+                            ))),
+                            operator: BinaryOperator::Equal
+                        })
+                        .into()
+                    )
+                ]
+                .into()
+            )
         );
     }
 
@@ -251,19 +273,39 @@ mod tests {
         arena_parser_parse!(
             Condition,
             "true AND false OR false OR true AND true",
-            Condition::Or(vec![
-                Condition::And(vec![
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))).into()),
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(false))).into())
-                ].into()),
-                Condition::And(vec![Condition::Value(Box::new(ValueExpression::Literal(
-                    Literal::Bool(false)
-                )).into()),].into()),
-                Condition::And(vec![
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))).into()),
-                    Condition::Value(Box::new(ValueExpression::Literal(Literal::Bool(true))).into())
-                ].into()),
-            ].into())
+            Condition::Or(
+                vec![
+                    Condition::And(
+                        vec![
+                            Condition::Value(
+                                Box::new(ValueExpression::Literal(Literal::Bool(true))).into()
+                            ),
+                            Condition::Value(
+                                Box::new(ValueExpression::Literal(Literal::Bool(false))).into()
+                            )
+                        ]
+                        .into()
+                    ),
+                    Condition::And(
+                        vec![Condition::Value(
+                            Box::new(ValueExpression::Literal(Literal::Bool(false))).into()
+                        ),]
+                        .into()
+                    ),
+                    Condition::And(
+                        vec![
+                            Condition::Value(
+                                Box::new(ValueExpression::Literal(Literal::Bool(true))).into()
+                            ),
+                            Condition::Value(
+                                Box::new(ValueExpression::Literal(Literal::Bool(true))).into()
+                            )
+                        ]
+                        .into()
+                    ),
+                ]
+                .into()
+            )
         );
     }
 
@@ -272,19 +314,23 @@ mod tests {
         arena_parser_parse!(
             Condition,
             "customer.ID=orders.customer INNER",
-            Condition::And(vec![Condition::Value(Boxed::new(
-                ValueExpression::Operator {
-                    first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                        relation: Some(Identifier("customer".into())),
-                        column: Identifier("ID".into())
-                    })),
-                    second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                        relation: Some(Identifier("orders".into())),
-                        column: Identifier("customer".into())
-                    })),
-                    operator: BinaryOperator::Equal
-                }
-            ).into())].into()),
+            Condition::And(
+                vec![Condition::Value(
+                    Boxed::new(ValueExpression::Operator {
+                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                            relation: Some(Identifier("customer".into())),
+                            column: Identifier("ID".into())
+                        })),
+                        second: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                            relation: Some(Identifier("orders".into())),
+                            column: Identifier("customer".into())
+                        })),
+                        operator: BinaryOperator::Equal
+                    })
+                    .into()
+                )]
+                .into()
+            ),
             " INNER".as_bytes()
         );
     }
@@ -294,12 +340,18 @@ mod tests {
         arena_parser_parse!(
             Condition,
             "NOT table.field",
-            Condition::And(vec![Condition::Value(Boxed::new(ValueExpression::Not(
-                Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                    relation: Some("table".into()),
-                    column: "field".into()
-                }))
-            )).into())].into())
+            Condition::And(
+                vec![Condition::Value(
+                    Boxed::new(ValueExpression::Not(Boxed::new(
+                        ValueExpression::ColumnReference(ColumnReference {
+                            relation: Some("table".into()),
+                            column: "field".into()
+                        })
+                    )))
+                    .into()
+                )]
+                .into()
+            )
         );
     }
 }

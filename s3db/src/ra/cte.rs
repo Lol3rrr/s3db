@@ -95,7 +95,7 @@ impl CTE {
                     };
 
                     match scope.context.as_mut() {
-                        Some(ctx) => {
+                        Some(_ctx) => {
                             return Err(ParseSelectError::NotImplemented(
                                 "Parse Recursive with Context",
                             ));
@@ -162,8 +162,8 @@ mod tests {
 
     use crate::ra::{Attribute, AttributeId};
     use sql::{
-        BinaryOperator, ColumnReference, Combination, Literal, Select, TableExpression,
-        ValueExpression, arenas::Boxed
+        arenas::Boxed, BinaryOperator, ColumnReference, Combination, Literal, Select,
+        TableExpression, ValueExpression,
     };
 
     use super::*;
@@ -187,7 +187,8 @@ mod tests {
                     combine: None,
                 }),
                 columns: None,
-            }].into(),
+            }]
+            .into(),
             recursive: false,
         };
 
@@ -241,11 +242,12 @@ mod tests {
                                         column: "n".into(),
                                     },
                                 )),
-                                second: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(
-                                    1,
-                                ))),
+                                second: Boxed::new(ValueExpression::Literal(
+                                    Literal::SmallInteger(1),
+                                )),
                                 operator: BinaryOperator::Add,
-                            }].into(),
+                            }]
+                            .into(),
                             table: Some(TableExpression::Relation("something".into())),
                             where_condition: None,
                             order_by: None,
@@ -254,11 +256,13 @@ mod tests {
                             limit: None,
                             for_update: None,
                             combine: None,
-                        }).into(),
+                        })
+                        .into(),
                     )),
                 }),
                 columns: Some(vec!["n".into()].into()),
-            }].into(),
+            }]
+            .into(),
             recursive: true,
         };
 

@@ -19,7 +19,11 @@ bumpalo = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
-criterion = { version = "0.5.1", features = ["async_futures"] }
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+iai-callgrind = { version = "0.10.2" }
+
+[target.'cfg(flamegraph)'.dependencies]
+pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
 
 [[bench]]
 name = "parse"
@@ -27,4 +31,8 @@ harness = false
 
 [[bench]]
 name = "execute"
+harness = false
+
+[[bench]]
+name = "execute-iai"
 harness = false

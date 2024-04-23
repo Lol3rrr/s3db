@@ -336,14 +336,13 @@ impl RaExpression {
                 }
             }
             Self::EmptyRelation => None,
-            Self::Aggregation {
-                inner,
-                attributes,
-                aggregation_condition,
-            } => None, // TODO
+            Self::Aggregation { inner, .. } => inner.get_source(attribute), // TODO
             Self::Limit { inner, .. } => inner.get_source(attribute),
             Self::OrderBy { inner, .. } => inner.get_source(attribute),
-            Self::CTE { name, columns } => None, // TODO
+            Self::CTE {
+                name: _name,
+                columns: _columns,
+            } => None, // TODO
             Self::Chain { parts } => parts.iter().find_map(|p| p.get_source(attribute)),
         }
     }
@@ -585,7 +584,7 @@ impl RaExpression {
                         let columns: Vec<_> = inner_columns
                             .into_iter()
                             .zip(columns.iter())
-                            .map(|((n1, n2, ty, id), renamed)| ProjectionAttribute {
+                            .map(|((_, n2, ty, id), renamed)| ProjectionAttribute {
                                 id: scope.attribute_id(),
                                 name: renamed.0.to_string(),
                                 value: RaValueExpression::Attribute {
@@ -742,8 +741,8 @@ impl RaExpression {
 mod tests {
     use super::*;
 
-    use sql::{Literal, Query};
     use bumpalo::Bump;
+    use sql::{Literal, Query};
 
     use pretty_assertions::assert_eq;
 
@@ -797,11 +796,15 @@ mod tests {
     #[test]
     fn basic_select_where() {
         let arena = Bump::new();
-        let parsed =
-            match Query::parse("SELECT user FROM testing WHERE user = 'bot'".as_bytes(), &arena).unwrap() {
-                Query::Select(s) => s,
-                other => panic!("{:?}", other),
-            };
+        let parsed = match Query::parse(
+            "SELECT user FROM testing WHERE user = 'bot'".as_bytes(),
+            &arena,
+        )
+        .unwrap()
+        {
+            Query::Select(s) => s,
+            other => panic!("{:?}", other),
+        };
 
         let schemas: Schemas = [(
             "testing".to_string(),
@@ -863,11 +866,15 @@ mod tests {
     #[test]
     fn basic_select_where_with_placeholders() {
         let arena = Bump::new();
-        let parsed =
-            match Query::parse("SELECT user FROM testing WHERE user = $1".as_bytes(), &arena).unwrap() {
-                Query::Select(s) => s,
-                other => panic!("{:?}", other),
-            };
+        let parsed = match Query::parse(
+            "SELECT user FROM testing WHERE user = $1".as_bytes(),
+            &arena,
+        )
+        .unwrap()
+        {
+            Query::Select(s) => s,
+            other => panic!("{:?}", other),
+        };
 
         let schemas: Schemas = [(
             "testing".to_string(),
@@ -1549,7 +1556,7 @@ mod error_tests {
         .into_iter()
         .collect();
 
-        let err = RaExpression::parse_select(&select_query, &schemas).unwrap_err();
+        let _err = RaExpression::parse_select(&select_query, &schemas).unwrap_err();
 
         // TODO
     }

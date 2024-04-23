@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{Parser as _, CompatibleParser, arenas::Boxed};
+use crate::{arenas::Boxed, CompatibleParser, Parser as _};
 
 use super::{query, DataType, Identifier, Query};
 
@@ -11,8 +11,7 @@ pub struct Prepare<'s, 'a> {
     pub query: Boxed<'a, Query<'s, 'a>>,
 }
 
-impl<'i, 'a> crate::ArenaParser<'i, 'a> for Prepare<'i, 'a>
-{
+impl<'i, 'a> crate::ArenaParser<'i, 'a> for Prepare<'i, 'a> {
     fn parse_arena(
         a: &'a bumpalo::Bump,
     ) -> impl Fn(&'i [u8]) -> IResult<&'i [u8], Self, nom::error::VerboseError<&'i [u8]>> {
@@ -43,8 +42,7 @@ impl<'s, 'a> CompatibleParser for Prepare<'s, 'a> {
 pub fn parse<'i, 'a>(
     i: &'i [u8],
     arena: &'a bumpalo::Bump,
-) -> IResult<&'i [u8], Prepare<'i, 'a>, nom::error::VerboseError<&'i [u8]>>
-{
+) -> IResult<&'i [u8], Prepare<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (i, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("PREPARE"),
         nom::character::complete::multispace1,
@@ -90,8 +88,8 @@ pub fn parse<'i, 'a>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        macros::arena_parser_parse, BinaryOperator, ColumnReference, Condition, Select, TableExpression,
-        ValueExpression,
+        macros::arena_parser_parse, BinaryOperator, ColumnReference, Condition, Select,
+        TableExpression, ValueExpression,
     };
 
     use super::*;
@@ -114,7 +112,8 @@ mod tests {
                     limit: None,
                     for_update: None,
                     combine: None,
-                })).into()
+                }))
+                .into()
             }
         );
     }
@@ -130,23 +129,30 @@ mod tests {
                 query: Box::new(Query::Select(Select {
                     values: vec![ValueExpression::All].into(),
                     table: Some(TableExpression::Relation("users".into())),
-                    where_condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                        ValueExpression::Operator {
-                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                                relation: None,
-                                column: "id".into(),
-                            })),
-                            second: Boxed::new(ValueExpression::Placeholder(1)),
-                            operator: BinaryOperator::Equal
-                        }
-                    ).into())].into())),
+                    where_condition: Some(Condition::And(
+                        vec![Condition::Value(
+                            Box::new(ValueExpression::Operator {
+                                first: Boxed::new(ValueExpression::ColumnReference(
+                                    ColumnReference {
+                                        relation: None,
+                                        column: "id".into(),
+                                    }
+                                )),
+                                second: Boxed::new(ValueExpression::Placeholder(1)),
+                                operator: BinaryOperator::Equal
+                            })
+                            .into()
+                        )]
+                        .into()
+                    )),
                     having: None,
                     order_by: None,
                     group_by: None,
                     limit: None,
                     for_update: None,
                     combine: None,
-                })).into()
+                }))
+                .into()
             }
         );
     }

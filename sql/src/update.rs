@@ -1,6 +1,6 @@
 use nom::{IResult, Parser};
 
-use crate::{CompatibleParser, Parser as _, ArenaParser};
+use crate::{ArenaParser, CompatibleParser, Parser as _};
 
 use super::{Condition, Identifier, ValueExpression};
 
@@ -27,11 +27,12 @@ impl<'s, 'a> CompatibleParser for Update<'s, 'a> {
     fn to_static(&self) -> Self::StaticVersion {
         Update {
             table: self.table.to_static(),
-            fields: crate::arenas::Vec::Heap(self
-                .fields
-                .iter()
-                .map(|f| (f.0.to_static(), f.1.to_static()))
-                .collect()),
+            fields: crate::arenas::Vec::Heap(
+                self.fields
+                    .iter()
+                    .map(|f| (f.0.to_static(), f.1.to_static()))
+                    .collect(),
+            ),
             condition: self.condition.as_ref().map(|c| c.to_static()),
             from: self.from.as_ref().map(|f| f.to_static()),
         }
@@ -76,7 +77,10 @@ impl<'i, 'a> ArenaParser<'i, 'a> for Update<'i, 'a> {
 }
 
 #[deprecated]
-pub fn update<'i, 'a>(i: &'i [u8], arena: &'a bumpalo::Bump) -> IResult<&'i [u8], Update<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
+pub fn update<'i, 'a>(
+    i: &'i [u8],
+    arena: &'a bumpalo::Bump,
+) -> IResult<&'i [u8], Update<'i, 'a>, nom::error::VerboseError<&'i [u8]>> {
     let (remaining, (_, _, table)) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("UPDATE"),
         nom::character::complete::multispace1,
@@ -154,8 +158,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
-        common::FunctionCall, macros::arena_parser_parse, BinaryOperator, ColumnReference, DataType,
-        Literal, arenas::Boxed
+        arenas::Boxed, common::FunctionCall, macros::arena_parser_parse, BinaryOperator,
+        ColumnReference, DataType, Literal,
     };
 
     use super::*;
@@ -170,17 +174,24 @@ mod tests {
                 fields: vec![(
                     Identifier("name".into()),
                     ValueExpression::Literal(Literal::Str("changed".into()))
-                )].into(),
-                condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                    ValueExpression::Operator {
-                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier("name".into()),
-                        })),
-                        second: Boxed::new(ValueExpression::Literal(Literal::Str("other".into()))),
-                        operator: BinaryOperator::Equal
-                    }
-                ).into())].into())),
+                )]
+                .into(),
+                condition: Some(Condition::And(
+                    vec![Condition::Value(
+                        Box::new(ValueExpression::Operator {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: Identifier("name".into()),
+                            })),
+                            second: Boxed::new(ValueExpression::Literal(Literal::Str(
+                                "other".into()
+                            ))),
+                            operator: BinaryOperator::Equal
+                        })
+                        .into()
+                    )]
+                    .into()
+                )),
                 from: None,
             }
         );
@@ -242,10 +253,12 @@ mod tests {
                         base: Boxed::new(ValueExpression::Operator {
                             first: Boxed::new(ValueExpression::Literal(Literal::Str("".into()))),
                             second: Boxed::new(ValueExpression::TypeCast {
-                                base: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                                    relation: None,
-                                    column: Identifier("id".into())
-                                })),
+                                base: Boxed::new(ValueExpression::ColumnReference(
+                                    ColumnReference {
+                                        relation: None,
+                                        column: Identifier("id".into())
+                                    }
+                                )),
                                 target_ty: DataType::Text
                             }),
                             operator: BinaryOperator::Concat
@@ -253,17 +266,22 @@ mod tests {
                         length: Literal::SmallInteger(9),
                         padding: Literal::Str("0".into())
                     })
-                )].into(),
-                condition: Some(Condition::And(vec![Condition::Value(Box::new(
-                    ValueExpression::Operator {
-                        first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
-                            relation: None,
-                            column: Identifier("uid".into())
-                        })),
-                        second: Boxed::new(ValueExpression::Null),
-                        operator: BinaryOperator::Is
-                    }
-                ).into())].into())),
+                )]
+                .into(),
+                condition: Some(Condition::And(
+                    vec![Condition::Value(
+                        Box::new(ValueExpression::Operator {
+                            first: Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+                                relation: None,
+                                column: Identifier("uid".into())
+                            })),
+                            second: Boxed::new(ValueExpression::Null),
+                            operator: BinaryOperator::Is
+                        })
+                        .into()
+                    )]
+                    .into()
+                )),
                 from: None,
             }
         );

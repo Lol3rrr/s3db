@@ -55,10 +55,7 @@ impl Message {
     where
         R: tokio::io::AsyncRead + Unpin,
     {
-        let raw_type = reader
-            .read_u8()
-            .await
-            .map_err(ParseMessageError::Receive)?;
+        let raw_type = reader.read_u8().await.map_err(ParseMessageError::Receive)?;
         let length = reader
             .read_i32()
             .await
