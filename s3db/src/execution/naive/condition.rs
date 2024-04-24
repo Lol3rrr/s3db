@@ -3,11 +3,10 @@ use super::{pattern, value, EvaulateRaError};
 use futures::{future::FutureExt, stream::StreamExt};
 use std::collections::HashMap;
 
-use crate::{
-    ra::{self, AttributeId},
-    storage::{self, Data},
-};
+use crate::ra::{self, AttributeId};
+
 use sql::DataType;
+use storage::{self, Data};
 
 #[derive(Debug, PartialEq)]
 pub enum CondExprInstruction<'expr, 'outer, 'placeholders, 'ctes> {

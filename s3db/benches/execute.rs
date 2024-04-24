@@ -1,7 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
-use s3db::{execution::Execute, storage::Storage};
+use s3db::execution::Execute;
+
 use sql::CompatibleParser;
+use storage::Storage;
 
 macro_rules! benchmark_query {
     ($query:expr, $rows:expr, $group:expr, $benchname:literal) => {{
@@ -9,7 +11,7 @@ macro_rules! benchmark_query {
             .unwrap()
             .to_static();
 
-        let storage = s3db::storage::inmemory::InMemoryStorage::new();
+        let storage = storage::inmemory::InMemoryStorage::new();
 
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
@@ -30,8 +32,8 @@ macro_rules! benchmark_query {
 
             let mut row_iter = (0..$rows).map(|i| {
                 vec![
-                    s3db::storage::Data::Integer(i),
-                    s3db::storage::Data::Text(format!("name-{}", i)),
+                    storage::Data::Integer(i),
+                    storage::Data::Text(format!("name-{}", i)),
                 ]
             });
             storage

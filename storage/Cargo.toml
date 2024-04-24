@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+sql = { path = "../sql" }
+
+futures = "0.3.30"
+tracing = "0.1.40"
 
 [target.'cfg(not(loom))'.dependencies]
 tokio = { version = "1.36.0", default-features = false, features = ["io-util", "rt", "net", "macros", "time"] }

@@ -1,13 +1,12 @@
 use bumpalo::Bump;
 use pretty_assertions::assert_eq;
 
-use s3db::{
-    execution::{naive::NaiveEngine, Context, Execute, ExecuteResult},
-    storage::{
-        self, inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, Row, Storage,
-    },
-};
+use s3db::execution::{naive::NaiveEngine, Context, Execute, ExecuteResult};
+
 use sql::{DataType, Query};
+use storage::{
+    self, inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, Row, Storage,
+};
 
 macro_rules! storage_setup {
     ($(($table_name:literal, $fields:expr, $rows:expr)),*) => {{

@@ -12,9 +12,10 @@ use crate::{
     execution::algorithms::{self, joins::Join},
     postgres::FormatCode,
     ra::{self, AttributeId, RaExpression, RaUpdate},
-    storage::{self, Data, Storage, TableSchema},
 };
+
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
+use storage::{self, Data, Storage, TableSchema};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -866,7 +867,7 @@ pub enum ExecuteBoundError<SE> {
 
 impl<S> Execute<S::TransactionGuard> for NaiveEngine<S>
 where
-    S: crate::storage::Storage,
+    S: storage::Storage,
 {
     type Prepared = NaivePrepared;
     type PrepareError = PrepareError<S::LoadingError>;
@@ -1926,7 +1927,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::storage::{EntireRelation, PartialRelation, Row, Storage};
+    use storage::{EntireRelation, PartialRelation, Row, Storage};
 
     use self::storage::inmemory::InMemoryStorage;
 

@@ -3,11 +3,11 @@ use std::{
     collections::HashMap,
 };
 
-use crate::storage::Schemas;
 use sql::{
     self, ColumnReference, Combination, DataType, Identifier, Select, TableExpression,
     ValueExpression,
 };
+use storage::Schemas;
 
 mod types;
 pub use types::PossibleTypes;

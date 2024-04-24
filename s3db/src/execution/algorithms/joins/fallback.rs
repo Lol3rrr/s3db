@@ -1,5 +1,4 @@
 use super::{EvaluateConditions, Join};
-use crate::storage;
 
 pub struct Fallback<P, F> {
     primary: P,

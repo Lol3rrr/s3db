@@ -1,9 +1,9 @@
+use std::borrow::Cow;
 use tokio::io::AsyncWrite;
 
 use crate::{
     execution,
     postgres::{FormatCode, MessageResponse, RowDescriptionField},
-    storage,
 };
 use sql::DataType;
 
@@ -19,6 +19,43 @@ pub enum RespondError {
         value: storage::Data,
         format: FormatCode,
     },
+}
+
+fn serialize<'d>(
+    data: &'d storage::Data,
+    format: &FormatCode,
+    ty: DataType,
+) -> Option<Cow<'d, [u8]>> {
+    match format {
+        FormatCode::Text => {
+            let tmp = match data {
+                storage::Data::Null => Cow::Borrowed("NULL".as_bytes()),
+                storage::Data::Name(n) => Cow::Borrowed(n.as_bytes()),
+                storage::Data::Varchar(c) => Cow::Owned(c.iter().map(|c| *c as u8).collect()),
+                storage::Data::Text(c) => Cow::Owned(c.as_bytes().to_vec()),
+                storage::Data::Timestamp(n) => Cow::Borrowed(n.as_bytes()),
+                storage::Data::Serial(v) => Cow::Owned(format!("{}", v).into_bytes()),
+                storage::Data::SmallInt(v) => Cow::Owned(format!("{}", v).into_bytes()),
+                storage::Data::Integer(v) => Cow::Owned(format!("{}", v).into_bytes()),
+                storage::Data::BigInt(v) => Cow::Owned(format!("{}", v).into_bytes()),
+                storage::Data::Boolean(true) => Cow::Borrowed("true".as_bytes()),
+                storage::Data::Boolean(false) => Cow::Borrowed("false".as_bytes()),
+                _ => return None,
+            };
+            Some(tmp)
+        }
+        FormatCode::Binary => {
+            let tmp = match data {
+                storage::Data::Null => Cow::Owned((0..ty.size()).map(|_| 0).collect::<Vec<_>>()),
+                storage::Data::Serial(v) => Cow::Owned(v.to_be_bytes().to_vec()),
+                storage::Data::SmallInt(v) => Cow::Owned(v.to_be_bytes().to_vec()),
+                storage::Data::Integer(v) => Cow::Owned(v.to_be_bytes().to_vec()),
+                storage::Data::BigInt(v) => Cow::Owned(v.to_be_bytes().to_vec()),
+                _ => return None,
+            };
+            Some(tmp)
+        }
+    }
 }
 
 pub async fn responde_execute_result<T, W>(
@@ -104,7 +141,7 @@ where
                     .zip(formats.iter())
                     .zip(content.columns.iter())
                     .map(|((data, format), column)| {
-                        data.serialize(format, column.1.clone()).ok_or_else(|| {
+                        serialize(data, format, column.1.clone()).ok_or_else(|| {
                             RespondError::SerializeField {
                                 value: data.clone(),
                                 format: format.clone(),
@@ -222,7 +259,7 @@ where
                         .map(|(r, format)| {
                             // TODO
                             // Where to get the type for this?
-                            r.serialize(format, DataType::BigInteger).ok_or_else(|| {
+                            serialize(r, format, DataType::BigInteger).ok_or_else(|| {
                                 RespondError::SerializeField {
                                     value: r.clone(),
                                     format: format.clone(),

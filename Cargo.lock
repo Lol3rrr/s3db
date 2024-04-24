@@ -1122,6 +1122,7 @@ dependencies = [
  "pprof",
  "pretty_assertions",
  "sql",
+ "storage",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1241,7 +1242,9 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "loom",
+ "sql",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

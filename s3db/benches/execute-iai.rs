@@ -3,22 +3,22 @@ use iai_callgrind::{library_benchmark, library_benchmark_group, main, LibraryBen
 use std::hint::black_box;
 
 use s3db::execution::Execute;
-use s3db::storage::Storage;
 use sql::CompatibleParser;
+use storage::Storage;
 
 fn setup(
     query: &str,
     rows: usize,
 ) -> (
     sql::Query<'static, 'static>,
-    s3db::execution::naive::NaiveEngine<s3db::storage::inmemory::InMemoryStorage>,
-    s3db::storage::inmemory::InMemoryTransactionGuard,
+    s3db::execution::naive::NaiveEngine<storage::inmemory::InMemoryStorage>,
+    storage::inmemory::InMemoryTransactionGuard,
 ) {
     let query = sql::Query::parse(query.as_bytes(), &bumpalo::Bump::new())
         .unwrap()
         .to_static();
 
-    let storage = s3db::storage::inmemory::InMemoryStorage::new();
+    let storage = storage::inmemory::InMemoryStorage::new();
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
@@ -39,8 +39,8 @@ fn setup(
 
         let mut row_iter = (0..rows).map(|i| {
             vec![
-                s3db::storage::Data::Integer(i as i32),
-                s3db::storage::Data::Text(format!("name-{}", i)),
+                storage::Data::Integer(i as i32),
+                storage::Data::Text(format!("name-{}", i)),
             ]
         });
         storage
@@ -61,15 +61,15 @@ fn setup(
 fn select_1_column(
     (query, engine, transaction): (
         sql::Query<'static, 'static>,
-        s3db::execution::naive::NaiveEngine<s3db::storage::inmemory::InMemoryStorage>,
-        s3db::storage::inmemory::InMemoryTransactionGuard,
+        s3db::execution::naive::NaiveEngine<storage::inmemory::InMemoryStorage>,
+        storage::inmemory::InMemoryTransactionGuard,
     ),
 ) -> Result<
     s3db::execution::ExecuteResult,
     s3db::execution::ExecuteError<
-        s3db::execution::naive::PrepareError<s3db::storage::inmemory::LoadingError>,
+        s3db::execution::naive::PrepareError<storage::inmemory::LoadingError>,
         (),
-        s3db::execution::naive::ExecuteBoundError<s3db::storage::inmemory::LoadingError>,
+        s3db::execution::naive::ExecuteBoundError<storage::inmemory::LoadingError>,
     >,
 > {
     let mut ctx = s3db::execution::Context::new();
@@ -85,15 +85,15 @@ fn select_1_column(
 fn condition_less_than(
     (query, engine, transaction): (
         sql::Query<'static, 'static>,
-        s3db::execution::naive::NaiveEngine<s3db::storage::inmemory::InMemoryStorage>,
-        s3db::storage::inmemory::InMemoryTransactionGuard,
+        s3db::execution::naive::NaiveEngine<storage::inmemory::InMemoryStorage>,
+        storage::inmemory::InMemoryTransactionGuard,
     ),
 ) -> Result<
     s3db::execution::ExecuteResult,
     s3db::execution::ExecuteError<
-        s3db::execution::naive::PrepareError<s3db::storage::inmemory::LoadingError>,
+        s3db::execution::naive::PrepareError<storage::inmemory::LoadingError>,
         (),
-        s3db::execution::naive::ExecuteBoundError<s3db::storage::inmemory::LoadingError>,
+        s3db::execution::naive::ExecuteBoundError<storage::inmemory::LoadingError>,
     >,
 > {
     let mut ctx = s3db::execution::Context::new();

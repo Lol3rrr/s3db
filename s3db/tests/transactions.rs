@@ -1,8 +1,7 @@
-use s3db::{
-    execution::{naive::NaiveEngine, Context, Execute, ExecuteResult},
-    storage::{inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, Row},
-};
+use s3db::execution::{naive::NaiveEngine, Context, Execute, ExecuteResult};
+
 use sql::{DataType, Query};
+use storage::{inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, Row};
 
 macro_rules! execute {
     ($engine:expr, $ctx:expr, $query:literal) => {{
