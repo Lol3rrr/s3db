@@ -22,7 +22,7 @@ do
       paramname=$(basename "$param")
       echo "      Param: $paramname"
 
-      profilepath="$param"/profile.pb
+      profilepath="$param"/profile/profile.pb
       profilecli upload \
         --extra-labels=service_name=s3db \
         --extra-labels=harness="$harnessname" \
