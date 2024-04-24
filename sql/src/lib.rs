@@ -1,5 +1,6 @@
 //! [Reference](https://www.postgresql.org/docs/16/sql.html)
 #![deny(warnings)]
+#![warn(clippy::unwrap_used)]
 
 use nom::IResult;
 
