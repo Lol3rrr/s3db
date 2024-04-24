@@ -23,6 +23,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           path: target/criterion/
+      - name: Upload results to pyroscope
+        run: bash upload-profiles.sh
+        env:
+          PROFILECLI_URL: ${{ secrets.PYROSCOPE_URL }}
+          PROFILECLI_USERNAME: ${{ secrets.PYROSCOPE_USERNAME }}
+          PROFILECLI_PASSWORD: ${{ secrets.PYROSCOPE_PASSWORD }}
       - id: pr-check
         uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Get current date
