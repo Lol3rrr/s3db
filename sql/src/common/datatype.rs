@@ -40,7 +40,7 @@ pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<
             nom::bytes::complete::tag(")"),
         ))
         .map(|(_, _, raw_size, _)| DataType::VarChar {
-            size: core::str::from_utf8(raw_size).unwrap().parse().unwrap(),
+            size: core::str::from_utf8(raw_size).expect("We know that the bytes are valid chars, because they represent digits").parse().expect("We know that it's a positive number, because it's only made up of digits"),
         }),
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("char"),
@@ -49,7 +49,7 @@ pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<
             nom::bytes::complete::tag(")"),
         ))
         .map(|(_, _, raw_size, _)| DataType::Char {
-            size: core::str::from_utf8(raw_size).unwrap().parse().unwrap(),
+            size: core::str::from_utf8(raw_size).expect("We know that the bytes are valid chars, because they represent digits").parse().expect("We know that it's a positive number, because it's only made up of digits"),
         }),
         nom::bytes::complete::tag_no_case("TEXT").map(|_| DataType::Text),
         nom::bytes::complete::tag_no_case("BOOL").map(|_| DataType::Bool),

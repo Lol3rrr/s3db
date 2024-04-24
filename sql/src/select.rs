@@ -218,14 +218,18 @@ pub fn select<'i, 'a>(
                     nom::bytes::complete::tag_no_case("LIMIT"),
                     nom::character::complete::multispace1,
                     nom::character::complete::digit1
-                        .map(|raw| core::str::from_utf8(raw).unwrap().parse::<usize>().unwrap()),
+                        .map(|raw| {
+                            let raw_str = core::str::from_utf8(raw).expect("We know that the bytes represent a valid string, because otherwise they would not match the digit1 parser");
+                            raw_str.parse::<usize>().expect("We know that the string represents a positive number, because it matches the digit1 parser")
+                        }),
                     nom::combinator::opt(
                         nom::sequence::tuple((
                             nom::character::complete::multispace1,
                             nom::bytes::complete::tag_no_case("OFFSET"),
                             nom::character::complete::multispace1,
-                            nom::character::complete::digit1.map(|raw| {
-                                core::str::from_utf8(raw).unwrap().parse::<usize>().unwrap()
+                            nom::combinator::map(nom::character::complete::digit1, |raw| {
+                                let raw_str = core::str::from_utf8(raw).expect("We know that the bytes represent a valid string, because otherwise they would not match the digit1 parser");
+                                raw_str.parse::<usize>().expect("We know that the string represents a positive number, because it matches the digit1 parser")
                             }),
                         ))
                         .map(|(_, _, _, v)| v),

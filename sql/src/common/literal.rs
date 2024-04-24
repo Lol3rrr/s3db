@@ -61,13 +61,13 @@ pub fn literal(i: &[u8]) -> IResult<&[u8], Literal<'_>, nom::error::VerboseError
             nom::bytes::complete::take_until("'"),
             nom::bytes::complete::tag("'"),
         ))
-        .map(|(_, val, _)| Literal::Str(Cow::Borrowed(core::str::from_utf8(val).unwrap()))),
+        .map(|(_, val, _)| Literal::Str(Cow::Borrowed(core::str::from_utf8(val).expect("TODO")))),
         nom::sequence::tuple((
             nom::combinator::opt(nom::bytes::complete::tag("-")),
             nom::character::complete::digit1,
         ))
         .map(|(negative, d)| {
-            let raw_digit = core::str::from_utf8(d).unwrap();
+            let raw_digit = core::str::from_utf8(d).expect("We know its a valid string, because its only made up of digits which are valid characters");
 
             let smallinteger = raw_digit.parse::<i16>();
             let integer = raw_digit.parse::<i32>();
