@@ -16,25 +16,11 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: 1/ Install profilecli
-        run: curl -fL https://github.com/grafana/pyroscope/releases/download/v1.5.0/profilecli_1.5.0_linux_amd64.tar.gz | tar xvz
-      - name: 2/ Install profilecli 
-        run: chmod +x profilecli;
-      - name: 3/ Install profilecli 
-        run: sudo mv profilecli /usr/local/bin;
-      - name: Run Profiling for 10 seconds
-        run: RUSTFLAGS="--cfg flamegraph" cargo bench --bench parse --bench execute -- --profile-time 10
       - name: Upload result artifacts
         id: upload-artifacts
         uses: actions/upload-artifact@v4
         with:
           path: target/criterion/
-      - name: Upload results to pyroscope
-        run: bash upload-profiles.sh
-        env:
-          PROFILECLI_URL: ${{ secrets.PYROSCOPE_URL }}
-          PROFILECLI_USERNAME: ${{ secrets.PYROSCOPE_USERNAME }}
-          PROFILECLI_PASSWORD: ${{ secrets.PYROSCOPE_PASSWORD }}
       - id: pr-check
         uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Get current date
