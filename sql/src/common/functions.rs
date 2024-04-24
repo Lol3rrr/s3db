@@ -215,7 +215,7 @@ pub fn function_call<'i, 'a>(
                 query: Boxed::arena(arena, query),
             },
         ),
-        nom::combinator::map(
+        nom::combinator::map_res(
             nom::sequence::tuple((
                 nom::bytes::complete::tag_no_case("setval"),
                 nom::character::complete::multispace0,
@@ -231,14 +231,14 @@ pub fn function_call<'i, 'a>(
             |(_, _, _, name_lit, _, _, _, value, _, _)| {
                 let name = match name_lit {
                     Literal::Str(name) => name,
-                    other => todo!("{:?}", other),
+                    other => return Err(other),
                 };
 
-                FunctionCall::SetValue {
+                Ok(FunctionCall::SetValue {
                     sequence_name: Identifier(name),
                     value: Boxed::arena(arena, value),
                     is_called: true,
-                }
+                })
             },
         ),
         nom::combinator::map(

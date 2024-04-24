@@ -79,8 +79,8 @@ impl DataType {
             Self::BigInteger => 8,
             Self::BigSerial => 8,
             Self::Bool => 1,
-            Self::Real => todo!(),
-            Self::DoublePrecision => todo!(),
+            Self::Real => unimplemented!("Getting Size for Real Type"),
+            Self::DoublePrecision => unimplemented!("Getting Size for DoublePrecision Type"),
         }
     }
 
@@ -96,7 +96,7 @@ impl DataType {
             Self::Char { .. } => 1042,
             Self::VarChar { .. } => 1043,
             Self::Timestamp => 1114,
-            other => todo!("{:?}", other),
+            other => unimplemented!("Getting Type OID for {:?}", other),
         }
     }
 }
