@@ -40,7 +40,7 @@ pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<
             nom::bytes::complete::tag(")"),
         ))
         .map(|(_, _, raw_size, _)| DataType::VarChar {
-            size: core::str::from_utf8(raw_size).unwrap().parse().unwrap(),
+            size: core::str::from_utf8(raw_size).expect("We know that the bytes are valid chars, because they represent digits").parse().expect("We know that it's a positive number, because it's only made up of digits"),
         }),
         nom::sequence::tuple((
             nom::bytes::complete::tag_no_case("char"),
@@ -49,7 +49,7 @@ pub fn data_type(i: &[u8]) -> IResult<&[u8], DataType, nom::error::VerboseError<
             nom::bytes::complete::tag(")"),
         ))
         .map(|(_, _, raw_size, _)| DataType::Char {
-            size: core::str::from_utf8(raw_size).unwrap().parse().unwrap(),
+            size: core::str::from_utf8(raw_size).expect("We know that the bytes are valid chars, because they represent digits").parse().expect("We know that it's a positive number, because it's only made up of digits"),
         }),
         nom::bytes::complete::tag_no_case("TEXT").map(|_| DataType::Text),
         nom::bytes::complete::tag_no_case("BOOL").map(|_| DataType::Bool),
@@ -79,8 +79,8 @@ impl DataType {
             Self::BigInteger => 8,
             Self::BigSerial => 8,
             Self::Bool => 1,
-            Self::Real => todo!(),
-            Self::DoublePrecision => todo!(),
+            Self::Real => unimplemented!("Getting Size for Real Type"),
+            Self::DoublePrecision => unimplemented!("Getting Size for DoublePrecision Type"),
         }
     }
 
@@ -96,7 +96,7 @@ impl DataType {
             Self::Char { .. } => 1042,
             Self::VarChar { .. } => 1043,
             Self::Timestamp => 1114,
-            other => todo!("{:?}", other),
+            other => unimplemented!("Getting Type OID for {:?}", other),
         }
     }
 }

@@ -61,27 +61,28 @@ pub fn literal(i: &[u8]) -> IResult<&[u8], Literal<'_>, nom::error::VerboseError
             nom::bytes::complete::take_until("'"),
             nom::bytes::complete::tag("'"),
         ))
-        .map(|(_, val, _)| Literal::Str(Cow::Borrowed(core::str::from_utf8(val).unwrap()))),
+        .map(|(_, val, _)| Literal::Str(Cow::Borrowed(core::str::from_utf8(val).expect("TODO")))),
+        nom::combinator::map_res(
         nom::sequence::tuple((
             nom::combinator::opt(nom::bytes::complete::tag("-")),
             nom::character::complete::digit1,
-        ))
-        .map(|(negative, d)| {
-            let raw_digit = core::str::from_utf8(d).unwrap();
+        )), |(negative, d)| {
+            let raw_digit = core::str::from_utf8(d).expect("We know its a valid string, because its only made up of digits which are valid characters");
 
             let smallinteger = raw_digit.parse::<i16>();
             let integer = raw_digit.parse::<i32>();
             let biginteger = raw_digit.parse::<i64>();
 
-            match (smallinteger, integer, biginteger) {
+            let tmp = match (smallinteger, integer, biginteger) {
                 (Ok(v), _, _) if negative.is_some() => Literal::SmallInteger(-v),
                 (Ok(v), _, _) => Literal::SmallInteger(v),
                 (_, Ok(v), _) if negative.is_some() => Literal::Integer(-v),
                 (_, Ok(v), _) => Literal::Integer(v),
                 (_, _, Ok(v)) if negative.is_some() => Literal::BigInteger(-v),
                 (_, _, Ok(v)) => Literal::BigInteger(v),
-                _ => todo!(),
-            }
+                other => return Err(other),
+            };
+            Ok(tmp)
         }),
         nom::combinator::map(nom::bytes::complete::tag_no_case("false"), |_| {
             Literal::Bool(false)

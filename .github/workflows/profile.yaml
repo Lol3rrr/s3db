@@ -16,6 +16,8 @@ jobs:
         with:
           toolchain: nightly
           override: true
+      - name: Run Profiling for 10 seconds
+        run: RUSTFLAGS="--cfg flamegraph" cargo bench --bench parse --bench execute -- --profile-time 10
       - name: Upload result artifacts
         id: upload-artifacts
         uses: actions/upload-artifact@v4
@@ -25,7 +27,7 @@ jobs:
         uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Get current date
         id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d %H:%M:%S')"
       - name: Comment artifact results
         if: steps.pr-check.outputs.pr_found == 'true'
         uses: thollander/actions-comment-pull-request@v2
