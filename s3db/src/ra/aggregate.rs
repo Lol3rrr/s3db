@@ -80,14 +80,15 @@ impl AggregateExpression {
                         ))
                     }
                 },
-                sql::AggregateExpression::Sum(val) => {
-                    dbg!(&val);
-
-                    Err(ParseSelectError::NotImplemented("Parsing SUM Aggregate"))
-                }
                 sql::AggregateExpression::AnyValue(_val) => Err(ParseSelectError::NotImplemented(
                     "Parsing AnyValue Aggregate",
                 )),
+                sql::AggregateExpression::Sum(val) => {
+                    Err(ParseSelectError::NotImplemented("Parsing SUM Aggregate"))
+                }
+                sql::AggregateExpression::Avg(val) => {
+                    Err(ParseSelectError::NotImplemented("Parsing Avg Aggregate"))
+                }
                 sql::AggregateExpression::Max(val) => {
                     let inner = RaValueExpression::parse_internal(
                         scope,
@@ -120,6 +121,24 @@ impl AggregateExpression {
                 }
                 sql::AggregateExpression::Min(v) => {
                     Err(ParseSelectError::NotImplemented("Parsing Min Aggregate"))
+                }
+                sql::AggregateExpression::ArrayAgg(v) => Err(ParseSelectError::NotImplemented(
+                    "Parsing ArrayAgg Aggregate",
+                )),
+                sql::AggregateExpression::BitAnd(v) => {
+                    Err(ParseSelectError::NotImplemented("Parsing BitAnd Aggregate"))
+                }
+                sql::AggregateExpression::BitXor(v) => {
+                    Err(ParseSelectError::NotImplemented("Parsing BitXor Aggregate"))
+                }
+                sql::AggregateExpression::BitOr(v) => {
+                    Err(ParseSelectError::NotImplemented("Parsing BitOr Aggregate"))
+                }
+                sql::AggregateExpression::BoolAnd(v) => Err(ParseSelectError::NotImplemented(
+                    "Parsing BoolAnd Aggregate",
+                )),
+                sql::AggregateExpression::BoolOr(v) => {
+                    Err(ParseSelectError::NotImplemented("Parsing BoolOr Aggregate"))
                 }
             },
             ValueExpression::ColumnReference(cr) => {
