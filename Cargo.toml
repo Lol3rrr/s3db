@@ -5,6 +5,11 @@ resolver = "2"
 [workspace.dependencies]
 bumpalo = {version = "3.16.0", features = ["collections", "boxed"]}
 
+[profile.release]
+codegen-units = 1
+lto = "thin"
+debug = true
+
 [profile.bench]
 codegen-units = 1
 lto = "thin"

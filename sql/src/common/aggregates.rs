@@ -8,6 +8,8 @@ use crate::{arenas::Boxed, ArenaParser, CompatibleParser, ValueExpression};
 pub enum AggregateExpression<'i, 'a> {
     /// Returns an arbitrary non-null value
     AnyValue(Boxed<'a, ValueExpression<'i, 'a>>),
+    /// Counts the number of rows if used as `Count(*)`
+    /// Otherwise counts number of non-null values
     Count(Boxed<'a, ValueExpression<'i, 'a>>),
     Sum(Boxed<'a, ValueExpression<'i, 'a>>),
     Max(Boxed<'a, ValueExpression<'i, 'a>>),
@@ -61,11 +63,8 @@ fn aggregate<'i, 'a>(
                     nom::character::complete::multispace0,
                     nom::bytes::complete::tag("("),
                 )),
-                ValueExpression::parse_arena(arena),
-                nom::sequence::tuple((
-                    nom::character::complete::multispace0,
-                    nom::bytes::complete::tag(")"),
-                )),
+                nom::sequence::delimited(nom::character::complete::multispace0, ValueExpression::parse_arena(arena), nom::character::complete::multispace0),
+                nom::bytes::complete::tag(")"),
             ),
             |exp| AggregateExpression::Count(Boxed::arena(arena, exp)),
         ),
@@ -115,4 +114,41 @@ fn aggregate<'i, 'a>(
             |exp| AggregateExpression::Max(Boxed::arena(arena, exp)),
         ),
     ))(i)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::{macros::arena_parser_parse, arenas::Boxed, common::ColumnReference};
+
+    #[test]
+    fn count_rows() {
+        let expected = AggregateExpression::Count(Boxed::new(ValueExpression::All));
+
+        arena_parser_parse!(AggregateExpression, "count(*)", expected.to_static());
+        arena_parser_parse!(AggregateExpression, "count ( * )", expected.to_static());
+    }
+
+    #[test]
+    fn count_attribute() {
+        let expected = AggregateExpression::Count(Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+            column: "test".into(),
+            relation: None,
+        })));
+
+        arena_parser_parse!(AggregateExpression, "count(test)", expected.to_static());
+        arena_parser_parse!(AggregateExpression, "count ( test )", expected.to_static());
+    }
+
+    #[test]
+    fn max_attribute() {
+        let expected = AggregateExpression::Max(Boxed::new(ValueExpression::ColumnReference(ColumnReference {
+            column: "test".into(),
+            relation: None,
+        })));
+
+        arena_parser_parse!(AggregateExpression, "max(test)", expected.to_static());
+        arena_parser_parse!(AggregateExpression, "max ( test )", expected.to_static());
+    }
 }

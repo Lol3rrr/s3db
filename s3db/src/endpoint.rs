@@ -231,6 +231,8 @@ pub mod postgres {
                         let mut implicit_transaction = false;
                         if ctx.transaction.is_none() && !matches!(query, Query::BeginTransaction(_))
                         {
+                            tracing::info!("Starting implicit query");
+
                             implicit_transaction = true;
                             engine
                                 .execute(
@@ -359,6 +361,8 @@ pub mod postgres {
                         };
 
                         if implicit_transaction {
+                            tracing::info!("Commiting implicit query");
+
                             engine
                                 .execute(&Query::CommitTransaction, &mut ctx, &arena)
                                 .await
