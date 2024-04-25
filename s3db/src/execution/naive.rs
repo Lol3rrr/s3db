@@ -1433,13 +1433,13 @@ where
                             }
 
                             self.storage
-                                    .update_rows(
-                                        update.table.0.as_ref(),
-                                        &mut rows_to_update.into_iter(),
-                                        transaction,
-                                    )
-                                    .await
-                                    .map_err(ExecuteBoundError::StorageError)?;
+                                .update_rows(
+                                    update.table.0.as_ref(),
+                                    &mut rows_to_update.into_iter(),
+                                    transaction,
+                                )
+                                .await
+                                .map_err(ExecuteBoundError::StorageError)?;
 
                             Ok(ExecuteResult::Update {
                                 updated_rows: count,

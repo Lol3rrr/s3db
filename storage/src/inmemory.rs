@@ -403,7 +403,8 @@ impl Storage for &InMemoryStorage {
 
         let rows: Vec<Row> = table
             .rows
-            .iter().flat_map(|p| p)
+            .iter()
+            .flat_map(|p| p)
             .filter(|row| {
                 if (transaction.active.contains(&row.created)
                     || row.created > transaction.latest_commit
@@ -674,9 +675,7 @@ impl Storage for &InMemoryStorage {
 
         for row in rows {
             let part = match table.rows.last_mut() {
-                Some(part) if part.len() < 4092 => {
-                    part
-                }
+                Some(part) if part.len() < 4092 => part,
                 _ => {
                     table.rows.push(Vec::with_capacity(4092));
                     table.rows.last_mut().expect("")
@@ -690,7 +689,6 @@ impl Storage for &InMemoryStorage {
             });
         }
 
-
         Ok(())
     }
 
@@ -700,7 +698,6 @@ impl Storage for &InMemoryStorage {
         rows: &mut dyn Iterator<Item = (u64, Vec<Data>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-
         let mut tables = self
             .tables
             .try_borrow_mut()
@@ -713,8 +710,10 @@ impl Storage for &InMemoryStorage {
         for (row_id, new_values) in rows {
             let row = table
                 .rows
-                .iter_mut().rev()
-                .flat_map(|p| p).filter(|r| r.expired == 0)
+                .iter_mut()
+                .rev()
+                .flat_map(|p| p)
+                .filter(|r| r.expired == 0)
                 .find(|row| row.data.id() == row_id)
                 .ok_or(LoadingError::Other("Could not find Row"))?;
 
@@ -729,9 +728,7 @@ impl Storage for &InMemoryStorage {
             n_row.data.data = new_values;
 
             let part = match table.rows.last_mut() {
-                Some(part) if part.len() < 4092 => {
-                    part
-                }
+                Some(part) if part.len() < 4092 => part,
                 _ => {
                     table.rows.push(Vec::with_capacity(4092));
                     table.rows.last_mut().expect("")
@@ -757,7 +754,12 @@ impl Storage for &InMemoryStorage {
         let table = tables.get_mut(name).ok_or(LoadingError::UnknownRelation)?;
 
         for cid in rows {
-            for row in table.rows.iter_mut().flat_map(|p| p).filter(|row| row.data.rid == cid) {
+            for row in table
+                .rows
+                .iter_mut()
+                .flat_map(|p| p)
+                .filter(|row| row.data.rid == cid)
+            {
                 assert_eq!(0, row.expired);
                 row.expired = transaction.id;
             }
