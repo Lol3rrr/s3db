@@ -98,8 +98,12 @@ pub trait Storage {
             let rows: Vec<_> = stream.collect().await;
 
             Ok(EntireRelation {
-                columns: schema.rows.into_iter().map(|c| (c.name, c.ty, c.mods)).collect(),
-                parts: vec![PartialRelation { rows, }],
+                columns: schema
+                    .rows
+                    .into_iter()
+                    .map(|c| (c.name, c.ty, c.mods))
+                    .collect(),
+                parts: vec![PartialRelation { rows }],
             })
         }
     }

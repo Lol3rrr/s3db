@@ -1382,6 +1382,8 @@ where
                             }
 
                             let mut count = 0;
+
+                            let mut rows_to_update = Vec::new();
                             for mut row in
                                 relation.parts.into_iter().flat_map(|p| p.rows.into_iter())
                             {
@@ -1427,15 +1429,17 @@ where
                                     row.data[idx] = value;
                                 }
 
-                                self.storage
-                                    .update_rows(
-                                        update.table.0.as_ref(),
-                                        &mut core::iter::once((row.id(), row.data)),
-                                        transaction,
-                                    )
-                                    .await
-                                    .map_err(ExecuteBoundError::StorageError)?;
+                                rows_to_update.push((row.id(), row.data));
                             }
+
+                            self.storage
+                                .update_rows(
+                                    update.table.0.as_ref(),
+                                    &mut rows_to_update.into_iter(),
+                                    transaction,
+                                )
+                                .await
+                                .map_err(ExecuteBoundError::StorageError)?;
 
                             Ok(ExecuteResult::Update {
                                 updated_rows: count,

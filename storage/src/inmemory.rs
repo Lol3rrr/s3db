@@ -38,7 +38,7 @@ pub enum LoadingError {
 
 struct Table {
     columns: Vec<(String, DataType, Vec<TypeModifier>)>,
-    rows: Vec<InternalRow>,
+    rows: Vec<Vec<InternalRow>>,
     cid: AtomicU64,
 }
 #[derive(Debug)]
@@ -110,7 +110,7 @@ impl InMemoryStorage {
                                 ("nspname".to_string(), DataType::Name, vec![]),
                                 ("nspowner".to_string(), DataType::Integer, vec![]),
                             ],
-                            rows: vec![InternalRow {
+                            rows: vec![vec![InternalRow {
                                 data: Row::new(
                                     0,
                                     vec![
@@ -121,7 +121,7 @@ impl InMemoryStorage {
                                 ),
                                 created: 0,
                                 expired: 0,
-                            }],
+                            }]],
                             cid: AtomicU64::new(0),
                         },
                     ),
@@ -212,6 +212,7 @@ impl Storage for InMemoryStorage {
         let rows: Vec<Row> = table
             .rows
             .iter()
+            .flat_map(|p| p)
             .filter(|row| {
                 if (transaction.active.contains(&row.created)
                     || row.created > transaction.latest_commit
@@ -403,6 +404,7 @@ impl Storage for &InMemoryStorage {
         let rows: Vec<Row> = table
             .rows
             .iter()
+            .flat_map(|p| p)
             .filter(|row| {
                 if (transaction.active.contains(&row.created)
                     || row.created > transaction.latest_commit
@@ -465,7 +467,7 @@ impl Storage for &InMemoryStorage {
         );
 
         let pg_tables = tables_mut.get_mut("pg_tables").unwrap();
-        pg_tables.rows.push(InternalRow {
+        pg_tables.rows.push(vec![InternalRow {
             data: Row::new(
                 pg_tables.cid.fetch_add(1, Ordering::SeqCst),
                 vec![
@@ -481,11 +483,11 @@ impl Storage for &InMemoryStorage {
             ),
             created: transaction.id,
             expired: 0,
-        });
+        }]);
 
         let pg_class = tables_mut.get_mut("pg_class").unwrap();
         let pg_class_id = pg_class.cid.fetch_add(1, Ordering::SeqCst);
-        pg_class.rows.push(InternalRow {
+        pg_class.rows.push(vec![InternalRow {
             data: Row::new(
                 pg_class_id,
                 vec![
@@ -496,7 +498,7 @@ impl Storage for &InMemoryStorage {
             ),
             created: transaction.id,
             expired: 0,
-        });
+        }]);
 
         Ok(())
     }
@@ -574,8 +576,10 @@ impl Storage for &InMemoryStorage {
                         })
                         .unwrap_or(Data::Null);
 
-                    for row in table.rows.iter_mut() {
-                        row.data.data.push(value.clone());
+                    for part in table.rows.iter_mut() {
+                        for row in part.iter_mut() {
+                            row.data.data.push(value.clone());
+                        }
                     }
                 }
                 RelationModification::RenameColumn { from, to } => {
@@ -670,7 +674,15 @@ impl Storage for &InMemoryStorage {
         let table = tables.get_mut(name).ok_or(LoadingError::UnknownRelation)?;
 
         for row in rows {
-            table.rows.push(InternalRow {
+            let part = match table.rows.last_mut() {
+                Some(part) if part.len() < 4092 => part,
+                _ => {
+                    table.rows.push(Vec::with_capacity(4092));
+                    table.rows.last_mut().expect("")
+                }
+            };
+
+            part.push(InternalRow {
                 data: Row::new(table.cid.fetch_add(1, Ordering::SeqCst), row),
                 created: transaction.id,
                 expired: 0,
@@ -693,10 +705,15 @@ impl Storage for &InMemoryStorage {
 
         let table = tables.get_mut(name).ok_or(LoadingError::UnknownRelation)?;
 
+        tracing::info!("Rows in DB: {:?}", table.rows.len());
+
         for (row_id, new_values) in rows {
             let row = table
                 .rows
                 .iter_mut()
+                .rev()
+                .flat_map(|p| p)
+                .filter(|r| r.expired == 0)
                 .find(|row| row.data.id() == row_id)
                 .ok_or(LoadingError::Other("Could not find Row"))?;
 
@@ -709,7 +726,15 @@ impl Storage for &InMemoryStorage {
             };
             n_row.data.rid = table.cid.fetch_add(1, Ordering::SeqCst);
             n_row.data.data = new_values;
-            table.rows.push(n_row);
+
+            let part = match table.rows.last_mut() {
+                Some(part) if part.len() < 4092 => part,
+                _ => {
+                    table.rows.push(Vec::with_capacity(4092));
+                    table.rows.last_mut().expect("")
+                }
+            };
+            part.push(n_row);
         }
 
         Ok(())
@@ -729,7 +754,12 @@ impl Storage for &InMemoryStorage {
         let table = tables.get_mut(name).ok_or(LoadingError::UnknownRelation)?;
 
         for cid in rows {
-            for row in table.rows.iter_mut().filter(|row| row.data.rid == cid) {
+            for row in table
+                .rows
+                .iter_mut()
+                .flat_map(|p| p)
+                .filter(|row| row.data.rid == cid)
+            {
                 assert_eq!(0, row.expired);
                 row.expired = transaction.id;
             }
