@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::{Data, EntireRelation, PartialRelation};
+use crate::Data;
 use sql::{DataType, TypeModifier};
 
 use super::{schema::ColumnSchema, RelationModification, Row, Schemas, Storage, TableSchema};
@@ -178,14 +178,6 @@ impl Storage for InMemoryStorage {
         guard: Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
         <&InMemoryStorage as Storage>::abort_transaction(&self, guard).await
-    }
-
-    async fn get_entire_relation(
-        &self,
-        name: &str,
-        transaction: &Self::TransactionGuard,
-    ) -> Result<EntireRelation, Self::LoadingError> {
-        <&InMemoryStorage as Storage>::get_entire_relation(&self, name, transaction).await
     }
 
     async fn stream_relation<'own, 'name, 'transaction, 'stream>(
@@ -377,49 +369,6 @@ impl Storage for &InMemoryStorage {
         aborted_ids.insert(guard.id);
 
         Ok(())
-    }
-
-    async fn get_entire_relation(
-        &self,
-        name: &str,
-        transaction: &Self::TransactionGuard,
-    ) -> Result<super::EntireRelation, LoadingError> {
-        tracing::debug!("Getting Relation {:?}", name);
-
-        self.tables
-            .try_borrow()
-            .map_err(|_| LoadingError::BorrowingTables)?
-            .get(name)
-            .map(|table| EntireRelation {
-                columns: table.columns.clone(),
-                parts: vec![PartialRelation {
-                    rows: table
-                        .rows
-                        .iter()
-                        .filter(|row| {
-                            if (transaction.active.contains(&row.created)
-                                || row.created > transaction.latest_commit
-                                || transaction.aborted.contains(&row.created))
-                                && row.created != transaction.id
-                            {
-                                return false;
-                            }
-                            if row.expired != 0
-                                && (!transaction.active.contains(&row.expired)
-                                    || row.expired == transaction.id
-                                    || row.expired < transaction.latest_commit)
-                                && !transaction.aborted.contains(&row.expired)
-                            {
-                                return false;
-                            }
-
-                            true
-                        })
-                        .map(|r| r.data.clone())
-                        .collect(),
-                }],
-            })
-            .ok_or(LoadingError::UnknownRelation)
     }
 
     async fn stream_relation<'own, 'name, 'transaction, 'stream>(

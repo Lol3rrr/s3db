@@ -89,7 +89,20 @@ pub trait Storage {
         &self,
         name: &str,
         transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<EntireRelation, Self::LoadingError>>;
+    ) -> impl Future<Output = Result<EntireRelation, Self::LoadingError>> {
+        async move {
+            use futures::stream::StreamExt;
+
+            let (schema, stream) = self.stream_relation(name, transaction).await?;
+
+            let rows: Vec<_> = stream.collect().await;
+
+            Ok(EntireRelation {
+                columns: schema.rows.into_iter().map(|c| (c.name, c.ty, c.mods)).collect(),
+                parts: vec![PartialRelation { rows, }],
+            })
+        }
+    }
 
     fn stream_relation<'own, 'name, 'transaction, 'stream>(
         &'own self,
