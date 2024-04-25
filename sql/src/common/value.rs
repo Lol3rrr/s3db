@@ -335,8 +335,12 @@ pub fn value_expression<'i, 'a>(
             nom::character::complete::digit1,
         ))
         .map(|(_, d)| {
-            let raw = core::str::from_utf8(d).expect("We know that the string is made up of numbers and therefore a valid string");
-            let val: usize = raw.parse().expect("We know that the number has to be positive and the string contains only digits");
+            let raw = core::str::from_utf8(d).expect(
+                "We know that the string is made up of numbers and therefore a valid string",
+            );
+            let val: usize = raw.parse().expect(
+                "We know that the number has to be positive and the string contains only digits",
+            );
             ValueExpression::Placeholder(val)
         }),
         nom::sequence::tuple((

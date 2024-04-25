@@ -111,7 +111,9 @@ where
                             }),
                         )))
                         .map(|(content, _)| {
-                            Identifier(Cow::Borrowed(core::str::from_utf8(content).expect("We know that the bytes are alphanumeric and valid charactecrs")))
+                            Identifier(Cow::Borrowed(core::str::from_utf8(content).expect(
+                                "We know that the bytes are alphanumeric and valid charactecrs",
+                            )))
                         }),
                         nom::bytes::complete::tag("\""),
                     )),
@@ -124,7 +126,9 @@ where
                     }),
                 )))
                 .map(|(content, _)| {
-                    Identifier(Cow::Borrowed(core::str::from_utf8(content).expect("We know that the bytes are alphanumeric and valid charactecrs")))
+                    Identifier(Cow::Borrowed(core::str::from_utf8(content).expect(
+                        "We know that the bytes are alphanumeric and valid charactecrs",
+                    )))
                 }),
             ))(i)
         }

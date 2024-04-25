@@ -1,11 +1,10 @@
 use futures::{future::FutureExt, stream::StreamExt};
 use std::collections::HashMap;
 
-use crate::{
-    ra::{self, AttributeId},
-    storage::{self, Data},
-};
+use crate::ra::{self, AttributeId};
+
 use sql::{BinaryOperator, DataType};
+use storage::{self, Data};
 
 use super::EvaulateRaError;
 

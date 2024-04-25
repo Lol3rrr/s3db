@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{ra::Scope, storage::Schemas};
+use crate::ra::Scope;
+
 use sql::{DataType, Delete};
+use storage::Schemas;
 
 use super::{AttributeId, ParseSelectError, RaCondition, RaExpression};
 

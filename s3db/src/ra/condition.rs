@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{ra::RaExpression, storage::Schemas};
+use crate::ra::RaExpression;
+
 use sql::{BinaryOperator, Condition, DataType, FunctionCall, Literal, ValueExpression};
+use storage::Schemas;
 
 use super::{
     error_context, AttributeId, ParseSelectError, RaComparisonOperator, RaValueExpression, Scope,

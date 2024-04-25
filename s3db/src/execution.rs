@@ -2,11 +2,10 @@
 
 use std::{fmt::Debug, future::Future};
 
-use crate::{
-    postgres::FormatCode,
-    storage::{self, EntireRelation},
-};
+use crate::postgres::FormatCode;
+
 use sql::DataType;
+use storage::{self, EntireRelation};
 
 pub mod algorithms;
 

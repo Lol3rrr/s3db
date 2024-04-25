@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
 use bumpalo::Bump;
-use s3db::{
-    ra::{RaDelete, RaExpression, RaUpdate},
-    storage::Schemas,
-};
+use s3db::ra::{RaDelete, RaExpression, RaUpdate};
+
 use sql::{DataType, Query};
+use storage::Schemas;
 
 /// Returns an iterator to generate the Grafana Schema for testing
 fn grafana_schema() -> impl Iterator<Item = (String, Vec<(String, DataType)>)> {

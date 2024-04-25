@@ -4,18 +4,17 @@ use pretty_assertions::assert_eq;
 
 use bumpalo::Bump;
 
-use s3db::{
-    ra::{
-        self, AggregateExpression, AggregationCondition, Attribute, AttributeId, CTEQuery,
-        CTEValue, ParsingContext, ProjectionAttribute, RaComparisonOperator, RaCondition,
-        RaConditionValue, RaExpression, RaUpdate, RaValueExpression, CTE,
-    },
-    storage::Schemas,
+use s3db::ra::{
+    self, AggregateExpression, AggregationCondition, Attribute, AttributeId, CTEQuery, CTEValue,
+    ParsingContext, ProjectionAttribute, RaComparisonOperator, RaCondition, RaConditionValue,
+    RaExpression, RaUpdate, RaValueExpression, CTE,
 };
+
 use sql::{
     BinaryOperator, ColumnReference, DataType, Identifier, JoinKind, Literal, Query, Select,
     TypeModifier, ValueExpression,
 };
+use storage::Schemas;
 
 #[test]
 fn count_all_rows() {
@@ -895,7 +894,12 @@ fn select_as_single_value() {
     .collect();
 
     let (select, placeholders) = RaExpression::parse_select(&select, &schemas).unwrap();
-    assert_eq!([(1, sql::DataType::Text)].into_iter().collect::<HashMap<_, _>>(), placeholders);
+    assert_eq!(
+        [(1, sql::DataType::Text)]
+            .into_iter()
+            .collect::<HashMap<_, _>>(),
+        placeholders
+    );
 
     // TODO
     let _ = select;

@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 sql = { path = "../sql" }
+storage = { path = "../storage" }
 
 bytes = "1.5.0"
 futures = "0.3.30"

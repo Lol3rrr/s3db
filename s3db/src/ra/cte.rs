@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{
-    ra::{ParsingContext, ProjectionAttribute, RaValueExpression},
-    storage::Schemas,
-};
+use crate::ra::{ParsingContext, ProjectionAttribute, RaValueExpression};
+
 use sql::{DataType, Query, WithCTE, WithCTEs};
+use storage::Schemas;
 
 use super::{ParseSelectError, RaExpression, Scope};
 

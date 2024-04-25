@@ -1,10 +1,9 @@
-use std::borrow::Cow;
-
-use crate::postgres::FormatCode;
 use sql::DataType;
 
+/// Stores a single Value of a specific Type
 #[derive(Debug, Clone, PartialEq)]
 pub enum Data {
+    Null,
     SmallInt(i16),
     Integer(i32),
     BigInt(i64),
@@ -15,7 +14,6 @@ pub enum Data {
     Text(String),
     Name(String),
     Timestamp(String),
-    Null,
     List(Vec<Data>),
 }
 
@@ -122,41 +120,7 @@ impl Data {
                 Ok(Self::Serial(val))
             }
             other => {
-                dbg!(other, raw);
-                Err((RealizeError::NotImplemented, ty, raw))
-            }
-        }
-    }
-
-    pub fn serialize(&self, format: &FormatCode, ty: DataType) -> Option<Cow<'_, [u8]>> {
-        match format {
-            FormatCode::Text => {
-                let tmp = match self {
-                    Self::Null => Cow::Borrowed("NULL".as_bytes()),
-                    Self::Name(n) => Cow::Borrowed(n.as_bytes()),
-                    Self::Varchar(c) => Cow::Owned(c.iter().map(|c| *c as u8).collect()),
-                    Self::Text(c) => Cow::Owned(c.as_bytes().to_vec()),
-                    Self::Timestamp(n) => Cow::Borrowed(n.as_bytes()),
-                    Self::Serial(v) => Cow::Owned(format!("{}", v).into_bytes()),
-                    Self::SmallInt(v) => Cow::Owned(format!("{}", v).into_bytes()),
-                    Self::Integer(v) => Cow::Owned(format!("{}", v).into_bytes()),
-                    Self::BigInt(v) => Cow::Owned(format!("{}", v).into_bytes()),
-                    Self::Boolean(true) => Cow::Borrowed("true".as_bytes()),
-                    Self::Boolean(false) => Cow::Borrowed("false".as_bytes()),
-                    _ => return None,
-                };
-                Some(tmp)
-            }
-            FormatCode::Binary => {
-                let tmp = match self {
-                    Self::Null => Cow::Owned((0..ty.size()).map(|_| 0).collect::<Vec<_>>()),
-                    Self::Serial(v) => Cow::Owned(v.to_be_bytes().to_vec()),
-                    Self::SmallInt(v) => Cow::Owned(v.to_be_bytes().to_vec()),
-                    Self::Integer(v) => Cow::Owned(v.to_be_bytes().to_vec()),
-                    Self::BigInt(v) => Cow::Owned(v.to_be_bytes().to_vec()),
-                    _ => return None,
-                };
-                Some(tmp)
+                Err((RealizeError::NotImplemented, other, raw))
             }
         }
     }

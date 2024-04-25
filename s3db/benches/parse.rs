@@ -1,6 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use s3db::{ra::RaExpression, storage::Schemas};
+use s3db::ra::RaExpression;
+
 use sql::DataType;
+use storage::Schemas;
 
 fn simple_select(c: &mut Criterion) {
     let query = "SELECT name FROM users";

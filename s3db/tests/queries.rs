@@ -1,8 +1,7 @@
-use s3db::{
-    execution::{Execute, ExecuteResult},
-    storage::{Data, EntireRelation, PartialRelation, Row},
-};
+use s3db::execution::{Execute, ExecuteResult};
+
 use sql::DataType;
+use storage::{Data, EntireRelation, PartialRelation, Row};
 
 use tracing::error_span;
 use tracing_subscriber::{layer::SubscriberExt, Layer};
@@ -27,7 +26,7 @@ macro_rules! execute {
 
             runtime.block_on(async move {
                 let engine = s3db::execution::naive::NaiveEngine::new(
-                    s3db::storage::inmemory::InMemoryStorage::new(),
+                    storage::inmemory::InMemoryStorage::new(),
                 );
 
                 let arena = bumpalo::Bump::new();
