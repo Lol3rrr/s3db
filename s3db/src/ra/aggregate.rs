@@ -118,6 +118,9 @@ impl AggregateExpression {
                         },
                     })
                 }
+                sql::AggregateExpression::Min(v) => {
+                    Err(ParseSelectError::NotImplemented("Parsing Min Aggregate"))
+                }
             },
             ValueExpression::ColumnReference(cr) => {
                 let (ty, column) = previous_columns

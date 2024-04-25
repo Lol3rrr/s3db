@@ -119,9 +119,7 @@ impl Data {
                     .map_err(|e| (RealizeError::ParseStrToInt(e), ty, raw))?;
                 Ok(Self::Serial(val))
             }
-            other => {
-                Err((RealizeError::NotImplemented, other, raw))
-            }
+            other => Err((RealizeError::NotImplemented, other, raw)),
         }
     }
 

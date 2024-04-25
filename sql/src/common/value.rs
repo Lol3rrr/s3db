@@ -174,12 +174,7 @@ impl<'i, 'a> CompatibleParser for ValueExpression<'i, 'a> {
                 core::cmp::max(first.parameter_count(), second.parameter_count())
             }
             Self::FunctionCall(fc) => fc.parameter_count(),
-            Self::AggregateExpression(ae) => match ae {
-                AggregateExpression::Count(c) => c.parameter_count(),
-                AggregateExpression::Sum(s) => s.parameter_count(),
-                AggregateExpression::AnyValue(av) => av.parameter_count(),
-                AggregateExpression::Max(v) => v.parameter_count(),
-            },
+            Self::AggregateExpression(ae) => ae.parameter_count(),
             Self::WindowFunctionCall => 0,
             Self::TypeCast { base, .. } => base.parameter_count(),
             Self::CollationExpression => 0,
