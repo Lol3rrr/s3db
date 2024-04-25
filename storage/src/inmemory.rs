@@ -9,6 +9,9 @@ use sql::{DataType, TypeModifier};
 
 use super::{schema::ColumnSchema, RelationModification, Row, Schemas, Storage, TableSchema};
 
+/// # InMemoryStorage
+/// Stores all it's content in memory without any persistent storage. This is ideal for testing
+/// or validating ideas but should never be used in production
 pub struct InMemoryStorage {
     tables: RefCell<HashMap<String, Table>>,
     current_tid: AtomicU64,
@@ -17,6 +20,7 @@ pub struct InMemoryStorage {
     latest_commit: AtomicU64,
 }
 
+/// The TransactionGuard for the [`InMemoryStorage`] storage engine
 #[derive(Debug, Clone)]
 pub struct InMemoryTransactionGuard {
     id: u64,

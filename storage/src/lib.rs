@@ -1,3 +1,5 @@
+//! # Storage
+//! This crate implements the actual storage interfaces for the Database
 #![feature(alloc_layout_extra)]
 
 use std::{fmt::Debug, future::Future};
@@ -29,10 +31,13 @@ pub struct EntireRelation {
     pub parts: Vec<PartialRelation>,
 }
 
+/// Store a set of modifications that should be applied to a stored relation.
 pub struct ModifyRelation {
     modifications: Vec<RelationModification>,
 }
 
+/// The possible modifications to apply to a stored relation. This should never be directly
+/// constructed, instead see the methods exposed on [`ModifyRelation`]
 #[derive(Debug, PartialEq)]
 pub enum RelationModification {
     AddColumn {

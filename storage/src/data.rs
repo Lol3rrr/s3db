@@ -1,7 +1,9 @@
 use sql::DataType;
 
+/// Stores a single Value of a specific Type
 #[derive(Debug, Clone, PartialEq)]
 pub enum Data {
+    Null,
     SmallInt(i16),
     Integer(i32),
     BigInt(i64),
@@ -12,7 +14,6 @@ pub enum Data {
     Text(String),
     Name(String),
     Timestamp(String),
-    Null,
     List(Vec<Data>),
 }
 
@@ -119,8 +120,7 @@ impl Data {
                 Ok(Self::Serial(val))
             }
             other => {
-                dbg!(other, raw);
-                Err((RealizeError::NotImplemented, ty, raw))
+                Err((RealizeError::NotImplemented, other, raw))
             }
         }
     }

@@ -2,16 +2,19 @@ use std::collections::HashMap;
 
 use sql::{DataType, TypeModifier};
 
+/// Stores the Schemas for all relation stored
 #[derive(Debug, PartialEq, Clone)]
 pub struct Schemas {
     pub tables: HashMap<String, TableSchema>,
 }
 
+/// The Schema for a single Relation/Table
 #[derive(Debug, PartialEq, Clone)]
 pub struct TableSchema {
     pub rows: Vec<ColumnSchema>,
 }
 
+/// The Schema for a single column in a relation
 #[derive(Debug, PartialEq, Clone)]
 pub struct ColumnSchema {
     pub name: String,
