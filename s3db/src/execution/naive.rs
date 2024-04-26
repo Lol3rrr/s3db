@@ -15,7 +15,7 @@ use crate::{
 };
 
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
-use storage::{self, Data, Sequence, SequenceStorage, Storage, TableSchema};
+use storage::{self, Data, Sequence, Storage, TableSchema};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -1212,7 +1212,7 @@ where
                     for values in values {
                         let mut rows: Vec<storage::Data> =
                             Vec::with_capacity(table_schema.rows.len());
-                        for (i, column) in table_schema.rows.iter().enumerate() {
+                        for column in table_schema.rows.iter() {
                             let value = match ins
                                 .fields
                                 .iter()

@@ -6,6 +6,7 @@ use sql::{BinaryOperator, DataType, Literal, ValueExpression};
 use super::{error_context, types, AttributeId, ParseSelectError, Scope};
 
 mod functions;
+pub use functions::RaFunction;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RaValueExpression {
@@ -38,34 +39,6 @@ pub enum RaValueExpression {
     Renamed {
         name: String,
         value: Box<Self>,
-    },
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum RaFunction {
-    Coalesce(Vec<RaValueExpression>),
-    LeftPad {
-        base: Box<RaValueExpression>,
-        length: i64,
-        padding: String,
-    },
-    SetValue {
-        name: String,
-        value: Box<RaValueExpression>,
-        is_called: bool,
-    },
-    Lower(Box<RaValueExpression>),
-    Substr {
-        str_value: Box<RaValueExpression>,
-        start: Box<RaValueExpression>,
-        count: Option<Box<RaValueExpression>>,
-    },
-    CurrentSchemas {
-        implicit: bool,
-    },
-    ArrayPosition {
-        array: Box<RaValueExpression>,
-        target: Box<RaValueExpression>,
     },
 }
 

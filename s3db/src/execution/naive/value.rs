@@ -154,7 +154,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                     ra::RaFunction::SetValue {
                         name,
                         is_called,
-                        value,
+                        ..
                     } => Ok(FunctionInstruction::SetValue {
                         name: name.clone(),
                         is_called: *is_called,

@@ -2,7 +2,35 @@ use std::collections::HashMap;
 
 use sql::{DataType, FunctionCall, Literal};
 
-use crate::ra::{types, ParseRaError, RaExpression, RaFunction, RaValueExpression, Scope};
+use crate::ra::{types, ParseRaError, RaExpression, RaValueExpression, Scope};
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum RaFunction {
+    Coalesce(Vec<RaValueExpression>),
+    LeftPad {
+        base: Box<RaValueExpression>,
+        length: i64,
+        padding: String,
+    },
+    SetValue {
+        name: String,
+        value: Box<RaValueExpression>,
+        is_called: bool,
+    },
+    Lower(Box<RaValueExpression>),
+    Substr {
+        str_value: Box<RaValueExpression>,
+        start: Box<RaValueExpression>,
+        count: Option<Box<RaValueExpression>>,
+    },
+    CurrentSchemas {
+        implicit: bool,
+    },
+    ArrayPosition {
+        array: Box<RaValueExpression>,
+        target: Box<RaValueExpression>,
+    },
+}
 
 pub fn parse_fc(
     scope: &mut Scope<'_>,
