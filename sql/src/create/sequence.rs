@@ -1,6 +1,8 @@
 use nom::{IResult, Parser};
 
-use crate::{ArenaParser, CompatibleParser, DataType, Identifier, Literal, ColumnReference, Parser as _};
+use crate::{
+    ArenaParser, ColumnReference, CompatibleParser, DataType, Identifier, Literal, Parser as _,
+};
 
 /// ## References
 /// * [Postgres Docs](https://www.postgresql.org/docs/16/sql-createsequence.html)
@@ -116,13 +118,17 @@ fn parse<'i>(
             nom::bytes::complete::tag_no_case("NO"),
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("MINVALUE"),
-        )).map(|_| None),
-        nom::combinator::opt(nom::sequence::tuple((
-            nom::character::complete::multispace1,
-            nom::bytes::complete::tag_no_case("MINVALUE"),
-            nom::character::complete::multispace1,
-            Literal::parse(),
-        )).map(|(_, _, _, lit)| lit)),
+        ))
+        .map(|_| None),
+        nom::combinator::opt(
+            nom::sequence::tuple((
+                nom::character::complete::multispace1,
+                nom::bytes::complete::tag_no_case("MINVALUE"),
+                nom::character::complete::multispace1,
+                Literal::parse(),
+            ))
+            .map(|(_, _, _, lit)| lit),
+        ),
     ))(i)?;
 
     let (i, max_value) = nom::branch::alt((
@@ -131,32 +137,42 @@ fn parse<'i>(
             nom::bytes::complete::tag_no_case("NO"),
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("MAXVALUE"),
-        )).map(|_| None),
-        nom::combinator::opt(nom::sequence::tuple((
-            nom::character::complete::multispace1,
-            nom::bytes::complete::tag_no_case("MAXVALUE"),
-            nom::character::complete::multispace1,
-            Literal::parse(),
-        )).map(|(_, _, _, lit)| lit)),
+        ))
+        .map(|_| None),
+        nom::combinator::opt(
+            nom::sequence::tuple((
+                nom::character::complete::multispace1,
+                nom::bytes::complete::tag_no_case("MAXVALUE"),
+                nom::character::complete::multispace1,
+                Literal::parse(),
+            ))
+            .map(|(_, _, _, lit)| lit),
+        ),
     ))(i)?;
 
-    let (i, start) = nom::combinator::opt(nom::sequence::tuple((
-        nom::character::complete::multispace1,
-        nom::bytes::complete::tag_no_case("START"),
-        nom::combinator::opt(nom::sequence::tuple((
+    let (i, start) = nom::combinator::opt(
+        nom::sequence::tuple((
             nom::character::complete::multispace1,
-            nom::bytes::complete::tag_no_case("WITH"),
-        ))),
-        nom::character::complete::multispace1,
-        Literal::parse(),
-    )).map(|(_, _, _, _, lit)| lit))(i)?;
+            nom::bytes::complete::tag_no_case("START"),
+            nom::combinator::opt(nom::sequence::tuple((
+                nom::character::complete::multispace1,
+                nom::bytes::complete::tag_no_case("WITH"),
+            ))),
+            nom::character::complete::multispace1,
+            Literal::parse(),
+        ))
+        .map(|(_, _, _, _, lit)| lit),
+    )(i)?;
 
-    let (i, cache) = nom::combinator::opt(nom::sequence::tuple((
-        nom::character::complete::multispace1,
-        nom::bytes::complete::tag_no_case("CACHE"),
-        nom::character::complete::multispace1,
-        Literal::parse(),
-    )).map(|(_, _, _, lit)| lit))(i)?;
+    let (i, cache) = nom::combinator::opt(
+        nom::sequence::tuple((
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("CACHE"),
+            nom::character::complete::multispace1,
+            Literal::parse(),
+        ))
+        .map(|(_, _, _, lit)| lit),
+    )(i)?;
 
     let (i, cycle) = nom::combinator::opt(nom::branch::alt((
         nom::sequence::tuple((
@@ -164,24 +180,29 @@ fn parse<'i>(
             nom::bytes::complete::tag_no_case("NO"),
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("CYCLE"),
-        )).map(|_| false),
+        ))
+        .map(|_| false),
         nom::sequence::tuple((
             nom::character::complete::multispace1,
             nom::bytes::complete::tag_no_case("CYCLE"),
-        )).map(|_| true)
+        ))
+        .map(|_| true),
     )))(i)?;
 
-    let (i, owner) = nom::combinator::opt(nom::sequence::tuple((
-        nom::character::complete::multispace1,
-        nom::bytes::complete::tag_no_case("OWNED"),
-        nom::character::complete::multispace1,
-        nom::bytes::complete::tag_no_case("BY"),
-        nom::character::complete::multispace1,
-        nom::branch::alt((
-            nom::bytes::complete::tag_no_case("NONE").map(|_| None),
-            ColumnReference::parse().map(|c| Some(c)),
-        )),
-    )).map(|(_, _, _, _, _, owner)| owner))(i)?;
+    let (i, owner) = nom::combinator::opt(
+        nom::sequence::tuple((
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("OWNED"),
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("BY"),
+            nom::character::complete::multispace1,
+            nom::branch::alt((
+                nom::bytes::complete::tag_no_case("NONE").map(|_| None),
+                ColumnReference::parse().map(|c| Some(c)),
+            )),
+        ))
+        .map(|(_, _, _, _, _, owner)| owner),
+    )(i)?;
 
     Ok((
         i,
@@ -388,7 +409,7 @@ mod tests {
                 temporary: false,
                 if_not_exists: false,
                 as_type: None,
-                increment: None, 
+                increment: None,
                 min_value: Some(Literal::SmallInteger(13)),
                 max_value: None,
                 start: None,
@@ -407,7 +428,7 @@ mod tests {
                 temporary: false,
                 if_not_exists: false,
                 as_type: None,
-                increment: None, 
+                increment: None,
                 min_value: None,
                 max_value: None,
                 start: None,
@@ -429,7 +450,7 @@ mod tests {
                 temporary: false,
                 if_not_exists: false,
                 as_type: None,
-                increment: None, 
+                increment: None,
                 min_value: None,
                 max_value: Some(Literal::SmallInteger(13)),
                 start: None,
@@ -448,7 +469,7 @@ mod tests {
                 temporary: false,
                 if_not_exists: false,
                 as_type: None,
-                increment: None, 
+                increment: None,
                 min_value: None,
                 max_value: None,
                 start: None,
