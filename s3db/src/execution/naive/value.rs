@@ -152,9 +152,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         Err(EvaulateRaError::Other("Executing Coalesce"))
                     }
                     ra::RaFunction::SetValue {
-                        name,
-                        is_called,
-                        ..
+                        name, is_called, ..
                     } => Ok(FunctionInstruction::SetValue {
                         name: name.clone(),
                         is_called: *is_called,
