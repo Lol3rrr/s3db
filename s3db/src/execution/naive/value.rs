@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::ra::{self, AttributeId};
 
 use sql::{BinaryOperator, DataType};
-use storage::{self, Data};
+use storage::{self, Data, Sequence};
 
 use super::EvaulateRaError;
 
@@ -153,14 +153,13 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                     }
                     ra::RaFunction::SetValue {
                         name,
-                        value,
                         is_called,
+                        value
                     } => {
-                        dbg!(&name, &value, &is_called);
-
                         Ok(FunctionInstruction::SetValue {
                             name: name.clone(),
                             is_called: *is_called,
+                            ty: value.datatype().unwrap(),
                         })
                     }
                     ra::RaFunction::Lower(val) => {
@@ -290,27 +289,43 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
             }
             ValueInstruction::Function { func } => {
                 match func {
-                    FunctionInstruction::SetValue { name, is_called } => {
-                        let value = value_stack.pop()?;
+                    FunctionInstruction::SetValue { name, is_called, ty } => {
+                        let mut value = value_stack.pop()?;
 
-                        let value = match value {
-                            Data::List(mut v) => {
-                                if v.is_empty() {
-                                    // return Err(EvaulateRaError::Other(""));
-                                    return None;
+                        let value = loop {
+                            match value {
+                                Data::BigInt(v) => break v,
+                                Data::Integer(v) => break v as i64,
+                                Data::SmallInt(v) => break v as i64,
+                                Data::List(mut v) => {
+                                    if v.is_empty() {
+                                        // return Err(EvaulateRaError::Other(""));
+                                        return None;
+                                    }
+
+                                    value = v.swap_remove(0);
+                                    continue;
                                 }
-
-                                v.swap_remove(0)
-                            }
-                            other => other,
+                                other => todo!("Other: {:?}", other),
+                            };
                         };
 
-                        dbg!(name, &value, is_called);
+                        let sequence = engine.storage.get_sequence(name).await.unwrap().unwrap();
+                        if *is_called {
+                            sequence.set_value(1 + value as u64).await;
+                        } else {
+                            sequence.set_value(value as u64).await;
+                        }
 
                         // TODO
                         // Actually update the Sequence Value
 
-                        Some(value)
+                        match ty {
+                            sql::DataType::SmallInteger => Some(Data::SmallInt(value as i16)),
+sql::DataType::Integer | sql::DataType::Serial => Some(Data::Integer(value as i32)),
+sql::DataType::BigInteger | sql::DataType::BigSerial => Some(Data::BigInt(value as i64)),
+                            other => panic!("Unexpected Type: {:?}", other),
+                        }
                     }
                     FunctionInstruction::Lower {} => {
                         let value = value_stack.pop()?;
@@ -363,7 +378,7 @@ pub enum ValueInstruction<'expr, 'outer, 'placeholders, 'ctes> {
 
 #[derive(Debug, PartialEq)]
 pub enum FunctionInstruction {
-    SetValue { name: String, is_called: bool },
+    SetValue { name: String, is_called: bool, ty: sql::DataType },
     Lower {},
 }
 

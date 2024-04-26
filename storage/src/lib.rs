@@ -67,7 +67,21 @@ pub enum RelationModification {
     },
 }
 
-pub trait Storage {
+pub trait SequenceStorage {
+    type SequenceHandle<'s>: Sequence where Self: 's;
+
+    fn create_sequence(&self, name: &str) -> impl Future<Output = Result<(), ()>>;
+    fn remove_sequence(&self, name: &str) -> impl Future<Output = Result<(), ()>>;
+
+    fn get_sequence<'se, 'seq>(&'se self, name: &str) -> impl Future<Output = Result<Option<Self::SequenceHandle<'seq>>, ()>> where 'se: 'seq;
+}
+
+pub trait Sequence {
+    fn set_value(&self, value: u64) -> impl Future<Output = ()>;
+    fn get_next(&self) -> impl Future<Output = u64>;
+}
+
+pub trait Storage: SequenceStorage {
     type LoadingError: Debug;
     type TransactionGuard: Debug;
 

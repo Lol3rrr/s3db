@@ -226,18 +226,32 @@ pub fn function_call<'i, 'a>(
                 nom::character::complete::multispace0,
                 ValueExpression::parse_arena(arena),
                 nom::character::complete::multispace0,
+                nom::combinator::opt(nom::sequence::tuple((
+                    nom::bytes::complete::tag(","),
+                    nom::character::complete::multispace0,
+                    Literal::parse(),
+                    nom::character::complete::multispace0,
+                ))),
                 nom::bytes::complete::tag(")"),
             )),
-            |(_, _, _, name_lit, _, _, _, value, _, _)| {
+            |(_, _, _, name_lit, _, _, _, value, _, raw_is_called, _)| {
                 let name = match name_lit {
                     Literal::Str(name) => name,
                     other => return Err(other),
                 };
 
+                let is_called = match raw_is_called {
+                    Some((_, _, is_called, _)) => match is_called {
+                        Literal::Bool(v) => v,
+                        other => return Err(other)
+                    }
+                    None => true,
+                };
+
                 Ok(FunctionCall::SetValue {
                     sequence_name: Identifier(name),
                     value: Boxed::arena(arena, value),
-                    is_called: true,
+                    is_called,
                 })
             },
         ),
