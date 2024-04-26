@@ -158,7 +158,6 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                     } => Ok(FunctionInstruction::SetValue {
                         name: name.clone(),
                         is_called: *is_called,
-                        ty: value.datatype().unwrap(),
                     }),
                     ra::RaFunction::Lower(val) => {
                         dbg!(&val);
@@ -287,11 +286,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
             }
             ValueInstruction::Function { func } => {
                 match func {
-                    FunctionInstruction::SetValue {
-                        name,
-                        is_called,
-                        ty,
-                    } => {
+                    FunctionInstruction::SetValue { name, is_called } => {
                         let mut value = value_stack.pop()?;
 
                         let value = loop {
@@ -319,19 +314,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                             sequence.set_value(value as u64).await;
                         }
 
-                        // TODO
-                        // Actually update the Sequence Value
-
-                        match ty {
-                            sql::DataType::SmallInteger => Some(Data::SmallInt(value as i16)),
-                            sql::DataType::Integer | sql::DataType::Serial => {
-                                Some(Data::Integer(value as i32))
-                            }
-                            sql::DataType::BigInteger | sql::DataType::BigSerial => {
-                                Some(Data::BigInt(value as i64))
-                            }
-                            other => panic!("Unexpected Type: {:?}", other),
-                        }
+                        Some(Data::BigInt(value))
                     }
                     FunctionInstruction::Lower {} => {
                         let value = value_stack.pop()?;
@@ -384,11 +367,7 @@ pub enum ValueInstruction<'expr, 'outer, 'placeholders, 'ctes> {
 
 #[derive(Debug, PartialEq)]
 pub enum FunctionInstruction {
-    SetValue {
-        name: String,
-        is_called: bool,
-        ty: sql::DataType,
-    },
+    SetValue { name: String, is_called: bool },
     Lower {},
 }
 

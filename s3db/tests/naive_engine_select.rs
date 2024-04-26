@@ -989,7 +989,7 @@ async fn setval() {
             content: storage::EntireRelation {
                 columns: vec![("".into(), DataType::BigInteger, Vec::new())],
                 parts: vec![storage::PartialRelation {
-                    rows: vec![storage::Row::new(0, vec![Data::Integer(2)])]
+                    rows: vec![storage::Row::new(0, vec![Data::BigInt(2)])]
                 }]
             },
             formats: Vec::new()
