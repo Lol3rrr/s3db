@@ -102,7 +102,7 @@ pub enum Query<'s, 'a> {
     Delete(delete::Delete<'s, 'a>),
     CreateTable(create::CreateTable<'s, 'a>),
     CreateIndex(create::CreateIndex<'s, 'a>),
-    CreateSequence(create::CreateSequence<'s>),
+    CreateSequence(arenas::Boxed<'a, create::CreateSequence<'s>>),
     AlterTable(alter::AlterTable<'s, 'a>),
     DropIndex(drop::DropIndex<'s>),
     DropTable(drop::DropTable<'s, 'a>),
@@ -259,7 +259,9 @@ fn query<'i, 'a>(
                 nom::combinator::map(AbortTransaction::parse(), |_| Query::RollbackTransaction),
                 nom::combinator::map(CreateTable::parse_arena(arena), Query::CreateTable),
                 nom::combinator::map(CreateIndex::parse_arena(arena), Query::CreateIndex),
-                nom::combinator::map(CreateSequence::parse_arena(arena), Query::CreateSequence),
+                nom::combinator::map(CreateSequence::parse_arena(arena), |cs| {
+                    Query::CreateSequence(arenas::Boxed::arena(arena, cs))
+                }),
                 nom::combinator::map(AlterTable::parse_arena(arena), Query::AlterTable),
                 nom::combinator::map(DropIndex::parse(), Query::DropIndex),
                 nom::combinator::map(DropTable::parse_arena(arena), Query::DropTable),

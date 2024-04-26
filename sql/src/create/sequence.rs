@@ -198,7 +198,7 @@ fn parse<'i>(
             nom::character::complete::multispace1,
             nom::branch::alt((
                 nom::bytes::complete::tag_no_case("NONE").map(|_| None),
-                ColumnReference::parse().map(|c| Some(c)),
+                ColumnReference::parse().map(Some),
             )),
         ))
         .map(|(_, _, _, _, _, owner)| owner),
