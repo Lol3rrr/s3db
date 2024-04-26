@@ -1643,6 +1643,13 @@ where
 
                     Ok(ExecuteResult::Create)
                 }
+                Query::CreateSequence(create) => {
+                    tracing::error!("Creating Sequence: {:?}", create);
+
+                    Err(ExecuteBoundError::NotImplemented(
+                        "Executing Create Sequence",
+                    ))
+                }
                 Query::AlterTable(alter) => {
                     tracing::debug!("Alter Table");
 

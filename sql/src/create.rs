@@ -7,6 +7,9 @@ use super::common::{DataType, Identifier, TypeModifier};
 mod table;
 pub use table::CreateTable;
 
+mod sequence;
+pub use sequence::CreateSequence;
+
 #[derive(Debug, PartialEq)]
 pub struct CreateIndex<'s, 'a> {
     pub identifier: Identifier<'s>,
