@@ -256,6 +256,10 @@ impl RaValueExpression {
                     dbg!(query);
                     Err(ParseSelectError::NotImplemented("Parse Exists"))
                 }
+                FunctionCall::NextValue { sequence_name } => {
+                    dbg!(sequence_name);
+                    Err(ParseRaError::NotImplemented("Parsing NextValue"))
+                }
                 FunctionCall::SetValue {
                     sequence_name,
                     value,
@@ -278,6 +282,13 @@ impl RaValueExpression {
                         value: Box::new(ra_value),
                         is_called: *is_called,
                     }))
+                }
+                FunctionCall::CurrentValue { sequence_name } => {
+                    dbg!(sequence_name);
+                    Err(ParseRaError::NotImplemented("Parsing CurrentValue"))
+                }
+                FunctionCall::LastValue {} => {
+                    Err(ParseRaError::NotImplemented("Parsing LastValue"))
                 }
                 FunctionCall::Lower { value } => {
                     let raw_ra_value = RaValueExpression::parse_internal(
