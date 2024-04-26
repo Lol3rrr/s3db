@@ -37,9 +37,9 @@ impl<'i, 'a> ArenaParser<'i, 'a> for CreateSequence<'i> {
     }
 }
 
-fn parse<'i, 'a>(
+fn parse<'i>(
     i: &'i [u8],
-    _arena: &'a bumpalo::Bump,
+    _arena: &'_ bumpalo::Bump,
 ) -> IResult<&'i [u8], CreateSequence<'i>, nom::error::VerboseError<&'i [u8]>> {
     let (i, _) = nom::sequence::tuple((
         nom::bytes::complete::tag_no_case("CREATE"),
