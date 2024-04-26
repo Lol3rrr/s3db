@@ -183,7 +183,7 @@ pub enum TypeModifier {
     Null,
     DefaultValue { value: Option<Literal<'static>> },
     Collate { collation: String },
-    Sequence { name: String, },
+    Sequence { name: String },
 }
 
 impl<'i> crate::Parser<'i> for TypeModifier {

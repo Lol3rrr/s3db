@@ -243,8 +243,8 @@ pub fn function_call<'i, 'a>(
                 let is_called = match raw_is_called {
                     Some((_, _, is_called, _)) => match is_called {
                         Literal::Bool(v) => v,
-                        other => return Err(other)
-                    }
+                        other => return Err(other),
+                    },
                     None => true,
                 };
 

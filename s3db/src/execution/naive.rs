@@ -15,7 +15,7 @@ use crate::{
 };
 
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
-use storage::{self, Data, Storage, TableSchema, SequenceStorage, Sequence};
+use storage::{self, Data, Sequence, SequenceStorage, Storage, TableSchema};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -1230,11 +1230,17 @@ where
                                     }
                                 }
                                 None => {
-                                    if let Some(seq_name) = column.mods.iter().find_map(|m| match m {
+                                    if let Some(seq_name) = column.mods.iter().find_map(|m| match m
+                                    {
                                         TypeModifier::Sequence { name } => Some(name),
                                         _ => None,
                                     }) {
-                                        let sequence = self.storage.get_sequence(seq_name).await.unwrap().unwrap();
+                                        let sequence = self
+                                            .storage
+                                            .get_sequence(seq_name)
+                                            .await
+                                            .unwrap()
+                                            .unwrap();
                                         let n_serial = sequence.get_next().await;
                                         storage::Data::Integer(n_serial as i32)
                                     } else {
@@ -1562,35 +1568,46 @@ where
                         .fields
                         .iter()
                         .map(|tfield| {
-                            let mut modifiers: Vec<_> = tfield.modifiers.iter().map(|m| m.clone()).collect();
+                            let mut modifiers: Vec<_> =
+                                tfield.modifiers.iter().map(|m| m.clone()).collect();
 
                             let ty = match &tfield.datatype {
                                 sql::DataType::Serial => {
-                                    modifiers.push(TypeModifier::Sequence { name: format!("{}_{}_seq", create.identifier.0, tfield.ident.0) });
+                                    modifiers.push(TypeModifier::Sequence {
+                                        name: format!(
+                                            "{}_{}_seq",
+                                            create.identifier.0, tfield.ident.0
+                                        ),
+                                    });
                                     sql::DataType::Integer
-                                },
+                                }
                                 other => other.clone(),
                             };
 
-                            (
-                                tfield.ident.0.to_string(),
-                                ty,
-                                modifiers,
-                            )
+                            (tfield.ident.0.to_string(), ty, modifiers)
                         })
                         .collect();
 
                     for field in fields.iter() {
                         for seq_name in field.2.iter().filter_map(|m| match m {
                             TypeModifier::Sequence { name } => Some(name),
-                            _ => None
+                            _ => None,
                         }) {
-                            match self.storage.get_sequence(&seq_name).await.map_err(|e| ExecuteBoundError::Other("Getting Sequence"))? {
+                            match self
+                                .storage
+                                .get_sequence(&seq_name)
+                                .await
+                                .map_err(|e| ExecuteBoundError::Other("Getting Sequence"))?
+                            {
                                 Some(tmp) => {
-                                    return Err(ExecuteBoundError::Other("Sequence already exists"));
+                                    return Err(ExecuteBoundError::Other(
+                                        "Sequence already exists",
+                                    ));
                                 }
                                 None => {
-                                    self.storage.create_sequence(&seq_name).await.map_err(|e| ExecuteBoundError::Other("Creating Sequence"))?;
+                                    self.storage.create_sequence(&seq_name).await.map_err(|e| {
+                                        ExecuteBoundError::Other("Creating Sequence")
+                                    })?;
                                 }
                             };
                         }

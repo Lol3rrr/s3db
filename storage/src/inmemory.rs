@@ -1,13 +1,19 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    sync::{Arc, atomic::{AtomicU64, Ordering}},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use crate::Data;
 use sql::{DataType, TypeModifier};
 
-use super::{schema::ColumnSchema, RelationModification, Row, Schemas, Storage, SequenceStorage, TableSchema, Sequence};
+use super::{
+    schema::ColumnSchema, RelationModification, Row, Schemas, Sequence, SequenceStorage, Storage,
+    TableSchema,
+};
 
 /// # InMemoryStorage
 /// Stores all it's content in memory without any persistent storage. This is ideal for testing
@@ -171,11 +177,13 @@ impl InMemoryStorage {
 
 impl<'s> Sequence for InMemorySequence<'s> {
     async fn set_value(&self, value: u64) -> () {
-        self.counter.store(value, core::sync::atomic::Ordering::SeqCst);
+        self.counter
+            .store(value, core::sync::atomic::Ordering::SeqCst);
     }
 
     async fn get_next(&self) -> u64 {
-        self.counter.fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        self.counter
+            .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -189,11 +197,17 @@ impl SequenceStorage for InMemoryStorage {
         <&InMemoryStorage as SequenceStorage>::remove_sequence(&self, name).await
     }
 
-    async fn get_sequence<'se, 'seq>(&'se self, name: &str) -> Result<Option<Self::SequenceHandle<'seq>>, ()> where 'se: 'seq {
+    async fn get_sequence<'se, 'seq>(
+        &'se self,
+        name: &str,
+    ) -> Result<Option<Self::SequenceHandle<'seq>>, ()>
+    where
+        'se: 'seq,
+    {
         let tmp = <&InMemoryStorage as SequenceStorage>::get_sequence(&self, name).await?;
         Ok(tmp.map(|tmp| InMemorySequence {
             counter: tmp.counter,
-            _marker: core::marker::PhantomData{},
+            _marker: core::marker::PhantomData {},
         }))
     }
 }
@@ -353,7 +367,7 @@ impl Storage for InMemoryStorage {
     }
 }
 
-impl SequenceStorage for &InMemoryStorage{
+impl SequenceStorage for &InMemoryStorage {
     type SequenceHandle<'s> = InMemorySequence<'s> where Self: 's;
 
     async fn create_sequence(&self, name: &str) -> Result<(), ()> {
@@ -363,7 +377,7 @@ impl SequenceStorage for &InMemoryStorage{
         }
 
         seqs.insert(name.to_string(), Arc::new(AtomicU64::new(1)));
-        
+
         Ok(())
     }
     async fn remove_sequence(&self, name: &str) -> Result<(), ()> {
@@ -377,15 +391,21 @@ impl SequenceStorage for &InMemoryStorage{
         Ok(())
     }
 
-    async fn get_sequence<'se, 'seq>(&'se self, name: &str) -> Result<Option<Self::SequenceHandle<'seq>>, ()> where 'se: 'seq {
+    async fn get_sequence<'se, 'seq>(
+        &'se self,
+        name: &str,
+    ) -> Result<Option<Self::SequenceHandle<'seq>>, ()>
+    where
+        'se: 'seq,
+    {
         let seqs = self.sequences.try_borrow().map_err(|e| ())?;
-        
+
         match seqs.get(name) {
             Some(seq) => Ok(Some(InMemorySequence {
                 counter: seq.clone(),
                 _marker: core::marker::PhantomData {},
             })),
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 }

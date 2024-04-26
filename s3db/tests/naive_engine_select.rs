@@ -5,7 +5,8 @@ use s3db::execution::{naive::NaiveEngine, Context, Execute, ExecuteResult};
 
 use sql::{DataType, Query};
 use storage::{
-    self, inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, Row, Storage, SequenceStorage,
+    self, inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, Row, SequenceStorage,
+    Storage,
 };
 
 macro_rules! storage_setup {
@@ -51,7 +52,11 @@ async fn create_table_with_sequence() {
 
     let arena = bumpalo::Bump::new();
 
-    let query = Query::parse("CREATE TABLE testing (\"id\" SERIAL, name TEXT)".as_bytes(), &arena).unwrap();
+    let query = Query::parse(
+        "CREATE TABLE testing (\"id\" SERIAL, name TEXT)".as_bytes(),
+        &arena,
+    )
+    .unwrap();
     let res = engine.execute(&query, &mut ctx, &arena).await.unwrap();
     assert_eq!(ExecuteResult::Create, res);
 
@@ -1331,33 +1336,85 @@ async fn basic_serial_usage() {
 
     let arena = bumpalo::Bump::new();
 
-    let create_query = Query::parse("CREATE TABLE testing (id SERIAL, name TEXT)".as_bytes(), &arena).unwrap();
-    let create_res = engine.execute(&create_query, &mut ctx, &arena).await.unwrap();
+    let create_query = Query::parse(
+        "CREATE TABLE testing (id SERIAL, name TEXT)".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let create_res = engine
+        .execute(&create_query, &mut ctx, &arena)
+        .await
+        .unwrap();
     assert_eq!(ExecuteResult::Create, create_res);
 
-    let insert_query = Query::parse("INSERT INTO testing (name) VALUES ('first')".as_bytes(), &arena).unwrap();
-    let insert_res = engine.execute(&insert_query, &mut ctx, &arena).await.unwrap();
-    assert_eq!(ExecuteResult::Insert { inserted_rows: 1, formats: Vec::new(), returning: Vec::new() }, insert_res);
+    let insert_query = Query::parse(
+        "INSERT INTO testing (name) VALUES ('first')".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let insert_res = engine
+        .execute(&insert_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+    assert_eq!(
+        ExecuteResult::Insert {
+            inserted_rows: 1,
+            formats: Vec::new(),
+            returning: Vec::new()
+        },
+        insert_res
+    );
 
-    let insert_query = Query::parse("INSERT INTO testing (name) VALUES ('second')".as_bytes(), &arena).unwrap();
-    let insert_res = engine.execute(&insert_query, &mut ctx, &arena).await.unwrap();
-    assert_eq!(ExecuteResult::Insert { inserted_rows: 1, formats: Vec::new(), returning: Vec::new() }, insert_res);
+    let insert_query = Query::parse(
+        "INSERT INTO testing (name) VALUES ('second')".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let insert_res = engine
+        .execute(&insert_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+    assert_eq!(
+        ExecuteResult::Insert {
+            inserted_rows: 1,
+            formats: Vec::new(),
+            returning: Vec::new()
+        },
+        insert_res
+    );
 
-    
     let select_query = Query::parse("SELECT * FROM testing".as_bytes(), &arena).unwrap();
-    let select_res = engine.execute(&select_query, &mut ctx, &arena).await.unwrap();
-   
+    let select_res = engine
+        .execute(&select_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+
     let tmp: storage::EntireRelation = match select_res {
         ExecuteResult::Select { content, .. } => content,
         other => panic!("{:?}", other),
     };
-    
-    assert_eq!(vec![storage::PartialRelation {
-        rows: vec![
-            storage::Row::new(0, vec![storage::Data::Integer(1), storage::Data::Text("first".into())]),
-            storage::Row::new(0, vec![storage::Data::Integer(2), storage::Data::Text("second".into())])
-        ],
-    }], tmp.parts);
+
+    assert_eq!(
+        vec![storage::PartialRelation {
+            rows: vec![
+                storage::Row::new(
+                    0,
+                    vec![
+                        storage::Data::Integer(1),
+                        storage::Data::Text("first".into())
+                    ]
+                ),
+                storage::Row::new(
+                    0,
+                    vec![
+                        storage::Data::Integer(2),
+                        storage::Data::Text("second".into())
+                    ]
+                )
+            ],
+        }],
+        tmp.parts
+    );
 }
 
 #[tokio::test]
@@ -1371,50 +1428,152 @@ async fn serial_usage_with_setval() {
 
     let arena = bumpalo::Bump::new();
 
-    let create_query = Query::parse("CREATE TABLE testing (id SERIAL, name TEXT)".as_bytes(), &arena).unwrap();
-    let create_res = engine.execute(&create_query, &mut ctx, &arena).await.unwrap();
+    let create_query = Query::parse(
+        "CREATE TABLE testing (id SERIAL, name TEXT)".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let create_res = engine
+        .execute(&create_query, &mut ctx, &arena)
+        .await
+        .unwrap();
     assert_eq!(ExecuteResult::Create, create_res);
 
-    let insert_query = Query::parse("INSERT INTO testing (name) VALUES ('first')".as_bytes(), &arena).unwrap();
-    let insert_res = engine.execute(&insert_query, &mut ctx, &arena).await.unwrap();
-    assert_eq!(ExecuteResult::Insert { inserted_rows: 1, formats: Vec::new(), returning: Vec::new() }, insert_res);
+    let insert_query = Query::parse(
+        "INSERT INTO testing (name) VALUES ('first')".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let insert_res = engine
+        .execute(&insert_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+    assert_eq!(
+        ExecuteResult::Insert {
+            inserted_rows: 1,
+            formats: Vec::new(),
+            returning: Vec::new()
+        },
+        insert_res
+    );
 
-    let insert_query = Query::parse("INSERT INTO testing (name) VALUES ('second')".as_bytes(), &arena).unwrap();
-    let insert_res = engine.execute(&insert_query, &mut ctx, &arena).await.unwrap();
-    assert_eq!(ExecuteResult::Insert { inserted_rows: 1, formats: Vec::new(), returning: Vec::new() }, insert_res);
+    let insert_query = Query::parse(
+        "INSERT INTO testing (name) VALUES ('second')".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let insert_res = engine
+        .execute(&insert_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+    assert_eq!(
+        ExecuteResult::Insert {
+            inserted_rows: 1,
+            formats: Vec::new(),
+            returning: Vec::new()
+        },
+        insert_res
+    );
 
-    let setval_query = Query::parse("SELECT setval('testing_id_seq', 5)".as_bytes(), &arena).unwrap();
-    let setval_res = engine.execute(&setval_query, &mut ctx, &arena).await.unwrap();
+    let setval_query =
+        Query::parse("SELECT setval('testing_id_seq', 5)".as_bytes(), &arena).unwrap();
+    let setval_res = engine
+        .execute(&setval_query, &mut ctx, &arena)
+        .await
+        .unwrap();
     assert!(matches!(setval_res, ExecuteResult::Select { .. }));
 
+    let insert_query = Query::parse(
+        "INSERT INTO testing (name) VALUES ('third')".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let insert_res = engine
+        .execute(&insert_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+    assert_eq!(
+        ExecuteResult::Insert {
+            inserted_rows: 1,
+            formats: Vec::new(),
+            returning: Vec::new()
+        },
+        insert_res
+    );
 
-    let insert_query = Query::parse("INSERT INTO testing (name) VALUES ('third')".as_bytes(), &arena).unwrap();
-    let insert_res = engine.execute(&insert_query, &mut ctx, &arena).await.unwrap();
-    assert_eq!(ExecuteResult::Insert { inserted_rows: 1, formats: Vec::new(), returning: Vec::new() }, insert_res);
-
-    let setval_query = Query::parse("SELECT setval('testing_id_seq', 10, false)".as_bytes(), &arena).unwrap();
-    let setval_res = engine.execute(&setval_query, &mut ctx, &arena).await.unwrap();
+    let setval_query = Query::parse(
+        "SELECT setval('testing_id_seq', 10, false)".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let setval_res = engine
+        .execute(&setval_query, &mut ctx, &arena)
+        .await
+        .unwrap();
     assert!(matches!(setval_res, ExecuteResult::Select { .. }));
 
-    let insert_query = Query::parse("INSERT INTO testing (name) VALUES ('fourth')".as_bytes(), &arena).unwrap();
-    let insert_res = engine.execute(&insert_query, &mut ctx, &arena).await.unwrap();
-    assert_eq!(ExecuteResult::Insert { inserted_rows: 1, formats: Vec::new(), returning: Vec::new() }, insert_res);
+    let insert_query = Query::parse(
+        "INSERT INTO testing (name) VALUES ('fourth')".as_bytes(),
+        &arena,
+    )
+    .unwrap();
+    let insert_res = engine
+        .execute(&insert_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+    assert_eq!(
+        ExecuteResult::Insert {
+            inserted_rows: 1,
+            formats: Vec::new(),
+            returning: Vec::new()
+        },
+        insert_res
+    );
 
-    
     let select_query = Query::parse("SELECT * FROM testing".as_bytes(), &arena).unwrap();
-    let select_res = engine.execute(&select_query, &mut ctx, &arena).await.unwrap();
-   
+    let select_res = engine
+        .execute(&select_query, &mut ctx, &arena)
+        .await
+        .unwrap();
+
     let tmp: storage::EntireRelation = match select_res {
         ExecuteResult::Select { content, .. } => content,
         other => panic!("{:?}", other),
     };
-    
-    assert_eq!(vec![storage::PartialRelation {
-        rows: vec![
-            storage::Row::new(0, vec![storage::Data::Integer(1), storage::Data::Text("first".into())]),
-            storage::Row::new(0, vec![storage::Data::Integer(2), storage::Data::Text("second".into())]),
-            storage::Row::new(0, vec![storage::Data::Integer(6), storage::Data::Text("third".into())]),
-            storage::Row::new(0, vec![storage::Data::Integer(10), storage::Data::Text("fourth".into())]),
-        ],
-    }], tmp.parts);
+
+    assert_eq!(
+        vec![storage::PartialRelation {
+            rows: vec![
+                storage::Row::new(
+                    0,
+                    vec![
+                        storage::Data::Integer(1),
+                        storage::Data::Text("first".into())
+                    ]
+                ),
+                storage::Row::new(
+                    0,
+                    vec![
+                        storage::Data::Integer(2),
+                        storage::Data::Text("second".into())
+                    ]
+                ),
+                storage::Row::new(
+                    0,
+                    vec![
+                        storage::Data::Integer(6),
+                        storage::Data::Text("third".into())
+                    ]
+                ),
+                storage::Row::new(
+                    0,
+                    vec![
+                        storage::Data::Integer(10),
+                        storage::Data::Text("fourth".into())
+                    ]
+                ),
+            ],
+        }],
+        tmp.parts
+    );
 }
