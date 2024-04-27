@@ -41,11 +41,18 @@ pub enum FunctionCall<'s, 'a> {
     Exists {
         query: Boxed<'a, Select<'s, 'a>>,
     },
+    NextValue {
+        sequence_name: Identifier<'s>,
+    },
     SetValue {
         sequence_name: Identifier<'s>,
         value: Boxed<'a, ValueExpression<'s, 'a>>,
         is_called: bool,
     },
+    CurrentValue {
+        sequence_name: Identifier<'s>,
+    },
+    LastValue {},
     Lower {
         value: Boxed<'a, ValueExpression<'s, 'a>>,
     },
@@ -76,7 +83,10 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
                 .max()
                 .unwrap_or(0),
             Self::Exists { query } => query.parameter_count(),
-            Self::SetValue { .. } => 0,
+            Self::NextValue { .. } => 0,
+            Self::SetValue { value, .. } => value.parameter_count(),
+            Self::CurrentValue { .. } => 0,
+            Self::LastValue {} => 0,
             Self::Lower { value } => value.parameter_count(),
             Self::Substr {
                 value,
@@ -115,6 +125,9 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
             Self::Exists { query } => FunctionCall::Exists {
                 query: query.to_static(),
             },
+            Self::NextValue { sequence_name } => FunctionCall::NextValue {
+                sequence_name: sequence_name.to_static(),
+            },
             Self::SetValue {
                 sequence_name,
                 value,
@@ -124,6 +137,10 @@ impl<'i, 'a> CompatibleParser for FunctionCall<'i, 'a> {
                 value: value.to_static(),
                 is_called: *is_called,
             },
+            Self::CurrentValue { sequence_name } => FunctionCall::CurrentValue {
+                sequence_name: sequence_name.to_static(),
+            },
+            Self::LastValue {} => FunctionCall::LastValue {},
             Self::Lower { value } => FunctionCall::Lower {
                 value: value.to_static(),
             },
@@ -215,6 +232,11 @@ pub fn function_call<'i, 'a>(
                 query: Boxed::arena(arena, query),
             },
         ),
+        function_call!("nextval", Identifier::parse(), |ident| {
+            FunctionCall::NextValue {
+                sequence_name: ident,
+            }
+        }),
         nom::combinator::map_res(
             nom::sequence::tuple((
                 nom::bytes::complete::tag_no_case("setval"),
@@ -226,21 +248,43 @@ pub fn function_call<'i, 'a>(
                 nom::character::complete::multispace0,
                 ValueExpression::parse_arena(arena),
                 nom::character::complete::multispace0,
+                nom::combinator::opt(nom::sequence::tuple((
+                    nom::bytes::complete::tag(","),
+                    nom::character::complete::multispace0,
+                    Literal::parse(),
+                    nom::character::complete::multispace0,
+                ))),
                 nom::bytes::complete::tag(")"),
             )),
-            |(_, _, _, name_lit, _, _, _, value, _, _)| {
+            |(_, _, _, name_lit, _, _, _, value, _, raw_is_called, _)| {
                 let name = match name_lit {
                     Literal::Str(name) => name,
                     other => return Err(other),
                 };
 
+                let is_called = match raw_is_called {
+                    Some((_, _, is_called, _)) => match is_called {
+                        Literal::Bool(v) => v,
+                        other => return Err(other),
+                    },
+                    None => true,
+                };
+
                 Ok(FunctionCall::SetValue {
                     sequence_name: Identifier(name),
                     value: Boxed::arena(arena, value),
-                    is_called: true,
+                    is_called,
                 })
             },
         ),
+        function_call!("currval", Identifier::parse(), |ident| {
+            FunctionCall::CurrentValue {
+                sequence_name: ident,
+            }
+        }),
+        function_call!("lastval", nom::combinator::success(()), |_| {
+            FunctionCall::LastValue {}
+        }),
         nom::combinator::map(
             nom::sequence::tuple((
                 nom::bytes::complete::tag_no_case("lower"),
@@ -339,6 +383,33 @@ mod tests {
     }
 
     #[test]
+    fn seq_nextval() {
+        arena_parser_parse!(
+            FunctionCall,
+            "nextval(some_sequence)",
+            FunctionCall::NextValue {
+                sequence_name: "some_sequence".into()
+            }
+        );
+    }
+
+    #[test]
+    fn seq_currval() {
+        arena_parser_parse!(
+            FunctionCall,
+            "currval(some_sequence)",
+            FunctionCall::CurrentValue {
+                sequence_name: "some_sequence".into()
+            }
+        );
+    }
+
+    #[test]
+    fn seq_lastval() {
+        arena_parser_parse!(FunctionCall, "lastval()", FunctionCall::LastValue {});
+    }
+
+    #[test]
     fn set_val_without_is_called() {
         arena_parser_parse!(
             FunctionCall,
@@ -347,6 +418,29 @@ mod tests {
                 sequence_name: Identifier("id".into()),
                 value: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(123))),
                 is_called: true
+            }
+        );
+    }
+
+    #[test]
+    fn set_val_with_is_called() {
+        arena_parser_parse!(
+            FunctionCall,
+            "setval('id', 123, true)",
+            FunctionCall::SetValue {
+                sequence_name: Identifier("id".into()),
+                value: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(123))),
+                is_called: true
+            }
+        );
+
+        arena_parser_parse!(
+            FunctionCall,
+            "setval('id', 123, false)",
+            FunctionCall::SetValue {
+                sequence_name: Identifier("id".into()),
+                value: Boxed::new(ValueExpression::Literal(Literal::SmallInteger(123))),
+                is_called: false
             }
         );
     }

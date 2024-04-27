@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::ra::{self, AttributeId};
 
 use sql::{BinaryOperator, DataType};
-use storage::{self, Data};
+use storage::{self, Data, Sequence};
 
 use super::EvaulateRaError;
 
@@ -152,17 +152,11 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         Err(EvaulateRaError::Other("Executing Coalesce"))
                     }
                     ra::RaFunction::SetValue {
-                        name,
-                        value,
-                        is_called,
-                    } => {
-                        dbg!(&name, &value, &is_called);
-
-                        Ok(FunctionInstruction::SetValue {
-                            name: name.clone(),
-                            is_called: *is_called,
-                        })
-                    }
+                        name, is_called, ..
+                    } => Ok(FunctionInstruction::SetValue {
+                        name: name.clone(),
+                        is_called: *is_called,
+                    }),
                     ra::RaFunction::Lower(val) => {
                         dbg!(&val);
 
@@ -291,26 +285,34 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
             ValueInstruction::Function { func } => {
                 match func {
                     FunctionInstruction::SetValue { name, is_called } => {
-                        let value = value_stack.pop()?;
+                        let mut value = value_stack.pop()?;
 
-                        let value = match value {
-                            Data::List(mut v) => {
-                                if v.is_empty() {
-                                    // return Err(EvaulateRaError::Other(""));
-                                    return None;
+                        let value = loop {
+                            match value {
+                                Data::BigInt(v) => break v,
+                                Data::Integer(v) => break v as i64,
+                                Data::SmallInt(v) => break v as i64,
+                                Data::List(mut v) => {
+                                    if v.is_empty() {
+                                        // return Err(EvaulateRaError::Other(""));
+                                        return None;
+                                    }
+
+                                    value = v.swap_remove(0);
+                                    continue;
                                 }
-
-                                v.swap_remove(0)
-                            }
-                            other => other,
+                                other => todo!("Other: {:?}", other),
+                            };
                         };
 
-                        dbg!(name, &value, is_called);
+                        let sequence = engine.storage.get_sequence(name).await.unwrap().unwrap();
+                        if *is_called {
+                            sequence.set_value(1 + value as u64).await;
+                        } else {
+                            sequence.set_value(value as u64).await;
+                        }
 
-                        // TODO
-                        // Actually update the Sequence Value
-
-                        Some(value)
+                        Some(Data::BigInt(value))
                     }
                     FunctionInstruction::Lower {} => {
                         let value = value_stack.pop()?;

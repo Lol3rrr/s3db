@@ -15,7 +15,7 @@ use crate::{
 };
 
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
-use storage::{self, Data, Storage, TableSchema};
+use storage::{self, Data, Sequence, Storage, TableSchema};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -1207,23 +1207,12 @@ where
 
                     tracing::trace!("Values: {:?}", values);
 
-                    let relation = if table_schema.rows.iter().any(|c| c.ty == DataType::Serial) {
-                        let relation = self
-                            .storage
-                            .get_entire_relation(&ins.table.0, transaction)
-                            .await
-                            .map_err(ExecuteBoundError::StorageError)?;
-                        Some(relation)
-                    } else {
-                        None
-                    };
-
                     let mut insert_rows: Vec<Vec<storage::Data>> = Vec::new();
 
                     for values in values {
                         let mut rows: Vec<storage::Data> =
                             Vec::with_capacity(table_schema.rows.len());
-                        for (i, column) in table_schema.rows.iter().enumerate() {
+                        for column in table_schema.rows.iter() {
                             let value = match ins
                                 .fields
                                 .iter()
@@ -1241,24 +1230,19 @@ where
                                     }
                                 }
                                 None => {
-                                    if column.ty == DataType::Serial {
-                                        let rel = relation.as_ref().ok_or_else(|| {
-                                            ExecuteBoundError::Other("Missing Relation")
-                                        })?;
-
-                                        let n_serial = rel
-                                            .parts
-                                            .iter()
-                                            .flat_map(|p| p.rows.iter())
-                                            .filter_map(|row| match &row.data[i] {
-                                                storage::Data::Serial(v) => Some(*v),
-                                                _ => None,
-                                            })
-                                            .max()
-                                            .map(|m| m + 1)
-                                            .unwrap_or(2);
-
-                                        storage::Data::Serial(n_serial)
+                                    if let Some(seq_name) = column.mods.iter().find_map(|m| match m
+                                    {
+                                        TypeModifier::Sequence { name } => Some(name),
+                                        _ => None,
+                                    }) {
+                                        let sequence = self
+                                            .storage
+                                            .get_sequence(seq_name)
+                                            .await
+                                            .unwrap()
+                                            .unwrap();
+                                        let n_serial = sequence.get_next().await;
+                                        storage::Data::Integer(n_serial as i32)
                                     } else {
                                         storage::Data::as_null(&column.ty)
                                     }
@@ -1584,17 +1568,50 @@ where
                         .fields
                         .iter()
                         .map(|tfield| {
-                            (
-                                tfield.ident.0.to_string(),
-                                tfield.datatype.clone(),
-                                tfield
-                                    .modifiers
-                                    .iter()
-                                    .map(|m| m.clone())
-                                    .collect::<Vec<_>>(),
-                            )
+                            let mut modifiers: Vec<_> =
+                                tfield.modifiers.iter().map(|m| m.clone()).collect();
+
+                            let ty = match &tfield.datatype {
+                                sql::DataType::Serial => {
+                                    modifiers.push(TypeModifier::Sequence {
+                                        name: format!(
+                                            "{}_{}_seq",
+                                            create.identifier.0, tfield.ident.0
+                                        ),
+                                    });
+                                    sql::DataType::Integer
+                                }
+                                other => other.clone(),
+                            };
+
+                            (tfield.ident.0.to_string(), ty, modifiers)
                         })
                         .collect();
+
+                    for field in fields.iter() {
+                        for seq_name in field.2.iter().filter_map(|m| match m {
+                            TypeModifier::Sequence { name } => Some(name),
+                            _ => None,
+                        }) {
+                            match self
+                                .storage
+                                .get_sequence(&seq_name)
+                                .await
+                                .map_err(|e| ExecuteBoundError::Other("Getting Sequence"))?
+                            {
+                                Some(tmp) => {
+                                    return Err(ExecuteBoundError::Other(
+                                        "Sequence already exists",
+                                    ));
+                                }
+                                None => {
+                                    self.storage.create_sequence(&seq_name).await.map_err(|e| {
+                                        ExecuteBoundError::Other("Creating Sequence")
+                                    })?;
+                                }
+                            };
+                        }
+                    }
 
                     tracing::trace!("Creating Relation");
                     self.storage
@@ -1625,6 +1642,13 @@ where
                         .unwrap();
 
                     Ok(ExecuteResult::Create)
+                }
+                Query::CreateSequence(create) => {
+                    tracing::error!("Creating Sequence: {:?}", create);
+
+                    Err(ExecuteBoundError::NotImplemented(
+                        "Executing Create Sequence",
+                    ))
                 }
                 Query::AlterTable(alter) => {
                     tracing::debug!("Alter Table");

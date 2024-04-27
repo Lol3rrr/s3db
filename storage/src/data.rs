@@ -7,7 +7,6 @@ pub enum Data {
     SmallInt(i16),
     Integer(i32),
     BigInt(i64),
-    Serial(u32),
     Boolean(bool),
     Char(Vec<char>),
     Varchar(Vec<char>),
@@ -111,14 +110,6 @@ impl Data {
                     .map_err(|e| (RealizeError::ParseStrToInt(e), ty, raw))?;
                 Ok(Self::BigInt(val))
             }
-            sql::DataType::Serial => {
-                let raw_str = core::str::from_utf8(raw)
-                    .map_err(|e| (RealizeError::ConvertToString(e), ty, raw))?;
-                let val = raw_str
-                    .parse::<u32>()
-                    .map_err(|e| (RealizeError::ParseStrToInt(e), ty, raw))?;
-                Ok(Self::Serial(val))
-            }
             other => Err((RealizeError::NotImplemented, other, raw)),
         }
     }
@@ -137,7 +128,7 @@ impl Data {
 
     pub fn as_null(ty: &DataType) -> Self {
         match ty {
-            DataType::Serial => Self::Serial(0),
+            DataType::Serial => todo!(),
             DataType::BigSerial => todo!(),
             DataType::SmallInteger => Self::SmallInt(0),
             DataType::Integer => Self::Integer(0),
@@ -156,8 +147,6 @@ impl Data {
 
     pub fn try_cast(self, target: &sql::DataType) -> Result<Self, (Self, &sql::DataType)> {
         match (self, target) {
-            (Self::Serial(s), sql::DataType::Serial) => Ok(Self::Serial(s)),
-            (Self::Serial(s), sql::DataType::BigInteger) => Ok(Self::BigInt(s as i64)),
             (Self::Name(v), sql::DataType::Name) => Ok(Self::Name(v)),
             (Self::Varchar(d), sql::DataType::VarChar { .. }) => Ok(Self::Varchar(d)),
             (Self::Varchar(d), sql::DataType::Text) => Ok(Self::Text(d.into_iter().collect())),
@@ -202,7 +191,6 @@ impl PartialOrd for Data {
             (Self::SmallInt(v1), Self::SmallInt(v2)) => Some(v1.cmp(v2)),
             (Self::Integer(v1), Self::Integer(v2)) => Some(v1.cmp(v2)),
             (Self::BigInt(v1), Self::BigInt(v2)) => Some(v1.cmp(v2)),
-            (Self::Serial(v1), Self::Serial(v2)) => Some(v1.cmp(v2)),
             (Self::Boolean(v1), Self::Boolean(v2)) => Some(v1.cmp(v2)),
             (Self::Char(v1), Self::Char(v2)) => Some(v1.cmp(v2)),
             (Self::Varchar(v1), Self::Varchar(v2)) => Some(v1.cmp(v2)),

@@ -14,7 +14,7 @@ pub use common::{
 };
 
 mod create;
-pub use create::{CreateIndex, CreateTable, TableField};
+pub use create::{CreateIndex, CreateSequence, CreateTable, TableField};
 
 mod alter;
 pub use alter::AlterTable;
@@ -102,6 +102,7 @@ pub enum Query<'s, 'a> {
     Delete(delete::Delete<'s, 'a>),
     CreateTable(create::CreateTable<'s, 'a>),
     CreateIndex(create::CreateIndex<'s, 'a>),
+    CreateSequence(arenas::Boxed<'a, create::CreateSequence<'s>>),
     AlterTable(alter::AlterTable<'s, 'a>),
     DropIndex(drop::DropIndex<'s>),
     DropTable(drop::DropTable<'s, 'a>),
@@ -148,6 +149,7 @@ impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
             Self::Delete(d) => d.max_parameter(),
             Self::CreateTable(_) => 0,
             Self::CreateIndex(_) => 0,
+            Self::CreateSequence(_) => 0,
             Self::AlterTable(_) => 0,
             Self::DropIndex(_) => 0,
             Self::TruncateTable(_) => 0,
@@ -174,6 +176,7 @@ impl<'s, 'a> CompatibleParser for Query<'s, 'a> {
             Self::Delete(d) => Query::Delete(d.to_static()),
             Self::CreateTable(ct) => Query::CreateTable(ct.to_static()),
             Self::CreateIndex(ci) => Query::CreateIndex(ci.to_static()),
+            Self::CreateSequence(cs) => Query::CreateSequence(cs.to_static()),
             Self::AlterTable(at) => Query::AlterTable(at.to_static()),
             Self::DropIndex(di) => Query::DropIndex(di.to_static()),
             Self::DropTable(dt) => Query::DropTable(dt.to_static()),
@@ -256,6 +259,9 @@ fn query<'i, 'a>(
                 nom::combinator::map(AbortTransaction::parse(), |_| Query::RollbackTransaction),
                 nom::combinator::map(CreateTable::parse_arena(arena), Query::CreateTable),
                 nom::combinator::map(CreateIndex::parse_arena(arena), Query::CreateIndex),
+                nom::combinator::map(CreateSequence::parse_arena(arena), |cs| {
+                    Query::CreateSequence(arenas::Boxed::arena(arena, cs))
+                }),
                 nom::combinator::map(AlterTable::parse_arena(arena), Query::AlterTable),
                 nom::combinator::map(DropIndex::parse(), Query::DropIndex),
                 nom::combinator::map(DropTable::parse_arena(arena), Query::DropTable),
