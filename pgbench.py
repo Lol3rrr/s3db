@@ -18,8 +18,8 @@ if s3db_process.poll() is not None:
     raise ValueError("S3DB process stopped", flush=True)
 
 bench_duration = 30
-if subprocess.run(["pgbench", "-h", "localhost", "-i"]).resultcode != 0:
+if subprocess.run(["pgbench", "-h", "localhost", "-i", "-n"]).resultcode != 0:
     sys.exit(-1)
-subprocess.run(["pgbench", "-h", "localhost", "-T", f"{bench_duration}", "--progress", "1"])
+subprocess.run(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_duration}", "--progress", "1"])
 
 s3db_process.kill()
