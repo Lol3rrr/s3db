@@ -1,9 +1,12 @@
 import subprocess
 import time
 import signal
+import sys
 
 print(f"Compiling S3DB in release mode")
 build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True)
+if build_res.returncode != 0:
+    sys.exit(-1)
 
 print(f"Starting database")
 s3db_process = subprocess.Popen(["target/release/s3db"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
