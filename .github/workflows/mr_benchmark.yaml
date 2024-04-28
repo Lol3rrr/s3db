@@ -100,6 +100,7 @@ jobs:
       - name: Run benchmark
         run: python3 pgbench.py
       - name: Upload log artifacts
+        if: always()
         id: upload-artifacts
         uses: actions/upload-artifact@v4
         with:
