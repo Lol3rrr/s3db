@@ -15,10 +15,10 @@ print(f"Waiting 10 Seconds for database to get up and running", flush=True)
 time.sleep(10)
 
 if s3db_process.poll() is not None:
-    raise ValueError("S3DB process stopped", flush=True)
+    raise ValueError("S3DB process stopped")
 
 bench_duration = 30
-if subprocess.run(["pgbench", "-h", "localhost", "-i", "-n"]).resultcode != 0:
+if subprocess.run(["pgbench", "-h", "localhost", "-i", "-n"]).returncode != 0:
     sys.exit(-1)
 subprocess.run(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_duration}", "--progress", "1"])
 

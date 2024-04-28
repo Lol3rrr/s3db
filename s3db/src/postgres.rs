@@ -32,7 +32,7 @@ pub enum ParseMessageError {
     UnknownDescribeKind {
         received: u8,
     },
-    Other,
+    ParsingError {},
 }
 
 #[derive(Debug)]

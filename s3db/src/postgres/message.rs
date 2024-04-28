@@ -76,8 +76,9 @@ impl Message {
         tracing::trace!("Buffer-Len: {:?}", buffer.len());
 
         let (remaining, result) = Self::parse_internal(&buffer).map_err(|e| {
-            dbg!(e);
-            ParseMessageError::Other
+            tracing::error!("Buffer: {:?}", buffer);
+            tracing::error!("Error: {:?}", e);
+            ParseMessageError::ParsingError {}
         })?;
 
         if !remaining.is_empty() {
