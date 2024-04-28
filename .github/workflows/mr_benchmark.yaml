@@ -72,3 +72,27 @@ jobs:
           --err \
           --github-actions '${{ secrets.GITHUB_TOKEN }}' \
           cargo bench --bench execute-iai
+
+  pgbench:
+    name: Postgres Benchmarks
+    # DO NOT REMOVE: For handling Fork PRs see Pull Requests from Forks
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install pgbench
+        run: sudo apt-get update && sudo apt-get install postgresql postgresql-contrib
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - uses: actions/checkout@v4
+        with:
+          ref: 'main'
+      - name: Run main benchmark
+        run: python3 pgbench.py
+      - uses: actions/checkout@v4
+      - name: Run benchmark
+        run: python3 pgbench.py
