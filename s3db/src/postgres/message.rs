@@ -65,10 +65,12 @@ impl Message {
 
         let mut buffer = bytes::BytesMut::with_capacity(length as usize);
         if length > 0 {
-            reader
-                .read_buf(&mut buffer)
-                .await
-                .map_err(ParseMessageError::Receive)?;
+            while buffer.len() < length as usize {
+                reader
+                    .read_buf(&mut buffer)
+                    .await
+                    .map_err(ParseMessageError::Receive)?;
+            }
         }
         assert_eq!(length as usize, buffer.len());
 
