@@ -70,6 +70,7 @@ impl Message {
                 .await
                 .map_err(ParseMessageError::Receive)?;
         }
+        assert_eq!(length as usize, buffer.len());
 
         tracing::trace!("Buffer-Len: {:?}", buffer.len());
 
