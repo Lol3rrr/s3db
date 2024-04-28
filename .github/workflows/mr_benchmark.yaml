@@ -87,7 +87,7 @@ jobs:
         run: |
           sudo apt-get update &&
           sudo apt-get install postgresql-common -y &&
-          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh &
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh &&
           sudo apt-get update &&
           sudo apt-get install postgresql-client-16 -y
       - name: Install latest nightly
