@@ -118,11 +118,21 @@ jobs:
         with:
           message: |
             # PGBench Results
-            Current Benchmark:
-            ${{ steps.run_current.outputs.stdout }}
+            <details>
+              <summary>Current Branch Results</summary>
+              
+              ```
+              ${{ steps.run_current.outputs.stdout }}
+              ```
+            </details>
 
-            Main Benchmark:
-            ${{ steps.run_main.outputs.stdout }}
+            <details>
+              <summary>Main Branch Results</summary>
+              
+              ```
+              ${{ steps.run_main.outputs.stdout }}
+              ```
+            </details>
 
             Date: ${{ steps.date.outputs.date }}
           comment_tag: pgbench_results
