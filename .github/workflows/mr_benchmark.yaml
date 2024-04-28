@@ -98,15 +98,41 @@ jobs:
           override: true
       - uses: actions/checkout@v4
       - name: Run benchmark
-        run: python3 pgbench.py
-      - name: Upload log artifacts
-        if: always()
-        id: upload-artifacts
-        uses: actions/upload-artifact@v4
+        uses: mathiasvr/command-output@v2.0.0
+        id: run_current
         with:
-          path: s3db.log
+          run: python3 pgbench.py
       - uses: actions/checkout@v4
         with:
           ref: 'main'
       - name: Run main benchmark
-        run: python3 pgbench.py
+        uses: mathiasvr/command-output@v2.0.0
+        id: run_main
+        with:
+          run: python3 pgbench.py
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d %H:%M:%S')"
+      - name: Comment PGbench results
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: |
+            # PGBench Results
+            <details>
+              <summary>Current Branch Results</summary>
+              
+              ```
+              ${{ steps.run_current.outputs.stdout }}
+              ```
+            </details>
+
+            <details>
+              <summary>Main Branch Results</summary>
+              
+              ```
+              ${{ steps.run_main.outputs.stdout }}
+              ```
+            </details>
+
+            Date: ${{ steps.date.outputs.date }}
+          comment_tag: pgbench_results
