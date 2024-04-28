@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install pgbench
-        run: sudo apt-get update && sudo apt-get install postgresql postgresql-contrib
+        run: sudo apt-get update && sudo apt-get install postgresql16 postgresql16-lib
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
