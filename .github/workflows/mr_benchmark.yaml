@@ -98,12 +98,14 @@ jobs:
           override: true
       - uses: actions/checkout@v4
       - name: Run benchmark
+        uses: mathiasvr/command-output@v2.0.0
         id: run_current
         run: python3 pgbench.py
       - uses: actions/checkout@v4
         with:
           ref: 'main'
       - name: Run main benchmark
+        uses: mathiasvr/command-output@v2.0.0
         id: run_main
         run: python3 pgbench.py
       - name: Get current date
