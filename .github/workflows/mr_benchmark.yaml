@@ -101,6 +101,11 @@ jobs:
           ref: 'main'
       - name: Run main benchmark
         run: python3 pgbench.py
+      - name: Upload log artifacts
+        id: upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: s3db.log
       - uses: actions/checkout@v4
       - name: Run benchmark
         run: python3 pgbench.py
