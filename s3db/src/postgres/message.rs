@@ -1,4 +1,3 @@
-use bytes::BufMut;
 use nom::{IResult, Parser};
 use tokio::io::AsyncReadExt;
 
@@ -64,20 +63,23 @@ impl Message {
 
         tracing::trace!("Raw-Type: {:?} - Length: {:?}", raw_type, length,);
 
-        let mut buffer = bytes::BytesMut::with_capacity(length as usize + 1);
-        buffer.put_u8(raw_type);
+        let mut buffer = bytes::BytesMut::with_capacity(length as usize);
         if length > 0 {
-            reader
-                .read_buf(&mut buffer)
-                .await
-                .map_err(ParseMessageError::Receive)?;
+            while buffer.len() < length as usize {
+                reader
+                    .read_buf(&mut buffer)
+                    .await
+                    .map_err(ParseMessageError::Receive)?;
+            }
         }
+        assert_eq!(length as usize, buffer.len());
 
         tracing::trace!("Buffer-Len: {:?}", buffer.len());
 
-        let (remaining, result) = Self::parse_internal(&buffer).map_err(|e| {
-            dbg!(e);
-            ParseMessageError::Other
+        let (remaining, result) = Self::parse_internal(raw_type, &buffer).map_err(|e| {
+            tracing::error!("Buffer: {:?}", buffer);
+            tracing::error!("Error: {:?}", e);
+            ParseMessageError::ParsingError {}
         })?;
 
         if !remaining.is_empty() {
@@ -90,74 +92,91 @@ impl Message {
         Ok(result)
     }
 
-    fn parse_internal(data: &[u8]) -> IResult<&[u8], Self> {
-        nom::branch::alt((
-            nom::sequence::tuple((nom::bytes::streaming::tag([b'Q']), parse_string))
-                .map(|(_, query)| Self::Query { query }),
-            nom::sequence::tuple((
-                nom::bytes::streaming::tag([b'D']),
-                nom::branch::alt((
-                    nom::bytes::streaming::tag([b'P']).map(|_| DescribeKind::Portal),
-                    nom::bytes::streaming::tag([b'S']).map(|_| DescribeKind::Statement),
-                )),
-                parse_string,
-            ))
-            .map(|(_, dkind, name)| Self::Describe { kind: dkind, name }),
-            nom::sequence::tuple((
-                nom::bytes::streaming::tag([b'E']),
-                parse_string,
-                nom::number::streaming::be_i32,
-            ))
-            .map(|(_, portal, rows)| Self::Execute {
-                portal,
-                max_rows: rows,
-            }),
-            nom::sequence::tuple((
-                nom::bytes::streaming::tag("P"),
-                parse_string,
-                parse_string,
-                nom::number::streaming::be_i16,
-            ))
-            .map(|(_, dest, query, type_count)| {
-                assert_eq!(0, type_count);
-                Self::Parse {
-                    destination: dest,
-                    query,
-                    data_types: Vec::new(),
-                }
-            }),
-            nom::sequence::tuple((
-                nom::bytes::streaming::tag([b'B']),
-                parse_string,
-                parse_string,
-                Self::parse_bind_parameters,
-                Self::parse_bind_values,
-                Self::parse_bind_format,
-            ))
-            .map(
-                |(_, destination, statement, mut pformats, pvalues, result_formats)| {
-                    if pformats.is_empty() {
-                        pformats.extend((0..pvalues.len()).map(|_| FormatCode::Text));
-                    } else if pformats.len() == 1 {
-                        let first_format = pformats.first().cloned().unwrap();
-                        pformats.extend((1..pvalues.len()).map(|_| first_format.clone()));
-                    }
+    fn parse_internal(ty: u8, data: &[u8]) -> IResult<&[u8], Self> {
+        match ty {
+            b'Q' => {
+                let (rem, query) = parse_string(data)?;
+                Ok((rem, Self::Query { query }))
+            }
+            b'D' => {
+                let (rem, (dkind, name)) = nom::sequence::tuple((
+                    nom::branch::alt((
+                        nom::bytes::streaming::tag([b'P']).map(|_| DescribeKind::Portal),
+                        nom::bytes::streaming::tag([b'S']).map(|_| DescribeKind::Statement),
+                    )),
+                    parse_string,
+                ))(data)?;
+                Ok((rem, Self::Describe { kind: dkind, name }))
+            }
+            b'E' => {
+                let (rem, (portal, rows)) =
+                    nom::sequence::tuple((parse_string, nom::number::streaming::be_i32))(data)?;
+                Ok((
+                    rem,
+                    Self::Execute {
+                        portal,
+                        max_rows: rows,
+                    },
+                ))
+            }
+            b'P' => {
+                let (rem, (dest, query, type_count)) = nom::sequence::tuple((
+                    parse_string,
+                    parse_string,
+                    nom::number::streaming::be_i16,
+                ))(data)?;
+                Ok((
+                    rem,
+                    Self::Parse {
+                        destination: dest,
+                        query,
+                        data_types: Vec::new(),
+                    },
+                ))
+            }
+            b'B' => {
+                let (rem, (destination, statement, mut pformats, pvalues, result_formats)) =
+                    nom::sequence::tuple((
+                        parse_string,
+                        parse_string,
+                        Self::parse_bind_parameters,
+                        Self::parse_bind_values,
+                        Self::parse_bind_format,
+                    ))(data)?;
 
+                if pformats.is_empty() {
+                    pformats.extend((0..pvalues.len()).map(|_| FormatCode::Text));
+                } else if pformats.len() == 1 {
+                    let first_format = pformats.first().cloned().unwrap();
+                    pformats.extend((1..pvalues.len()).map(|_| first_format.clone()));
+                }
+
+                Ok((
+                    rem,
                     Self::Bind {
                         destination,
                         statement,
                         parameter_formats: Vec::new(),
                         parameter_values: pvalues,
                         result_column_format_codes: result_formats,
-                    }
-                },
-            ),
-            nom::sequence::tuple((nom::bytes::streaming::tag([b'd']), Self::parse_copy_data))
-                .map(|(_, d)| Self::CopyData { data: d }),
-            nom::bytes::streaming::tag([b'c']).map(|_| Self::CopyDone),
-            nom::bytes::streaming::tag([b'S']).map(|_| Self::Sync_),
-            nom::bytes::streaming::tag([b'X']).map(|_| Self::Terminate),
-        ))(data)
+                    },
+                ))
+            }
+            b'd' => {
+                let (rem, data) = Self::parse_copy_data(data)?;
+                Ok((rem, Self::CopyData { data }))
+            }
+            b'c' => Ok((data, Self::CopyDone)),
+            b'S' => Ok((data, Self::Sync_)),
+            b'X' => Ok((data, Self::Terminate)),
+            other => {
+                tracing::error!("Unknown Raw-Type: {:?}", other);
+                Err(nom::Err::Failure(nom::error::Error::new(
+                    data,
+                    nom::error::ErrorKind::Tag,
+                )))
+            }
+        }
     }
 
     fn parse_bind_parameters(i: &[u8]) -> IResult<&[u8], Vec<FormatCode>> {
@@ -222,9 +241,11 @@ mod tests {
 
     #[test]
     fn parse_query() {
-        let (remaining, result) =
-            Message::parse_internal(&[b'Q', b'S', b'E', b'L', b'E', b'C', b'T', b' ', b'1', b'\0'])
-                .unwrap();
+        let (remaining, result) = Message::parse_internal(
+            b'Q',
+            &[b'S', b'E', b'L', b'E', b'C', b'T', b' ', b'1', b'\0'],
+        )
+        .unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
             Message::Query {
@@ -236,14 +257,14 @@ mod tests {
 
     #[test]
     fn parse_terminate() {
-        let (remaining, result) = Message::parse_internal(&[b'X']).unwrap();
+        let (remaining, result) = Message::parse_internal(b'X', &[]).unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(Message::Terminate, result);
     }
 
     #[test]
     fn parse_sync() {
-        let (remaining, result) = Message::parse_internal(&[b'S']).unwrap();
+        let (remaining, result) = Message::parse_internal(b'S', &[]).unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(Message::Sync_, result);
     }
@@ -251,7 +272,7 @@ mod tests {
     #[test]
     fn parse_execute() {
         let (remaining, result) =
-            Message::parse_internal(&[b'E', b't', b'e', b's', b't', b'\0', 0, 0, 0, 4]).unwrap();
+            Message::parse_internal(b'E', &[b't', b'e', b's', b't', b'\0', 0, 0, 0, 4]).unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
             Message::Execute {
@@ -265,7 +286,7 @@ mod tests {
     #[test]
     fn parse_describe() {
         let (remaining, result) =
-            Message::parse_internal(&[b'D', b'S', b't', b'e', b's', b't', b'\0']).unwrap();
+            Message::parse_internal(b'D', &[b'S', b't', b'e', b's', b't', b'\0']).unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
             Message::Describe {
@@ -276,7 +297,7 @@ mod tests {
         );
 
         let (remaining, result) =
-            Message::parse_internal(&[b'D', b'P', b't', b'e', b's', b't', b'\0']).unwrap();
+            Message::parse_internal(b'D', &[b'P', b't', b'e', b's', b't', b'\0']).unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
             Message::Describe {
@@ -289,10 +310,13 @@ mod tests {
 
     #[test]
     fn parse_parse() {
-        let (remaining, result) = Message::parse_internal(&[
-            b'P', b'd', b'e', b's', b't', b'\0', b'S', b'E', b'L', b'E', b'C', b'T', b' ', b'1',
-            b'\0', 0, 0,
-        ])
+        let (remaining, result) = Message::parse_internal(
+            b'P',
+            &[
+                b'd', b'e', b's', b't', b'\0', b'S', b'E', b'L', b'E', b'C', b'T', b' ', b'1',
+                b'\0', 0, 0,
+            ],
+        )
         .unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
@@ -307,14 +331,16 @@ mod tests {
 
     #[test]
     fn parse_bind_no_parameters() {
-        let (remaining, result) = Message::parse_internal(&[
-            b'B', // type indicator
-            b'd', b'e', b's', b't', b'\0', // destination
-            b'n', b'a', b'm', b'e', b'\0', // name
-            0, 0, // parameter format count
-            0, 0, // parameter value count
-            0, 0, // result column count
-        ])
+        let (remaining, result) = Message::parse_internal(
+            b'B',
+            &[
+                b'd', b'e', b's', b't', b'\0', // destination
+                b'n', b'a', b'm', b'e', b'\0', // name
+                0, 0, // parameter format count
+                0, 0, // parameter value count
+                0, 0, // result column count
+            ],
+        )
         .unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(
@@ -331,16 +357,18 @@ mod tests {
 
     #[test]
     fn parse_bind_values() {
-        let (remaining, result) = Message::parse_internal(&[
-            b'B', // type indicator
-            b'd', b'e', b's', b't', b'\0', // destination
-            b'n', b'a', b'm', b'e', b'\0', // name
-            0, 0, // parameter format count
-            0, 2, // parameter value count
-            0, 0, 0, 4, 1, 2, 3, 4, // First Parametere value
-            0, 0, 0, 5, 5, 4, 3, 2, 1, // Second Parametere value
-            0, 0, // result column count
-        ])
+        let (remaining, result) = Message::parse_internal(
+            b'B',
+            &[
+                b'd', b'e', b's', b't', b'\0', // destination
+                b'n', b'a', b'm', b'e', b'\0', // name
+                0, 0, // parameter format count
+                0, 2, // parameter value count
+                0, 0, 0, 4, 1, 2, 3, 4, // First Parametere value
+                0, 0, 0, 5, 5, 4, 3, 2, 1, // Second Parametere value
+                0, 0, // result column count
+            ],
+        )
         .unwrap();
         assert_eq!(&[] as &[u8], remaining);
         assert_eq!(

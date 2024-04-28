@@ -11,6 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: bencherdev/bencher@main
+        with:
+          version: 0.4.6
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -33,6 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: bencherdev/bencher@main
+        with:
+          version: 0.4.6
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
