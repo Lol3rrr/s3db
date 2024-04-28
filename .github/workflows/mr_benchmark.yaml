@@ -84,12 +84,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install pgbench
-        run: |
-          sudo apt-get update
-          sudo apt-get install postgresql-common -y
-          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
-          sudo apt-get update
-          sudo apt-get install postgresql-client-16 -y
+        uses: ankane/setup-postgres@v1
+        with:
+          postgres-version: 16
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
