@@ -14,6 +14,9 @@ s3db_process = subprocess.Popen(["target/release/s3db"], stdout=subprocess.DEVNU
 print(f"Waiting 10 Seconds for database to get up and running")
 time.sleep(10)
 
+if s3db_process.poll() is not None:
+    raise ValueError("S3DB process stopped")
+
 bench_duration = 30
 subprocess.run(["pgbench", "-h", "localhost", "-i"])
 subprocess.run(["pgbench", "-h", "localhost", "-T", f"{bench_duration}", "--progress", "1"])
