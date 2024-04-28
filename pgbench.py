@@ -1,5 +1,6 @@
 import subprocess
 import time
+import signal
 
 print(f"Compiling S3DB in release mode")
 build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True)
@@ -10,5 +11,8 @@ s3db_process = subprocess.Popen(["target/release/s3db"], stdout=subprocess.DEVNU
 print(f"Waiting 10 Seconds for database to get up and running")
 time.sleep(10)
 
+bench_duration = 30
 subprocess.run(["pgbench", "-h", "localhost", "-i"])
-subprocess.run(["pgbench", "-h", "localhost", "-T", "30", "-S", "--progress", "1"])
+subprocess.run(["pgbench", "-h", "localhost", "-T", f"{bench_duration}", "--progress", "1"])
+
+s3db_process.kill()
