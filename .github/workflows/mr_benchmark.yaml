@@ -97,9 +97,7 @@ jobs:
           toolchain: nightly
           override: true
       - uses: actions/checkout@v4
-        with:
-          ref: 'main'
-      - name: Run main benchmark
+      - name: Run benchmark
         run: python3 pgbench.py
       - name: Upload log artifacts
         id: upload-artifacts
@@ -107,5 +105,7 @@ jobs:
         with:
           path: s3db.log
       - uses: actions/checkout@v4
-      - name: Run benchmark
+        with:
+          ref: 'main'
+      - name: Run main benchmark
         run: python3 pgbench.py
