@@ -106,13 +106,10 @@ jobs:
       - name: Run main benchmark
         id: run_main
         run: python3 pgbench.py
-      - id: pr-check
-        uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Get current date
         id: date
         run: echo "::set-output name=date::$(date +'%Y-%m-%d %H:%M:%S')"
       - name: Comment PGbench results
-        if: steps.pr-check.outputs.pr_found == 'true'
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
@@ -124,5 +121,4 @@ jobs:
             ${{ steps.run_main.outputs.stdout }}
 
             Date: ${{ steps.date.outputs.date }}
-          pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: pgbench_results
