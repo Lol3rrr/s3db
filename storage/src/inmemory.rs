@@ -236,7 +236,13 @@ impl Storage for InMemoryStorage {
         &'own self,
         name: &'name str,
         transaction: &'transaction Self::TransactionGuard,
-    ) -> Result<(TableSchema, futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>), Self::LoadingError>
+    ) -> Result<
+        (
+            TableSchema,
+            futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>,
+        ),
+        Self::LoadingError,
+    >
     where
         'own: 'stream,
         'name: 'stream,
@@ -288,7 +294,9 @@ impl Storage for InMemoryStorage {
             .map(|r| r.data.clone())
             .collect();
 
-        let stream = futures::stream::iter(rows).map(|r| RowCow::Owned(r)).boxed_local();
+        let stream = futures::stream::iter(rows)
+            .map(|r| RowCow::Owned(r))
+            .boxed_local();
 
         Ok((table_schema, stream))
     }
@@ -472,7 +480,13 @@ impl Storage for &InMemoryStorage {
         &'own self,
         name: &'name str,
         transaction: &'transaction Self::TransactionGuard,
-    ) -> Result<(TableSchema, futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>), Self::LoadingError>
+    ) -> Result<
+        (
+            TableSchema,
+            futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>,
+        ),
+        Self::LoadingError,
+    >
     where
         'own: 'stream,
         'name: 'stream,
@@ -524,7 +538,9 @@ impl Storage for &InMemoryStorage {
             .map(|r| r.data.clone())
             .collect();
 
-        let stream = futures::stream::iter(rows).map(|r| RowCow::Owned(r)).boxed_local();
+        let stream = futures::stream::iter(rows)
+            .map(|r| RowCow::Owned(r))
+            .boxed_local();
 
         Ok((table_schema, stream))
     }

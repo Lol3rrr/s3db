@@ -132,7 +132,10 @@ where
         transaction: &'t S::TransactionGuard,
         arena: &'arena bumpalo::Bump,
     ) -> Result<
-        (storage::TableSchema, LocalBoxStream<'f, storage::RowCow<'rd>>),
+        (
+            storage::TableSchema,
+            LocalBoxStream<'f, storage::RowCow<'rd>>,
+        ),
         EvaulateRaError<S::LoadingError>,
     >
     where
@@ -199,7 +202,9 @@ where
             let result = match expr {
                 ra::RaExpression::EmptyRelation => (
                     TableSchema { rows: Vec::new() },
-                    futures::stream::iter(vec![storage::Row::new(0, Vec::new())]).map(|r| storage::RowCow::Owned(r)).boxed_local(),
+                    futures::stream::iter(vec![storage::Row::new(0, Vec::new())])
+                        .map(|r| storage::RowCow::Owned(r))
+                        .boxed_local(),
                 ),
                 ra::RaExpression::Renamed { .. } => results.pop().unwrap(),
                 ra::RaExpression::BaseRelation { name, .. } => self
@@ -225,7 +230,11 @@ where
                     };
 
                     let stream = futures::stream::iter(
-                        cte_value.parts.iter().flat_map(|p| p.rows.iter()).map(|r| storage::RowCow::Owned(r.clone())),
+                        cte_value
+                            .parts
+                            .iter()
+                            .flat_map(|p| p.rows.iter())
+                            .map(|r| storage::RowCow::Owned(r.clone())),
                     )
                     .boxed_local();
 
@@ -408,8 +417,10 @@ where
 
                             (
                                 table_schema,
-                                futures::stream::once(async { storage::RowCow::Owned(storage::Row::new(0, row_data)) })
-                                    .boxed_local(),
+                                futures::stream::once(async {
+                                    storage::RowCow::Owned(storage::Row::new(0, row_data))
+                                })
+                                .boxed_local(),
                             )
                         }
                         ra::AggregationCondition::GroupBy { fields } => {
@@ -429,9 +440,9 @@ where
                                     .collect();
                                 let grouping_func =
                                     |first: &storage::RowCow<'_>, second: &storage::RowCow<'_>| {
-                                        compare_indices
-                                            .iter()
-                                            .all(|idx| first.as_ref()[*idx] == second.as_ref()[*idx])
+                                        compare_indices.iter().all(|idx| {
+                                            first.as_ref()[*idx] == second.as_ref()[*idx]
+                                        })
                                     };
 
                                 while let Some(row) = rows.next().await {
@@ -486,7 +497,8 @@ where
                                     })
                                     .collect::<Result<_, _>>()?;
 
-                                result_rows.push(storage::RowCow::Owned(storage::Row::new(0, row_data)));
+                                result_rows
+                                    .push(storage::RowCow::Owned(storage::Row::new(0, row_data)));
                             }
 
                             (
@@ -620,7 +632,10 @@ where
                         )
                         .await?;
 
-                    (schema, rows.map(|r| storage::RowCow::Owned(r)).boxed_local())
+                    (
+                        schema,
+                        rows.map(|r| storage::RowCow::Owned(r)).boxed_local(),
+                    )
                 }
                 ra::RaExpression::LateralJoin {
                     left,
@@ -715,9 +730,12 @@ where
                         }
 
                         match total_result {
-                            Some((schema, rows)) => {
-                                Ok((schema, futures::stream::iter(rows).map(|r| storage::RowCow::Owned(r)).boxed_local()))
-                            }
+                            Some((schema, rows)) => Ok((
+                                schema,
+                                futures::stream::iter(rows)
+                                    .map(|r| storage::RowCow::Owned(r))
+                                    .boxed_local(),
+                            )),
                             None => {
                                 let tmp = left_columns
                                     .into_iter()
@@ -1080,7 +1098,10 @@ where
                         }
                     };
 
-                    let result = storage::EntireRelation::from_parts(scheme, rows.map(|r| r.into_owned()).collect().await);
+                    let result = storage::EntireRelation::from_parts(
+                        scheme,
+                        rows.map(|r| r.into_owned()).collect().await,
+                    );
 
                     tracing::debug!("RA-Result: {:?}", result);
 
@@ -1375,7 +1396,12 @@ where
                             {
                                 let should_update = match mapper.as_ref() {
                                     Some(mapper) => mapper
-                                        .evaluate(&storage::RowCow::Borrowed((&row).into()), self, transaction, arena)
+                                        .evaluate(
+                                            &storage::RowCow::Borrowed((&row).into()),
+                                            self,
+                                            transaction,
+                                            arena,
+                                        )
                                         .await
                                         .ok_or_else(|| ExecuteBoundError::Other("Testing"))?,
                                     None => true,
@@ -1390,7 +1416,12 @@ where
                                 let mut field_values = Vec::with_capacity(field_mappers.len());
                                 for mapping in field_mappers.iter_mut() {
                                     let value = mapping
-                                        .evaluate_mut(&storage::RowCow::Borrowed((&row).into()), self, transaction, arena)
+                                        .evaluate_mut(
+                                            &storage::RowCow::Borrowed((&row).into()),
+                                            self,
+                                            transaction,
+                                            arena,
+                                        )
                                         .await
                                         .ok_or_else(|| ExecuteBoundError::Other("Testing"))?;
 
@@ -1523,7 +1554,12 @@ where
                         for row in relation.parts.into_iter().flat_map(|p| p.rows.into_iter()) {
                             if let Some(mapper) = mapper.as_ref() {
                                 let condition_result = mapper
-                                    .evaluate(&storage::RowCow::Borrowed((&row).into()), self, transaction, arena)
+                                    .evaluate(
+                                        &storage::RowCow::Borrowed((&row).into()),
+                                        self,
+                                        transaction,
+                                        arena,
+                                    )
                                     .await
                                     .ok_or_else(|| ExecuteBoundError::Other("Testing"))?;
 

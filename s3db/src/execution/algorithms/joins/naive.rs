@@ -51,11 +51,18 @@ where
                             tmp
                         };
 
-                        if condition_eval.evaluate(args.conditon, &storage::RowCow::Borrowed(storage::BorrowedRow {
-                            rid: result_rows.len() as u64,
-                            data: &joined_row_data
-                        })).await? {
-                            result_rows.push(storage::Row::new(result_rows.len() as u64, joined_row_data));
+                        if condition_eval
+                            .evaluate(
+                                args.conditon,
+                                &storage::RowCow::Borrowed(storage::BorrowedRow {
+                                    rid: result_rows.len() as u64,
+                                    data: &joined_row_data,
+                                }),
+                            )
+                            .await?
+                        {
+                            result_rows
+                                .push(storage::Row::new(result_rows.len() as u64, joined_row_data));
                         }
                     }
                 }
@@ -74,12 +81,18 @@ where
                             tmp
                         };
 
-
-                        if condition_eval.evaluate(args.conditon, &storage::RowCow::Borrowed(storage::BorrowedRow {
-                            rid: result_rows.len() as u64,
-                            data: &joined_row_data
-                        })).await? {
-                            result_rows.push(storage::Row::new(result_rows.len() as u64, joined_row_data));
+                        if condition_eval
+                            .evaluate(
+                                args.conditon,
+                                &storage::RowCow::Borrowed(storage::BorrowedRow {
+                                    rid: result_rows.len() as u64,
+                                    data: &joined_row_data,
+                                }),
+                            )
+                            .await?
+                        {
+                            result_rows
+                                .push(storage::Row::new(result_rows.len() as u64, joined_row_data));
                             included = true;
                         }
                     }

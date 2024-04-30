@@ -54,12 +54,10 @@ impl<'d> RowCow<'d> {
     pub fn into_owned(self) -> Row {
         match self {
             Self::Owned(v) => v,
-            Self::Borrowed(r) => {
-                Row {
-                    rid: r.rid,
-                    data: r.data.into_iter().map(|d| d.clone()).collect(),
-                }
-            }
+            Self::Borrowed(r) => Row {
+                rid: r.rid,
+                data: r.data.into_iter().map(|d| d.clone()).collect(),
+            },
         }
     }
 }
@@ -179,7 +177,10 @@ pub trait Storage: SequenceStorage {
         transaction: &'transaction Self::TransactionGuard,
     ) -> impl Future<
         Output = Result<
-            (TableSchema, futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>),
+            (
+                TableSchema,
+                futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>,
+            ),
             Self::LoadingError,
         >,
     >
