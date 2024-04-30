@@ -1,8 +1,10 @@
 use super::EvaulateRaError;
 use std::borrow::Cow;
 
-
-pub enum ShortCircuit<'vs, V> where V: Clone + ToOwned {
+pub enum ShortCircuit<'vs, V>
+where
+    V: Clone + ToOwned,
+{
     Nothing(Cow<'vs, V>),
     Skip { amount: usize, result: Cow<'vs, V> },
 }
@@ -28,7 +30,8 @@ pub trait MappingInstruction<'expr>: Sized {
         arena: &bumpalo::Bump,
     ) -> impl core::future::Future<Output = Option<Cow<'vs, Self::Output>>>
     where
-        S: storage::Storage, 'row: 'vs;
+        S: storage::Storage,
+        'row: 'vs;
 
     fn evaluate_mut<'vs, 'row, S>(
         &mut self,
@@ -39,7 +42,8 @@ pub trait MappingInstruction<'expr>: Sized {
         arena: &bumpalo::Bump,
     ) -> impl core::future::Future<Output = Option<Cow<'vs, Self::Output>>>
     where
-        S: storage::Storage, 'row: 'vs,
+        S: storage::Storage,
+        'row: 'vs,
     {
         self.evaluate(result_stack, row, engine, transaction, arena)
     }
@@ -55,18 +59,28 @@ pub trait MappingInstruction<'expr>: Sized {
 }
 
 #[derive(Debug)]
-pub struct Mapper<I, V> where V: 'static + Clone {
+pub struct Mapper<I, V>
+where
+    V: 'static + Clone,
+{
     pub instruction_stack: Vec<I>,
     pub value_stack: Vec<std::borrow::Cow<'static, V>>,
 }
 
-impl<I, V> PartialEq for Mapper<I, V> where I: PartialEq, V: 'static + PartialEq + ToOwned + Clone {
+impl<I, V> PartialEq for Mapper<I, V>
+where
+    I: PartialEq,
+    V: 'static + PartialEq + ToOwned + Clone,
+{
     fn eq(&self, other: &Self) -> bool {
         if self.instruction_stack != other.instruction_stack {
             return false;
         }
 
-        self.value_stack.iter().zip(other.value_stack.iter()).all(|(f, s)| f.as_ref() == s.as_ref())
+        self.value_stack
+            .iter()
+            .zip(other.value_stack.iter())
+            .all(|(f, s)| f.as_ref() == s.as_ref())
     }
 }
 
@@ -74,7 +88,12 @@ impl<'expr, I> Mapper<I, I::Output>
 where
     I: MappingInstruction<'expr>,
 {
-    fn shorten_stack_lifetime<'r, 'og, 'target>(input: &'r mut Vec<Cow<'og, I::Output>>) -> &'r mut Vec<Cow<'target, I::Output>> where 'og: 'target {
+    fn shorten_stack_lifetime<'r, 'og, 'target>(
+        input: &'r mut Vec<Cow<'og, I::Output>>,
+    ) -> &'r mut Vec<Cow<'target, I::Output>>
+    where
+        'og: 'target,
+    {
         assert!(input.is_empty());
         unsafe { core::mem::transmute(input) }
     }
@@ -120,7 +139,8 @@ where
     where
         S: storage::Storage,
     {
-        let mut value_stack: Vec<Cow<'_, I::Output>> = Vec::with_capacity(self.instruction_stack.len());
+        let mut value_stack: Vec<Cow<'_, I::Output>> =
+            Vec::with_capacity(self.instruction_stack.len());
 
         let mut idx = self.instruction_stack.len() - 1;
         loop {

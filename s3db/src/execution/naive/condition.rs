@@ -1,7 +1,7 @@
 use super::{pattern, value, EvaulateRaError};
 
 use futures::{future::FutureExt, stream::StreamExt};
-use std::{collections::HashMap, borrow::Cow};
+use std::{borrow::Cow, collections::HashMap};
 
 use crate::ra::{self, AttributeId};
 
@@ -107,7 +107,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         arena: &bumpalo::Bump,
     ) -> Option<Cow<'vs, Self::Output>>
     where
-        S: storage::Storage, 'row: 'vs
+        S: storage::Storage,
+        'row: 'vs,
     {
         match self {
             Self::Negation {} => {
@@ -128,12 +129,22 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 let second_value = second.evaluate(row, engine, transaction, arena).await?;
 
                 match comparison {
-                    ra::RaComparisonOperator::Equals => Some(Cow::Owned(first_value == second_value)),
-                    ra::RaComparisonOperator::NotEquals => Some(Cow::Owned(first_value != second_value)),
-                    ra::RaComparisonOperator::Greater => Some(Cow::Owned(first_value > second_value)),
-                    ra::RaComparisonOperator::GreaterEqual => Some(Cow::Owned(first_value >= second_value)),
+                    ra::RaComparisonOperator::Equals => {
+                        Some(Cow::Owned(first_value == second_value))
+                    }
+                    ra::RaComparisonOperator::NotEquals => {
+                        Some(Cow::Owned(first_value != second_value))
+                    }
+                    ra::RaComparisonOperator::Greater => {
+                        Some(Cow::Owned(first_value > second_value))
+                    }
+                    ra::RaComparisonOperator::GreaterEqual => {
+                        Some(Cow::Owned(first_value >= second_value))
+                    }
                     ra::RaComparisonOperator::Less => Some(Cow::Owned(first_value < second_value)),
-                    ra::RaComparisonOperator::LessEqual => Some(Cow::Owned(first_value <= second_value)),
+                    ra::RaComparisonOperator::LessEqual => {
+                        Some(Cow::Owned(first_value <= second_value))
+                    }
                     ra::RaComparisonOperator::In => {
                         dbg!(&first_value, &second_value);
 
@@ -151,7 +162,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         Some(Cow::Owned(parts.iter().any(|p| p == &first_value)))
                     }
                     ra::RaComparisonOperator::NotIn => match second_value {
-                        storage::Data::List(d) => Some(Cow::Owned(d.iter().all(|v| v != &first_value))),
+                        storage::Data::List(d) => {
+                            Some(Cow::Owned(d.iter().all(|v| v != &first_value)))
+                        }
                         other => {
                             tracing::error!("Cannot perform NotIn Operation on not List Data");
                             dbg!(other);
@@ -185,8 +198,12 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         todo!("Perforing ILike Comparison")
                     }
                     ra::RaComparisonOperator::Is => match (first_value, second_value) {
-                        (storage::Data::Boolean(val), storage::Data::Boolean(true)) => Some(Cow::Owned(val)),
-                        (storage::Data::Boolean(val), storage::Data::Boolean(false)) => Some(Cow::Owned(!val)),
+                        (storage::Data::Boolean(val), storage::Data::Boolean(true)) => {
+                            Some(Cow::Owned(val))
+                        }
+                        (storage::Data::Boolean(val), storage::Data::Boolean(false)) => {
+                            Some(Cow::Owned(!val))
+                        }
                         _ => Some(Cow::Owned(false)),
                     },
                     ra::RaComparisonOperator::IsNot => {
@@ -240,7 +257,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         arena: &bumpalo::Bump,
     ) -> Option<Cow<'vs, Self::Output>>
     where
-        S: storage::Storage, 'row: 'vs
+        S: storage::Storage,
+        'row: 'vs,
     {
         match self {
             Self::Negation {} => {
@@ -261,12 +279,22 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 let second_value = second.evaluate_mut(row, engine, transaction, arena).await?;
 
                 match comparison {
-                    ra::RaComparisonOperator::Equals => Some(Cow::Owned(first_value == second_value)),
-                    ra::RaComparisonOperator::NotEquals => Some(Cow::Owned(first_value != second_value)),
-                    ra::RaComparisonOperator::Greater => Some(Cow::Owned(first_value > second_value)),
-                    ra::RaComparisonOperator::GreaterEqual => Some(Cow::Owned(first_value >= second_value)),
+                    ra::RaComparisonOperator::Equals => {
+                        Some(Cow::Owned(first_value == second_value))
+                    }
+                    ra::RaComparisonOperator::NotEquals => {
+                        Some(Cow::Owned(first_value != second_value))
+                    }
+                    ra::RaComparisonOperator::Greater => {
+                        Some(Cow::Owned(first_value > second_value))
+                    }
+                    ra::RaComparisonOperator::GreaterEqual => {
+                        Some(Cow::Owned(first_value >= second_value))
+                    }
                     ra::RaComparisonOperator::Less => Some(Cow::Owned(first_value < second_value)),
-                    ra::RaComparisonOperator::LessEqual => Some(Cow::Owned(first_value <= second_value)),
+                    ra::RaComparisonOperator::LessEqual => {
+                        Some(Cow::Owned(first_value <= second_value))
+                    }
                     ra::RaComparisonOperator::In => {
                         dbg!(&first_value, &second_value);
 
@@ -284,7 +312,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         Some(Cow::Owned(parts.iter().any(|p| p == &first_value)))
                     }
                     ra::RaComparisonOperator::NotIn => match second_value {
-                        storage::Data::List(d) => Some(Cow::Owned(d.iter().all(|v| v != &first_value))),
+                        storage::Data::List(d) => {
+                            Some(Cow::Owned(d.iter().all(|v| v != &first_value)))
+                        }
                         other => {
                             tracing::error!("Cannot perform NotIn Operation on not List Data");
                             dbg!(other);
@@ -318,8 +348,12 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         todo!("Perforing ILike Comparison")
                     }
                     ra::RaComparisonOperator::Is => match (first_value, second_value) {
-                        (storage::Data::Boolean(val), storage::Data::Boolean(true)) => Some(Cow::Owned(val)),
-                        (storage::Data::Boolean(val), storage::Data::Boolean(false)) => Some(Cow::Owned(!val)),
+                        (storage::Data::Boolean(val), storage::Data::Boolean(true)) => {
+                            Some(Cow::Owned(val))
+                        }
+                        (storage::Data::Boolean(val), storage::Data::Boolean(false)) => {
+                            Some(Cow::Owned(!val))
+                        }
                         _ => Some(Cow::Owned(false)),
                     },
                     ra::RaComparisonOperator::IsNot => {
@@ -429,7 +463,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         arena: &bumpalo::Bump,
     ) -> Option<Cow<'vs, Self::Output>>
     where
-        S: storage::Storage, 'row: 'vs
+        S: storage::Storage,
+        'row: 'vs,
     {
         match self {
             Self::And { part_count } => {
@@ -445,7 +480,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
             Self::Expression(expr) => {
                 let v = expr.evaluate(row, engine, transaction, arena).await?;
                 Some(Cow::Owned(v))
-            },
+            }
         }
     }
 
@@ -458,7 +493,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         arena: &bumpalo::Bump,
     ) -> Option<Cow<'vs, Self::Output>>
     where
-        S: storage::Storage, 'row: 'vs
+        S: storage::Storage,
+        'row: 'vs,
     {
         match self {
             Self::And { part_count } => {
@@ -474,7 +510,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
             Self::Expression(expr) => {
                 let v = expr.evaluate_mut(row, engine, transaction, arena).await?;
                 Some(Cow::Owned(v))
-            },
+            }
         }
     }
 
