@@ -12,7 +12,7 @@ pub trait EvaluateConditions<SE> {
     fn evaluate(
         &self,
         condition: &RaCondition,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
     ) -> impl Future<Output = Result<bool, EvaulateRaError<SE>>>;
 }
 
@@ -34,8 +34,8 @@ where
         args: JoinArguments<'_>,
         ctx: JoinContext,
         result_columns: Vec<storage::ColumnSchema>,
-        left_rows: futures::stream::LocalBoxStream<'lr, storage::Row>,
-        right_rows: futures::stream::LocalBoxStream<'rr, storage::Row>,
+        left_rows: futures::stream::LocalBoxStream<'lr, storage::RowCow<'_>>,
+        right_rows: futures::stream::LocalBoxStream<'rr, storage::RowCow<'_>>,
         condition_eval: &CE,
     ) -> impl Future<
         Output = Result<
