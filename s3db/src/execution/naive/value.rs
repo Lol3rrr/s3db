@@ -193,8 +193,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         }
     }
 
-    async fn evaluate<'s, 'vs, 'row, S>(
-        &'s self,
+    async fn evaluate<'vs, 'row, S>(
+        &self,
         value_stack: &mut Vec<Cow<'vs, storage::Data>>,
         row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
@@ -204,10 +204,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     where
         S: storage::Storage,
         'row: 'vs,
-        's: 'vs,
     {
         match self {
-            ValueInstruction::Constant { value } => Some(Cow::Borrowed(value)),
+            ValueInstruction::Constant { value } => Some(Cow::Owned(value.clone())),
             ValueInstruction::Attribute { idx } => Some(Cow::Borrowed(&row.as_ref()[*idx])),
             ValueInstruction::Cast { target } => {
                 let input = value_stack.pop()?;

@@ -21,8 +21,8 @@ pub trait MappingInstruction<'expr>: Sized {
         ctx: &Self::ConstructContext<'ctx>,
     ) -> Result<Self, EvaulateRaError<SE>>;
 
-    fn evaluate<'s, 'vs, 'row, S>(
-        &'s self,
+    fn evaluate<'vs, 'row, S>(
+        &self,
         result_stack: &mut Vec<Cow<'vs, Self::Output>>,
         row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
@@ -31,11 +31,10 @@ pub trait MappingInstruction<'expr>: Sized {
     ) -> impl core::future::Future<Output = Option<Cow<'vs, Self::Output>>>
     where
         S: storage::Storage,
-        'row: 'vs,
-        's: 'vs;
+        'row: 'vs;
 
-    fn evaluate_mut<'s, 'vs, 'row, S>(
-        &'s mut self,
+    fn evaluate_mut<'vs, 'row, S>(
+        &mut self,
         result_stack: &mut Vec<Cow<'vs, Self::Output>>,
         row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
@@ -45,7 +44,6 @@ pub trait MappingInstruction<'expr>: Sized {
     where
         S: storage::Storage,
         'row: 'vs,
-        's: 'vs,
     {
         self.evaluate(result_stack, row, engine, transaction, arena)
     }
@@ -181,33 +179,22 @@ where
         let stack = Self::shorten_stack_lifetime(&mut self.value_stack);
 
         let mut idx = self.instruction_stack.len() - 1;
-        let mut iter = self.instruction_stack.iter_mut();
         loop {
-            let instr = iter.next().expect("Test");
+            let instr = self.instruction_stack.get_mut(idx).expect("We just know");
             let value = instr
                 .evaluate_mut(stack, row, engine, transaction, arena)
                 .await?;
 
-            let (n_idx, value) = match idx.checked_sub(1) {
-                Some(i) => (i, value),
-                None => return Some(value.into_owned()),
-            };
-
-            /*
             let (n_idx, value) = match instr.peek_short_circuit(value, idx, &stack) {
                 ShortCircuit::Nothing(v) => match idx.checked_sub(1) {
                     Some(i) => (i, v),
                     None => return Some(v.into_owned()),
                 },
                 ShortCircuit::Skip { amount, result } => match idx.checked_sub(amount) {
-                    Some(i) => {
-                        todo!();
-                        (i, result)
-                    },
+                    Some(i) => (i, result),
                     None => return Some(result.into_owned()),
                 },
             };
-            */
 
             idx = n_idx;
             stack.push(value);
