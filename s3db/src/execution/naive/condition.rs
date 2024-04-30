@@ -98,8 +98,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         }
     }
 
-    async fn evaluate<'vs, 'row, S>(
-        &self,
+    async fn evaluate<'s, 'vs, 'row, S>(
+        &'s self,
         result_stack: &mut Vec<std::borrow::Cow<'vs, Self::Output>>,
         row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
@@ -109,13 +109,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     where
         S: storage::Storage,
         'row: 'vs,
+        's: 'vs,
     {
         match self {
             Self::Negation {} => {
                 let before = result_stack.pop()?;
                 Some(Cow::Owned(!before.as_ref()))
             }
-            Self::Constant { value } => Some(Cow::Owned(*value)),
+            Self::Constant { value } => Some(Cow::Borrowed(value)),
             Self::Attribute { idx } => match row.as_ref().get(*idx) {
                 Some(storage::Data::Boolean(v)) => Some(Cow::Owned(*v)),
                 _ => None,
@@ -248,8 +249,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         }
     }
 
-    async fn evaluate_mut<'vs, 'row, S>(
-        &mut self,
+    async fn evaluate_mut<'s, 'vs, 'row, S>(
+        &'s mut self,
         result_stack: &mut Vec<Cow<'vs, Self::Output>>,
         row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
@@ -259,13 +260,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     where
         S: storage::Storage,
         'row: 'vs,
+        's: 'vs,
     {
         match self {
             Self::Negation {} => {
                 let before = result_stack.pop()?;
                 Some(Cow::Owned(!before.as_ref()))
             }
-            Self::Constant { value } => Some(Cow::Owned(*value)),
+            Self::Constant { value } => Some(Cow::Borrowed(value)),
             Self::Attribute { idx } => match row.as_ref().get(*idx) {
                 Some(storage::Data::Boolean(v)) => Some(Cow::Owned(*v)),
                 _ => None,
@@ -454,8 +456,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         }
     }
 
-    async fn evaluate<'vs, 'row, S>(
-        &self,
+    async fn evaluate<'s, 'vs, 'row, S>(
+        &'s self,
         result_stack: &mut Vec<std::borrow::Cow<'vs, Self::Output>>,
         row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
@@ -465,6 +467,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     where
         S: storage::Storage,
         'row: 'vs,
+        's: 'vs,
     {
         match self {
             Self::And { part_count } => {
@@ -484,8 +487,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         }
     }
 
-    async fn evaluate_mut<'vs, 'row, S>(
-        &mut self,
+    async fn evaluate_mut<'s, 'vs, 'row, S>(
+        &'s mut self,
         result_stack: &mut Vec<Cow<'vs, Self::Output>>,
         row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
@@ -495,6 +498,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     where
         S: storage::Storage,
         'row: 'vs,
+        's: 'vs,
     {
         match self {
             Self::And { part_count } => {
