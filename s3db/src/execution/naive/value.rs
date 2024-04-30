@@ -196,7 +196,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     async fn evaluate<S>(
         &self,
         value_stack: &mut Vec<storage::Data>,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
@@ -206,7 +206,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     {
         match self {
             ValueInstruction::Constant { value } => Some(value.clone()),
-            ValueInstruction::Attribute { idx } => Some(row.data[*idx].clone()),
+            ValueInstruction::Attribute { idx } => Some(row.as_ref()[*idx].clone()),
             ValueInstruction::Cast { target } => {
                 let input = value_stack.pop()?;
                 input.try_cast(target).ok()
@@ -274,7 +274,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         .await
                         .ok()?;
 
-                    let parts: Vec<_> = rows.map(|r| r.data[0].clone()).collect().await;
+                    let parts: Vec<_> = rows.map(|r| r.as_ref()[0].clone()).collect().await;
                     Some(parts)
                 }
                 .boxed_local();

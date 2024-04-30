@@ -20,7 +20,7 @@ pub trait MappingInstruction<'expr>: Sized {
     fn evaluate<S>(
         &self,
         result_stack: &mut Vec<Self::Output>,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
@@ -31,7 +31,7 @@ pub trait MappingInstruction<'expr>: Sized {
     fn evaluate_mut<S>(
         &mut self,
         result_stack: &mut Vec<Self::Output>,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
@@ -95,7 +95,7 @@ where
 
     pub async fn evaluate<S>(
         &self,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
@@ -130,7 +130,7 @@ where
 
     pub async fn evaluate_mut<S>(
         &mut self,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,

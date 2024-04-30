@@ -20,6 +20,48 @@ pub struct Row {
     pub data: Vec<Data>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct BorrowedRow<'d> {
+    pub rid: u64,
+    pub data: &'d [Data],
+}
+
+impl<'d> From<&'d Row> for BorrowedRow<'d> {
+    fn from(value: &'d Row) -> Self {
+        Self {
+            rid: value.rid,
+            data: &value.data,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum RowCow<'d> {
+    Borrowed(BorrowedRow<'d>),
+    Owned(Row),
+}
+
+impl<'d> AsRef<[Data]> for RowCow<'d> {
+    fn as_ref(&self) -> &[Data] {
+        match self {
+            Self::Borrowed(r) => r.data,
+            Self::Owned(r) => &r.data,
+        }
+    }
+}
+
+impl<'d> RowCow<'d> {
+    pub fn into_owned(self) -> Row {
+        match self {
+            Self::Owned(v) => v,
+            Self::Borrowed(r) => Row {
+                rid: r.rid,
+                data: r.data.into_iter().map(|d| d.clone()).collect(),
+            },
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct PartialRelation {
     pub rows: Vec<Row>,
@@ -116,7 +158,7 @@ pub trait Storage: SequenceStorage {
 
             let (schema, stream) = self.stream_relation(name, transaction).await?;
 
-            let rows: Vec<_> = stream.collect().await;
+            let rows: Vec<_> = stream.map(|row| row.into_owned()).collect().await;
 
             Ok(EntireRelation {
                 columns: schema
@@ -129,20 +171,24 @@ pub trait Storage: SequenceStorage {
         }
     }
 
-    fn stream_relation<'own, 'name, 'transaction, 'stream>(
+    fn stream_relation<'own, 'name, 'transaction, 'stream, 'rowdata>(
         &'own self,
         name: &'name str,
         transaction: &'transaction Self::TransactionGuard,
     ) -> impl Future<
         Output = Result<
-            (TableSchema, futures::stream::LocalBoxStream<'stream, Row>),
+            (
+                TableSchema,
+                futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>,
+            ),
             Self::LoadingError,
         >,
     >
     where
         'own: 'stream,
         'name: 'stream,
-        'transaction: 'stream;
+        'transaction: 'stream,
+        'own: 'rowdata;
 
     fn relation_exists(
         &self,

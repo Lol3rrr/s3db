@@ -79,7 +79,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
     pub fn update<'s, 'engine, 'row, 'transaction, 'arena, 'f, S>(
         &'s mut self,
         engine: &'engine NaiveEngine<S>,
-        row: &'row storage::Row,
+        row: &'row storage::RowCow<'_>,
         transaction: &'transaction S::TransactionGuard,
         arena: &'arena bumpalo::Bump,
     ) -> LocalBoxFuture<'f, Result<(), EvaulateRaError<S::LoadingError>>>
@@ -99,7 +99,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                     count,
                 } => {
                     if let Some(idx) = attribute_index {
-                        let value = &row.data[*idx];
+                        let value = &row.as_ref()[*idx];
                         if value == &storage::Data::Null {
                             return Ok(());
                         }
@@ -112,7 +112,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                     attribute_index,
                     value,
                 } => {
-                    let row_value = &row.data[*attribute_index];
+                    let row_value = &row.as_ref()[*attribute_index];
 
                     match &value {
                         Some(v) => {

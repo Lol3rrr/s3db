@@ -101,7 +101,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     async fn evaluate<S>(
         &self,
         result_stack: &mut Vec<Self::Output>,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
@@ -115,7 +115,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 Some(!before)
             }
             Self::Constant { value } => Some(*value),
-            Self::Attribute { idx } => match row.data.get(*idx) {
+            Self::Attribute { idx } => match row.as_ref().get(*idx) {
                 Some(storage::Data::Boolean(v)) => Some(*v),
                 _ => None,
             },
@@ -211,7 +211,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         columns
                             .iter()
                             .map(|(_, _, id)| *id)
-                            .zip(row.data.iter().cloned()),
+                            .zip(row.as_ref().iter().cloned()),
                     );
 
                     tmp
@@ -234,7 +234,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     async fn evaluate_mut<S>(
         &mut self,
         result_stack: &mut Vec<Self::Output>,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
@@ -248,7 +248,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 Some(!before)
             }
             Self::Constant { value } => Some(*value),
-            Self::Attribute { idx } => match row.data.get(*idx) {
+            Self::Attribute { idx } => match row.as_ref().get(*idx) {
                 Some(storage::Data::Boolean(v)) => Some(*v),
                 _ => None,
             },
@@ -344,7 +344,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         columns
                             .iter()
                             .map(|(_, _, id)| *id)
-                            .zip(row.data.iter().cloned()),
+                            .zip(row.as_ref().iter().cloned()),
                     );
 
                     tmp
@@ -423,7 +423,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     async fn evaluate<S>(
         &self,
         result_stack: &mut Vec<Self::Output>,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
@@ -449,7 +449,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
     async fn evaluate_mut<S>(
         &mut self,
         result_stack: &mut Vec<Self::Output>,
-        row: &storage::Row,
+        row: &storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,

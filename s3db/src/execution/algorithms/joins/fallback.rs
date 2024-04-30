@@ -26,8 +26,8 @@ where
         args: super::JoinArguments<'_>,
         ctx: super::JoinContext,
         result_columns: Vec<storage::ColumnSchema>,
-        left_result: futures::stream::LocalBoxStream<'lr, storage::Row>,
-        right_result: futures::stream::LocalBoxStream<'rr, storage::Row>,
+        left_result: futures::stream::LocalBoxStream<'lr, storage::RowCow<'_>>,
+        right_result: futures::stream::LocalBoxStream<'rr, storage::RowCow<'_>>,
         condition_eval: &CE,
     ) -> Result<
         (

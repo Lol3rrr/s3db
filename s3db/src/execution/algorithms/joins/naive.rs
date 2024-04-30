@@ -19,8 +19,8 @@ where
         args: JoinArguments<'_>,
         _ctx: JoinContext,
         result_columns: Vec<storage::ColumnSchema>,
-        mut left_result: futures::stream::LocalBoxStream<'lr, storage::Row>,
-        right_result: futures::stream::LocalBoxStream<'rr, storage::Row>,
+        mut left_result: futures::stream::LocalBoxStream<'lr, storage::RowCow<'_>>,
+        right_result: futures::stream::LocalBoxStream<'rr, storage::RowCow<'_>>,
         condition_eval: &CE,
     ) -> Result<
         (
@@ -46,14 +46,23 @@ where
                 while let Some(left_row) = left_result.next().await {
                     for right_row in right_rows.iter() {
                         let joined_row_data = {
-                            let mut tmp = left_row.data.clone();
-                            tmp.extend(right_row.data.clone());
+                            let mut tmp: Vec<storage::Data> = left_row.as_ref().to_vec();
+                            tmp.extend(right_row.as_ref().iter().cloned());
                             tmp
                         };
 
-                        let row = storage::Row::new(result_rows.len() as u64, joined_row_data);
-                        if condition_eval.evaluate(args.conditon, &row).await? {
-                            result_rows.push(row);
+                        if condition_eval
+                            .evaluate(
+                                args.conditon,
+                                &storage::RowCow::Borrowed(storage::BorrowedRow {
+                                    rid: result_rows.len() as u64,
+                                    data: &joined_row_data,
+                                }),
+                            )
+                            .await?
+                        {
+                            result_rows
+                                .push(storage::Row::new(result_rows.len() as u64, joined_row_data));
                         }
                     }
                 }
@@ -67,22 +76,30 @@ where
 
                     for right_row in right_rows.iter() {
                         let joined_row_data = {
-                            let mut tmp = left_row.data.clone();
-                            tmp.extend(right_row.data.clone());
+                            let mut tmp: Vec<storage::Data> = left_row.as_ref().to_vec();
+                            tmp.extend(right_row.as_ref().iter().cloned());
                             tmp
                         };
 
-                        let row = storage::Row::new(result_rows.len() as u64, joined_row_data);
-
-                        if condition_eval.evaluate(args.conditon, &row).await? {
-                            result_rows.push(row);
+                        if condition_eval
+                            .evaluate(
+                                args.conditon,
+                                &storage::RowCow::Borrowed(storage::BorrowedRow {
+                                    rid: result_rows.len() as u64,
+                                    data: &joined_row_data,
+                                }),
+                            )
+                            .await?
+                        {
+                            result_rows
+                                .push(storage::Row::new(result_rows.len() as u64, joined_row_data));
                             included = true;
                         }
                     }
 
                     if !included {
                         let joined_row_data = {
-                            let mut tmp = left_row.data.clone();
+                            let mut tmp = left_row.as_ref().to_vec();
                             tmp.extend(
                                 (0..(result_schema.rows.len() - tmp.len()))
                                     .map(|_| storage::Data::Null),

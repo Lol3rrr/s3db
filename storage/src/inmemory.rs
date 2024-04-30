@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use crate::Data;
+use crate::{Data, RowCow};
 use sql::{DataType, TypeModifier};
 
 use super::{
@@ -232,15 +232,22 @@ impl Storage for InMemoryStorage {
         <&InMemoryStorage as Storage>::abort_transaction(&self, guard).await
     }
 
-    async fn stream_relation<'own, 'name, 'transaction, 'stream>(
+    async fn stream_relation<'own, 'name, 'transaction, 'stream, 'rowdata>(
         &'own self,
         name: &'name str,
         transaction: &'transaction Self::TransactionGuard,
-    ) -> Result<(TableSchema, futures::stream::LocalBoxStream<'stream, Row>), Self::LoadingError>
+    ) -> Result<
+        (
+            TableSchema,
+            futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>,
+        ),
+        Self::LoadingError,
+    >
     where
         'own: 'stream,
         'name: 'stream,
         'transaction: 'stream,
+        'own: 'rowdata,
     {
         use futures::stream::StreamExt;
 
@@ -287,7 +294,9 @@ impl Storage for InMemoryStorage {
             .map(|r| r.data.clone())
             .collect();
 
-        let stream = futures::stream::iter(rows).boxed_local();
+        let stream = futures::stream::iter(rows)
+            .map(|r| RowCow::Owned(r))
+            .boxed_local();
 
         Ok((table_schema, stream))
     }
@@ -467,15 +476,22 @@ impl Storage for &InMemoryStorage {
         Ok(())
     }
 
-    async fn stream_relation<'own, 'name, 'transaction, 'stream>(
+    async fn stream_relation<'own, 'name, 'transaction, 'stream, 'rowdata>(
         &'own self,
         name: &'name str,
         transaction: &'transaction Self::TransactionGuard,
-    ) -> Result<(TableSchema, futures::stream::LocalBoxStream<'stream, Row>), Self::LoadingError>
+    ) -> Result<
+        (
+            TableSchema,
+            futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>,
+        ),
+        Self::LoadingError,
+    >
     where
         'own: 'stream,
         'name: 'stream,
         'transaction: 'stream,
+        'own: 'rowdata,
     {
         use futures::stream::StreamExt;
 
@@ -522,7 +538,9 @@ impl Storage for &InMemoryStorage {
             .map(|r| r.data.clone())
             .collect();
 
-        let stream = futures::stream::iter(rows).boxed_local();
+        let stream = futures::stream::iter(rows)
+            .map(|r| RowCow::Owned(r))
+            .boxed_local();
 
         Ok((table_schema, stream))
     }
