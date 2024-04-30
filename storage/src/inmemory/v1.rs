@@ -10,9 +10,8 @@ use std::{
 use sql::{DataType, TypeModifier};
 
 use crate::{
-    Data, RowCow,
-    schema::ColumnSchema, RelationModification, Row, Schemas, Sequence, SequenceStorage, Storage,
-    TableSchema,
+    schema::ColumnSchema, Data, RelationModification, Row, RowCow, Schemas, Sequence,
+    SequenceStorage, Storage, TableSchema,
 };
 
 /// # InMemoryStorage

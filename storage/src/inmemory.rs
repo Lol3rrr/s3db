@@ -1,7 +1,8 @@
-mod v1;
-pub use v1::{InMemoryStorage as InMemoryStorageV1, InMemorySequence as InMemorySequenceV1, InMemoryTransactionGuard as InMemoryTransactionGuardV1, LoadingError as LoadingErrorV1};
+pub mod v1;
 
-pub type LoadingError = LoadingErrorV1;
-pub type InMemoryStorage = InMemoryStorageV1;
-pub type InMemorySequence<'a> = InMemorySequenceV1<'a>;
-pub type InMemoryTransactionGuard = InMemoryTransactionGuardV1;
+mod v2;
+
+pub type LoadingError = v1::LoadingError;
+pub type InMemoryStorage = v1::InMemoryStorage;
+pub type InMemorySequence<'a> = v1::InMemorySequence<'a>;
+pub type InMemoryTransactionGuard = v1::InMemoryTransactionGuard;
