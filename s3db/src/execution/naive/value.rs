@@ -1,5 +1,5 @@
 use futures::{future::FutureExt, stream::StreamExt};
-use std::collections::HashMap;
+use std::{collections::HashMap, borrow::Cow};
 
 use crate::ra::{self, AttributeId};
 
@@ -193,53 +193,53 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
         }
     }
 
-    async fn evaluate<S>(
+    async fn evaluate<'vs, 'row, S>(
         &self,
-        value_stack: &mut Vec<storage::Data>,
-        row: &storage::RowCow<'_>,
+        value_stack: &mut Vec<Cow<'vs, storage::Data>>,
+        row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
-    ) -> Option<storage::Data>
+    ) -> Option<Cow<'vs, storage::Data>>
     where
-        S: storage::Storage,
+        S: storage::Storage, 'row: 'vs
     {
         match self {
-            ValueInstruction::Constant { value } => Some(value.clone()),
-            ValueInstruction::Attribute { idx } => Some(row.as_ref()[*idx].clone()),
+            ValueInstruction::Constant { value } => Some(Cow::Owned(value.clone())),
+            ValueInstruction::Attribute { idx } => Some(Cow::Borrowed(&row.as_ref()[*idx])),
             ValueInstruction::Cast { target } => {
                 let input = value_stack.pop()?;
-                input.try_cast(target).ok()
+                input.into_owned().try_cast(target).map(|v| Cow::Owned(v)).ok()
             }
             ValueInstruction::List { len } => {
                 let stack_len = value_stack.len();
-                let values: Vec<_> = value_stack.drain(stack_len - len..).collect();
-                Some(storage::Data::List(values))
+                let values: Vec<_> = value_stack.drain(stack_len - len..).map(|v| v.into_owned()).collect();
+                Some(Cow::Owned(storage::Data::List(values)))
             }
             ValueInstruction::BinaryOp { operator } => {
                 let first_value = value_stack.pop()?;
                 let second_value = value_stack.pop()?;
 
                 match operator {
-                    BinaryOperator::Add => match (first_value, second_value) {
-                        (Data::SmallInt(f), Data::SmallInt(s)) => Some(Data::SmallInt(f + s)),
-                        (Data::Integer(f), Data::SmallInt(s)) => Some(Data::Integer(f + s as i32)),
+                    BinaryOperator::Add => match (first_value.as_ref(), second_value.as_ref()) {
+                        (Data::SmallInt(f), Data::SmallInt(s)) => Some(Cow::Owned(Data::SmallInt(f + s))),
+                        (Data::Integer(f), Data::SmallInt(s)) => Some(Cow::Owned(Data::Integer(f + *s as i32))),
                         other => {
                             dbg!(other);
                             // Err(EvaulateRaError::Other("Addition"))
                             None
                         }
                     },
-                    BinaryOperator::Subtract => match (first_value, second_value) {
-                        (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f - s)),
+                    BinaryOperator::Subtract => match (first_value.as_ref(), second_value.as_ref()) {
+                        (Data::Integer(f), Data::Integer(s)) => Some(Cow::Owned(Data::Integer(f - s))),
                         other => {
                             dbg!(other);
                             // Err(EvaulateRaError::Other("Subtracting"))
                             None
                         }
                     },
-                    BinaryOperator::Divide => match (first_value, second_value) {
-                        (Data::Integer(f), Data::Integer(s)) => Some(Data::Integer(f / s)),
+                    BinaryOperator::Divide => match (first_value.as_ref(), second_value.as_ref()) {
+                        (Data::Integer(f), Data::Integer(s)) => Some(Cow::Owned(Data::Integer(f / s))),
                         other => {
                             dbg!(other);
                             // Err(EvaulateRaError::Other("Subtracting"))
@@ -280,7 +280,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 .boxed_local();
 
                 let parts = local_fut.await?;
-                Some(storage::Data::List(parts))
+                Some(Cow::Owned(storage::Data::List(parts)))
             }
             ValueInstruction::Function { func } => {
                 match func {
@@ -288,17 +288,17 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         let mut value = value_stack.pop()?;
 
                         let value = loop {
-                            match value {
-                                Data::BigInt(v) => break v,
-                                Data::Integer(v) => break v as i64,
-                                Data::SmallInt(v) => break v as i64,
-                                Data::List(mut v) => {
+                            match value.as_ref() {
+                                Data::BigInt(v) => break *v,
+                                Data::Integer(v) => break *v as i64,
+                                Data::SmallInt(v) => break *v as i64,
+                                Data::List(v) => {
                                     if v.is_empty() {
                                         // return Err(EvaulateRaError::Other(""));
                                         return None;
                                     }
 
-                                    value = v.swap_remove(0);
+                                    value = Cow::Owned(v.get(0).cloned().unwrap());
                                     continue;
                                 }
                                 other => todo!("Other: {:?}", other),
@@ -312,13 +312,13 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                             sequence.set_value(value as u64).await;
                         }
 
-                        Some(Data::BigInt(value))
+                        Some(Cow::Owned(Data::BigInt(value)))
                     }
                     FunctionInstruction::Lower {} => {
                         let value = value_stack.pop()?;
 
-                        match value {
-                            storage::Data::Text(d) => Some(storage::Data::Text(d.to_lowercase())),
+                        match value.as_ref() {
+                            storage::Data::Text(d) => Some(Cow::Owned(storage::Data::Text(d.to_lowercase()))),
                             other => {
                                 dbg!(&other);
                                 //Err(EvaulateRaError::Other("Unexpected Type"))
