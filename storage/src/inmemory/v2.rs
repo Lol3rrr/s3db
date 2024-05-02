@@ -1,8 +1,10 @@
 use core::{cell::RefCell, sync::atomic};
-use std::{
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::collections::{HashMap, HashSet};
+#[cfg(not(loom))]
+use std::sync::Arc;
+
+#[cfg(loom)]
+use loom::sync::Arc;
 
 use crate::{mvcc, RelationStorage};
 
@@ -10,9 +12,14 @@ use futures::stream::StreamExt;
 
 mod internal;
 
+async fn _yield() {
+    #[cfg(not(loom))]
+    tokio::task::yield_now().await;
+}
+
 pub struct InMemoryStorage {
     schemas: RefCell<crate::Schemas>,
-    relations: RefCell<HashMap<String, Rc<internal::RelationList>>>,
+    relations: RefCell<HashMap<String, Arc<internal::RelationList>>>,
     current_tid: atomic::AtomicU64,
     active_tids: RefCell<HashSet<u64>>,
     aborted_tids: RefCell<HashSet<u64>>,
@@ -114,7 +121,7 @@ impl RelationStorage for InMemoryStorage {
         'transaction: 'stream,
         'own: 'rowdata,
     {
-        let tmp: Rc<internal::RelationList> = self
+        let tmp: Arc<internal::RelationList> = self
             .relations
             .borrow()
             .get(name)
@@ -126,10 +133,10 @@ impl RelationStorage for InMemoryStorage {
             .map_err(|e| LoadingError::Other("Borrow Schemas"))?;
 
         let handle = loop {
-            match tmp.clone().try_get_handle() {
+            match internal::RelationList::try_get_handle(tmp.clone()) {
                 Some(h) => break h,
                 None => {
-                    tokio::task::yield_now().await;
+                    _yield().await;
                 }
             }
         };
@@ -163,7 +170,7 @@ impl RelationStorage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = Vec<crate::Data>>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let tmp: Rc<internal::RelationList> = self
+        let tmp: Arc<internal::RelationList> = self
             .relations
             .borrow()
             .get(name)
@@ -171,10 +178,10 @@ impl RelationStorage for InMemoryStorage {
             .ok_or(LoadingError::Other("Borrow Relations"))?;
 
         let handle = loop {
-            match tmp.clone().try_get_handle() {
+            match internal::RelationList::try_get_handle(tmp.clone()) {
                 Some(h) => break h,
                 None => {
-                    tokio::task::yield_now().await;
+                    _yield().await;
                 }
             }
         };
@@ -191,7 +198,7 @@ impl RelationStorage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = (u64, Vec<crate::Data>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let tmp: Rc<internal::RelationList> = self
+        let tmp: Arc<internal::RelationList> = self
             .relations
             .borrow()
             .get(name)
@@ -199,10 +206,10 @@ impl RelationStorage for InMemoryStorage {
             .ok_or(LoadingError::Other("Borrow Relations"))?;
 
         let handle = loop {
-            match tmp.clone().try_get_handle() {
+            match internal::RelationList::try_get_handle(tmp.clone()) {
                 Some(h) => break h,
                 None => {
-                    tokio::task::yield_now().await;
+                    _yield().await;
                 }
             }
         };
@@ -247,7 +254,7 @@ impl RelationStorage for InMemoryStorage {
         rids: &mut dyn Iterator<Item = u64>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let tmp: Rc<internal::RelationList> = self
+        let tmp: Arc<internal::RelationList> = self
             .relations
             .borrow()
             .get(name)
@@ -255,10 +262,10 @@ impl RelationStorage for InMemoryStorage {
             .ok_or(LoadingError::Other("Borrow Relations"))?;
 
         let handle = loop {
-            match tmp.clone().try_get_handle() {
+            match internal::RelationList::try_get_handle(tmp.clone()) {
                 Some(h) => break h,
                 None => {
-                    tokio::task::yield_now().await;
+                    _yield().await;
                 }
             }
         };
@@ -319,7 +326,7 @@ impl RelationStorage for InMemoryStorage {
             .try_borrow_mut()
             .map_err(|_| LoadingError::Other("Relations"))?;
 
-        tables_mut.insert(name.to_owned(), Rc::new(internal::RelationList::new()));
+        tables_mut.insert(name.to_owned(), Arc::new(internal::RelationList::new()));
 
         let mut schemas_mut = self
             .schemas
@@ -441,8 +448,8 @@ impl InMemoryStorage {
         let mut table_schemas = HashMap::new();
 
         for (name, schema, rows) in super::postgres_tables() {
-            let list = Rc::new(internal::RelationList::new());
-            let handle = list.clone().try_get_handle().unwrap();
+            let list = Arc::new(internal::RelationList::new());
+            let handle = internal::RelationList::try_get_handle(list.clone()).unwrap();
             for r in rows {
                 handle.insert_row(r.data, 0);
             }

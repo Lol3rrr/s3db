@@ -1,5 +1,8 @@
-use core::sync::atomic;
+#[cfg(loom)]
+use loom::sync::{atomic, Arc};
 use std::rc::Rc;
+#[cfg(not(loom))]
+use std::sync::{atomic, Arc};
 
 const BLOCK_SIZE: usize = 512;
 
@@ -10,6 +13,9 @@ pub struct RelationList {
     active_handles: atomic::AtomicUsize,
     newest_row_id: atomic::AtomicU64,
 }
+
+unsafe impl Send for RelationList {}
+unsafe impl Sync for RelationList {}
 
 pub struct RelationBlock<const N: usize> {
     next: atomic::AtomicPtr<Self>,
@@ -38,7 +44,7 @@ pub struct RelationSlot {
 }
 
 pub struct RelationListHandle {
-    list: Rc<RelationList>,
+    list: Arc<RelationList>,
 }
 
 pub struct RelationListIter<'h> {
@@ -71,14 +77,14 @@ impl RelationList {
         }
     }
 
-    pub fn try_get_handle(self: Rc<Self>) -> Option<RelationListHandle> {
-        if self.locked.load(atomic::Ordering::SeqCst) {
+    pub fn try_get_handle(list: Arc<Self>) -> Option<RelationListHandle> {
+        if list.locked.load(atomic::Ordering::SeqCst) {
             return None;
         }
 
-        self.active_handles.fetch_add(1, atomic::Ordering::SeqCst);
+        list.active_handles.fetch_add(1, atomic::Ordering::SeqCst);
 
-        Some(RelationListHandle { list: self })
+        Some(RelationListHandle { list })
     }
 }
 
@@ -309,7 +315,7 @@ impl Drop for RelationListHandle {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(loom)))]
 mod tests {
     use super::*;
 
@@ -320,9 +326,9 @@ mod tests {
 
     #[test]
     fn relation_list_empty_iter() {
-        let list = Rc::new(RelationList::new());
+        let list = Arc::new(RelationList::new());
 
-        let listhandle = list.try_get_handle().unwrap();
+        let listhandle = RelationList::try_get_handle(list).unwrap();
         let mut iter = listhandle.iter();
         assert!(iter.next().is_some());
         assert!(iter.next().is_none());
@@ -330,9 +336,9 @@ mod tests {
 
     #[test]
     fn relation_list_empty_iter_block() {
-        let list = Rc::new(RelationList::new());
+        let list = Arc::new(RelationList::new());
 
-        let listhandle = list.try_get_handle().unwrap();
+        let listhandle = RelationList::try_get_handle(list).unwrap();
         let mut iter = listhandle.iter();
 
         let first_block = iter.next().unwrap();
@@ -344,9 +350,9 @@ mod tests {
 
     #[test]
     fn relation_list_empty_handle_iter() {
-        let list = Rc::new(RelationList::new());
+        let list = Arc::new(RelationList::new());
 
-        let listhandle = list.try_get_handle().unwrap();
+        let listhandle = RelationList::try_get_handle(list).unwrap();
         let mut iter = listhandle.into_iter();
 
         assert!(iter.next().is_none());
@@ -354,9 +360,9 @@ mod tests {
 
     #[test]
     fn insert() {
-        let list = Rc::new(RelationList::new());
+        let list = Arc::new(RelationList::new());
 
-        let handle = list.try_get_handle().unwrap();
+        let handle = RelationList::try_get_handle(list).unwrap();
         handle.insert_row(vec![crate::Data::Integer(123)], 1);
 
         let mut iter = handle.into_iter();
@@ -367,14 +373,46 @@ mod tests {
 
     #[test]
     fn insert_with_new_block() {
-        let list = Rc::new(RelationList::new());
+        let list = Arc::new(RelationList::new());
 
-        let handle = list.try_get_handle().unwrap();
+        let handle = RelationList::try_get_handle(list).unwrap();
         for i in 0..BLOCK_SIZE + 1 {
             handle.insert_row(vec![crate::Data::Integer(i as i32)], i as u64);
         }
 
         let iter = handle.into_iter();
         assert_eq!(BLOCK_SIZE + 1, iter.count());
+    }
+}
+
+#[cfg(loom)]
+mod loom_tests {
+    use super::*;
+
+    #[test]
+    fn insert() {
+        loom::model(|| {
+            let list = Arc::new(RelationList::new());
+
+            let ths: Vec<_> = (0..2)
+                .map(|idx| {
+                    let list = list.clone();
+                    loom::thread::spawn(move || {
+                        let handle = RelationList::try_get_handle(list).unwrap();
+
+                        handle.insert_row(vec![crate::Data::Integer(idx)], 1);
+                    })
+                })
+                .collect();
+
+            for h in ths {
+                h.join().unwrap();
+            }
+
+            let handle = RelationList::try_get_handle(list).unwrap();
+            let mut iter = handle.into_iter();
+            assert!(iter.next().is_some());
+            assert!(iter.next().is_some());
+        });
     }
 }
