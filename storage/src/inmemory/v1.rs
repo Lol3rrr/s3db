@@ -10,7 +10,7 @@ use std::{
 use sql::{DataType, TypeModifier};
 
 use crate::{
-    schema::ColumnSchema, Data, RelationModification, Row, RowCow, Schemas, Sequence,
+    mvcc, schema::ColumnSchema, Data, RelationModification, Row, RowCow, Schemas, Sequence,
     SequenceStorage, Storage, TableSchema,
 };
 
@@ -272,23 +272,15 @@ impl Storage for InMemoryStorage {
             .iter()
             .flat_map(|p| p)
             .filter(|row| {
-                if (transaction.active.contains(&row.created)
-                    || row.created > transaction.latest_commit
-                    || transaction.aborted.contains(&row.created))
-                    && row.created != transaction.id
-                {
-                    return false;
-                }
-                if row.expired != 0
-                    && (!transaction.active.contains(&row.expired)
-                        || row.expired == transaction.id
-                        || row.expired < transaction.latest_commit)
-                    && !transaction.aborted.contains(&row.expired)
-                {
-                    return false;
-                }
-
-                true
+                let vis = mvcc::check(
+                    transaction.id,
+                    &transaction.active,
+                    &transaction.aborted,
+                    transaction.latest_commit,
+                    row.created,
+                    row.expired,
+                );
+                mvcc::Visibility::Visible == vis
             })
             .map(|r| r.data.clone())
             .collect();

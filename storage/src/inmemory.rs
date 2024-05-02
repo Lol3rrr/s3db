@@ -1,6 +1,6 @@
 pub mod v1;
 
-mod v2;
+pub mod v2;
 
 pub type LoadingError = v1::LoadingError;
 pub type InMemoryStorage = v1::InMemoryStorage;

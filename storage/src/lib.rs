@@ -16,6 +16,8 @@ pub mod inmemory;
 
 mod composed;
 
+mod mvcc;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Row {
     rid: u64,
