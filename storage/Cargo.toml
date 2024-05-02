@@ -15,3 +15,10 @@ tokio = { version = "1.36.0", default-features = false, features = ["io-util", "
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = [] }
 futures = { version = "0.3", no_default_features = true, features = ["executor"] }
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+
+[[bench]]
+name = "execute"
+harness = false

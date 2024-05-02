@@ -11,6 +11,7 @@ use futures::stream::StreamExt;
 mod internal;
 
 pub struct InMemoryStorage {
+    schemas: RefCell<crate::Schemas>,
     relations: RefCell<HashMap<String, Rc<internal::RelationList>>>,
     current_tid: atomic::AtomicU64,
     active_tids: RefCell<HashSet<u64>>,
@@ -31,7 +32,9 @@ impl RelationStorage for InMemoryStorage {
     type TransactionGuard = InMemoryTransactionGuard;
 
     async fn schemas(&self) -> Result<crate::Schemas, Self::LoadingError> {
-        todo!()
+        let schemas = self.schemas.try_borrow().map_err(|_| ())?;
+
+        Ok(schemas.clone())
     }
 
     async fn start_transaction(&self) -> Result<Self::TransactionGuard, Self::LoadingError> {
@@ -189,7 +192,24 @@ impl RelationStorage for InMemoryStorage {
         fields: std::vec::Vec<(String, sql::DataType, Vec<sql::TypeModifier>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        todo!()
+        let mut tables_mut = self
+            .relations
+            .try_borrow_mut()
+            .map_err(|_| ())?;
+
+        tables_mut.insert(
+            name.to_owned(),Rc::new(internal::RelationList::new()),
+        );
+
+        let mut schemas_mut = self.schemas.try_borrow_mut().map_err(|_| ())?;
+        schemas_mut.tables.insert(name.to_owned(), crate::TableSchema {
+            rows: fields.into_iter().map(|(name, ty, mods)| crate::ColumnSchema {
+                name,
+                ty,mods
+            }).collect()
+        });
+
+        Ok(())
     }
 
     async fn rename_relation(
@@ -214,5 +234,20 @@ impl RelationStorage for InMemoryStorage {
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
         todo!()
+    }
+}
+
+impl InMemoryStorage {
+    pub fn new() -> Self {
+        Self {
+            schemas: RefCell::new(crate::Schemas {
+                tables: HashMap::new(),
+            }),
+            relations: RefCell::new(HashMap::new()),
+            latest_commit: atomic::AtomicU64::new(0),
+            aborted_tids: RefCell::new(HashSet::new()),
+            active_tids: RefCell::new(HashSet::new()),
+            current_tid: atomic::AtomicU64::new(1),
+        }
     }
 }
