@@ -10,8 +10,8 @@ use std::{
 use sql::{DataType, TypeModifier};
 
 use crate::{
-    mvcc, schema::ColumnSchema, Data, RelationModification, Row, RowCow, Schemas, Sequence,
-    SequenceStorage, Storage, TableSchema,
+    mvcc, schema::ColumnSchema, Data, RelationModification, RelationStorage, Row, RowCow, Schemas,
+    Sequence, SequenceStorage, Storage, TableSchema,
 };
 
 /// # InMemoryStorage
@@ -69,102 +69,32 @@ impl Default for InMemoryStorage {
 
 impl InMemoryStorage {
     pub fn new() -> Self {
+        let mut tables = HashMap::new();
+
+        for (name, schema, rows) in super::postgres_tables() {
+            tables.insert(
+                name,
+                Table {
+                    columns: schema
+                        .rows
+                        .into_iter()
+                        .map(|c| (c.name, c.ty, c.mods))
+                        .collect(),
+                    rows: vec![rows
+                        .into_iter()
+                        .map(|r| InternalRow {
+                            created: 0,
+                            expired: 0,
+                            data: r,
+                        })
+                        .collect()],
+                    cid: AtomicU64::new(0),
+                },
+            );
+        }
+
         Self {
-            tables: RefCell::new(
-                [
-                    (
-                        "pg_tables".to_string(),
-                        Table {
-                            columns: vec![
-                                ("schemaname".to_string(), DataType::Name, vec![]),
-                                ("tablename".to_string(), DataType::Name, vec![]),
-                                ("tableowner".to_string(), DataType::Name, vec![]),
-                                ("tablespace".to_string(), DataType::Name, vec![]),
-                                ("hasindexes".to_string(), DataType::Bool, vec![]),
-                                ("hasrules".to_string(), DataType::Bool, vec![]),
-                                ("hastriggers".to_string(), DataType::Bool, vec![]),
-                                ("rowsecurity".to_string(), DataType::Bool, vec![]),
-                            ],
-                            rows: Vec::new(),
-                            cid: AtomicU64::new(0),
-                        },
-                    ),
-                    (
-                        "pg_indexes".to_string(),
-                        Table {
-                            columns: vec![
-                                ("schemaname".to_string(), DataType::Name, vec![]),
-                                ("tablename".to_string(), DataType::Name, vec![]),
-                                ("indexname".to_string(), DataType::Name, vec![]),
-                                ("tablespace".to_string(), DataType::Name, vec![]),
-                                ("indexdef".to_string(), DataType::Text, vec![]),
-                            ],
-                            rows: Vec::new(),
-                            cid: AtomicU64::new(0),
-                        },
-                    ),
-                    (
-                        "pg_class".to_string(),
-                        Table {
-                            columns: vec![
-                                ("oid".to_string(), DataType::Integer, vec![]),
-                                ("relname".to_string(), DataType::Name, vec![]),
-                                ("relnamespace".to_string(), DataType::Integer, vec![]),
-                            ],
-                            rows: Vec::new(),
-                            cid: AtomicU64::new(0),
-                        },
-                    ),
-                    (
-                        "pg_namespace".to_string(),
-                        Table {
-                            columns: vec![
-                                ("oid".to_string(), DataType::Integer, vec![]),
-                                ("nspname".to_string(), DataType::Name, vec![]),
-                                ("nspowner".to_string(), DataType::Integer, vec![]),
-                            ],
-                            rows: vec![vec![InternalRow {
-                                data: Row::new(
-                                    0,
-                                    vec![
-                                        Data::Integer(0),
-                                        Data::Name("default".to_string()),
-                                        Data::Integer(0),
-                                    ],
-                                ),
-                                created: 0,
-                                expired: 0,
-                            }]],
-                            cid: AtomicU64::new(0),
-                        },
-                    ),
-                    (
-                        "pg_partitioned_table".to_string(),
-                        Table {
-                            columns: vec![
-                                ("partrelid".to_string(), DataType::Integer, vec![]),
-                                ("partstrat".to_string(), DataType::Text, vec![]),
-                                ("partdefid".to_string(), DataType::Integer, vec![]),
-                            ],
-                            rows: Vec::new(),
-                            cid: AtomicU64::new(0),
-                        },
-                    ),
-                    (
-                        "pg_inherits".to_string(),
-                        Table {
-                            columns: vec![
-                                ("inhrelid".to_string(), DataType::Integer, vec![]),
-                                ("inhparent".to_string(), DataType::Integer, vec![]),
-                            ],
-                            rows: Vec::new(),
-                            cid: AtomicU64::new(0),
-                        },
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-            ),
+            tables: RefCell::new(tables),
             current_tid: AtomicU64::new(1),
             active_tids: RefCell::new(HashSet::new()),
             aborted_tids: RefCell::new(HashSet::new()),
@@ -211,24 +141,24 @@ impl SequenceStorage for InMemoryStorage {
     }
 }
 
-impl Storage for InMemoryStorage {
+impl RelationStorage for InMemoryStorage {
     type LoadingError = LoadingError;
     type TransactionGuard = InMemoryTransactionGuard;
 
     async fn start_transaction(&self) -> Result<Self::TransactionGuard, Self::LoadingError> {
-        <&InMemoryStorage as Storage>::start_transaction(&self).await
+        <&InMemoryStorage as RelationStorage>::start_transaction(&self).await
     }
     async fn commit_transaction(
         &self,
         guard: Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::commit_transaction(&self, guard).await
+        <&InMemoryStorage as RelationStorage>::commit_transaction(&self, guard).await
     }
     async fn abort_transaction(
         &self,
         guard: Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::abort_transaction(&self, guard).await
+        <&InMemoryStorage as RelationStorage>::abort_transaction(&self, guard).await
     }
 
     async fn stream_relation<'own, 'name, 'transaction, 'stream, 'rowdata>(
@@ -297,7 +227,7 @@ impl Storage for InMemoryStorage {
         name: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<bool, Self::LoadingError> {
-        <&InMemoryStorage as Storage>::relation_exists(&self, name, transaction).await
+        <&InMemoryStorage as RelationStorage>::relation_exists(&self, name, transaction).await
     }
 
     async fn create_relation(
@@ -306,7 +236,8 @@ impl Storage for InMemoryStorage {
         fields: Vec<(String, DataType, Vec<TypeModifier>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::create_relation(&self, name, fields, transaction).await
+        <&InMemoryStorage as RelationStorage>::create_relation(&self, name, fields, transaction)
+            .await
     }
 
     async fn rename_relation(
@@ -315,7 +246,8 @@ impl Storage for InMemoryStorage {
         target: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::rename_relation(&self, name, target, transaction).await
+        <&InMemoryStorage as RelationStorage>::rename_relation(&self, name, target, transaction)
+            .await
     }
 
     async fn remove_relation(
@@ -323,7 +255,7 @@ impl Storage for InMemoryStorage {
         name: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::remove_relation(&self, name, transaction).await
+        <&InMemoryStorage as RelationStorage>::remove_relation(&self, name, transaction).await
     }
 
     async fn modify_relation(
@@ -332,11 +264,17 @@ impl Storage for InMemoryStorage {
         modification: crate::ModifyRelation,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::modify_relation(&self, name, modification, transaction).await
+        <&InMemoryStorage as RelationStorage>::modify_relation(
+            &self,
+            name,
+            modification,
+            transaction,
+        )
+        .await
     }
 
     async fn schemas(&self) -> Result<Schemas, Self::LoadingError> {
-        <&InMemoryStorage as Storage>::schemas(&self).await
+        <&InMemoryStorage as RelationStorage>::schemas(&self).await
     }
 
     async fn insert_rows(
@@ -345,7 +283,7 @@ impl Storage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = Vec<Data>>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::insert_rows(&self, name, rows, transaction).await
+        <&InMemoryStorage as RelationStorage>::insert_rows(&self, name, rows, transaction).await
     }
 
     async fn update_rows(
@@ -354,7 +292,7 @@ impl Storage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = (u64, Vec<Data>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::update_rows(&self, name, rows, transaction).await
+        <&InMemoryStorage as RelationStorage>::update_rows(&self, name, rows, transaction).await
     }
 
     async fn delete_rows(
@@ -363,9 +301,11 @@ impl Storage for InMemoryStorage {
         rids: &mut dyn Iterator<Item = u64>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        <&InMemoryStorage as Storage>::delete_rows(&self, name, rids, transaction).await
+        <&InMemoryStorage as RelationStorage>::delete_rows(&self, name, rids, transaction).await
     }
 }
+
+impl Storage for InMemoryStorage {}
 
 impl SequenceStorage for &InMemoryStorage {
     type SequenceHandle<'s> = InMemorySequence<'s> where Self: 's;
@@ -410,7 +350,7 @@ impl SequenceStorage for &InMemoryStorage {
     }
 }
 
-impl Storage for &InMemoryStorage {
+impl RelationStorage for &InMemoryStorage {
     type LoadingError = LoadingError;
     type TransactionGuard = InMemoryTransactionGuard;
 
@@ -569,40 +509,6 @@ impl Storage for &InMemoryStorage {
                 cid: AtomicU64::new(0),
             },
         );
-
-        let pg_tables = tables_mut.get_mut("pg_tables").unwrap();
-        pg_tables.rows.push(vec![InternalRow {
-            data: Row::new(
-                pg_tables.cid.fetch_add(1, Ordering::SeqCst),
-                vec![
-                    Data::Name("".to_string()),
-                    Data::Name(name.to_string()),
-                    Data::Name("".to_string()),
-                    Data::Name("".to_string()),
-                    Data::Boolean(false),
-                    Data::Boolean(false),
-                    Data::Boolean(false),
-                    Data::Boolean(false),
-                ],
-            ),
-            created: transaction.id,
-            expired: 0,
-        }]);
-
-        let pg_class = tables_mut.get_mut("pg_class").unwrap();
-        let pg_class_id = pg_class.cid.fetch_add(1, Ordering::SeqCst);
-        pg_class.rows.push(vec![InternalRow {
-            data: Row::new(
-                pg_class_id,
-                vec![
-                    Data::Integer(pg_class_id as i32),
-                    Data::Name(name.to_string()),
-                    Data::Integer(0),
-                ],
-            ),
-            created: transaction.id,
-            expired: 0,
-        }]);
 
         Ok(())
     }
@@ -873,48 +779,4 @@ impl Storage for &InMemoryStorage {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn basic() {
-        let storage = InMemoryStorage::new();
-
-        let transaction = storage.start_transaction().await.unwrap();
-
-        let relation = storage
-            .get_entire_relation("pg_tables", &transaction)
-            .await
-            .unwrap();
-        assert_eq!(1, relation.parts.len());
-        assert_eq!(0, relation.parts[0].rows.len());
-
-        storage
-            .create_relation("testing", Vec::new(), &transaction)
-            .await
-            .unwrap();
-
-        let relation = storage
-            .get_entire_relation("pg_tables", &transaction)
-            .await
-            .unwrap();
-        assert_eq!(1, relation.parts.len());
-        assert_eq!(1, relation.parts[0].rows.len(), "{:?}", relation.parts[0]);
-
-        let entry = &relation.parts[0].rows[0];
-        assert_eq!(
-            &[
-                Data::Name("".to_string()),
-                Data::Name("testing".to_string()),
-                Data::Name("".to_string()),
-                Data::Name("".to_string()),
-                Data::Boolean(false),
-                Data::Boolean(false),
-                Data::Boolean(false),
-                Data::Boolean(false),
-            ],
-            entry.data.as_slice()
-        );
-    }
-}
+impl Storage for &InMemoryStorage {}

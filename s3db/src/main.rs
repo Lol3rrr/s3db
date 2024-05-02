@@ -28,8 +28,11 @@ fn main() {
         .build()
         .unwrap();
 
-    let storage = storage::inmemory::InMemoryStorage::new();
-    let engine = s3db::execution::naive::NaiveEngine::new(storage);
+    let rstorage = storage::inmemory::v2::InMemoryStorage::new();
+    let sstorage = storage::inmemory::InMemoryStorage::new();
+    let engine = s3db::execution::naive::NaiveEngine::new(storage::composed::ComposedStorage::new(
+        rstorage, sstorage,
+    ));
 
     let endpoint = s3db::endpoint::postgres::PostgresEndpoint::new("0.0.0.0:5432");
 

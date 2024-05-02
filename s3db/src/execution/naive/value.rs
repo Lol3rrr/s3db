@@ -89,6 +89,11 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                     .ok_or_else(|| EvaulateRaError::UnknownAttribute {
                         name: name.clone(),
                         id: *a_id,
+                        possible: columns
+                            .iter()
+                            .map(|(n, _, id)| (n.to_owned(), id.clone()))
+                            .collect(),
+                        ctx: concat!("File: ", file!(), " - Line: ", line!()),
                     })?;
 
                 Ok(ValueInstruction::Attribute { idx: column_index })
@@ -101,6 +106,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                     .ok_or_else(|| EvaulateRaError::UnknownAttribute {
                         name: name.clone(),
                         id: *a_id,
+                        possible: outer.keys().map(|id| (String::new(), id.clone())).collect(),
+                        ctx: concat!("File: ", file!(), " - Line: ", line!()),
                     })?;
 
                 Ok(ValueInstruction::Constant {

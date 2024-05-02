@@ -4,7 +4,7 @@ use std::hint::black_box;
 
 use s3db::execution::Execute;
 use sql::CompatibleParser;
-use storage::Storage;
+use storage::RelationStorage;
 
 fn setup(
     query: &str,

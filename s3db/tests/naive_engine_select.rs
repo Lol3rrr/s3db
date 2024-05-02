@@ -5,8 +5,8 @@ use s3db::execution::{naive::NaiveEngine, Context, Execute, ExecuteResult};
 
 use sql::{DataType, Query};
 use storage::{
-    self, inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, Row, SequenceStorage,
-    Storage,
+    self, inmemory::InMemoryStorage, Data, EntireRelation, PartialRelation, RelationStorage, Row,
+    SequenceStorage, Storage,
 };
 
 macro_rules! storage_setup {

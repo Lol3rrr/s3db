@@ -222,11 +222,17 @@ impl<'b, const N: usize> Iterator for RelationBlockIter<'b, N> {
     type Item = &'b RelationSlot;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.block.position.load(atomic::Ordering::SeqCst) {
-            return None;
-        }
+        while self.idx < self.block.position.load(atomic::Ordering::SeqCst) {
+            let slot = self.block.slots.get(self.idx)?;
+            self.idx += 1;
 
-        todo!();
+            if slot.flags.load(atomic::Ordering::SeqCst) != 2 {
+                continue;
+            }
+
+            return Some(slot);
+        }
+        None
     }
 }
 

@@ -14,7 +14,7 @@ pub use schema::{ColumnSchema, Schemas, TableSchema};
 
 pub mod inmemory;
 
-mod composed;
+pub mod composed;
 
 mod mvcc;
 
@@ -251,122 +251,7 @@ pub trait RelationStorage {
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 }
 
-pub trait Storage: SequenceStorage {
-    type LoadingError: Debug;
-    type TransactionGuard: Debug;
-
-    fn start_transaction(
-        &self,
-    ) -> impl Future<Output = Result<Self::TransactionGuard, Self::LoadingError>>;
-
-    fn commit_transaction(
-        &self,
-        guard: Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn abort_transaction(
-        &self,
-        guard: Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn get_entire_relation(
-        &self,
-        name: &str,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<EntireRelation, Self::LoadingError>> {
-        async move {
-            use futures::stream::StreamExt;
-
-            let (schema, stream) = self.stream_relation(name, transaction).await?;
-
-            let rows: Vec<_> = stream.map(|row| row.into_owned()).collect().await;
-
-            Ok(EntireRelation {
-                columns: schema
-                    .rows
-                    .into_iter()
-                    .map(|c| (c.name, c.ty, c.mods))
-                    .collect(),
-                parts: vec![PartialRelation { rows }],
-            })
-        }
-    }
-
-    fn stream_relation<'own, 'name, 'transaction, 'stream, 'rowdata>(
-        &'own self,
-        name: &'name str,
-        transaction: &'transaction Self::TransactionGuard,
-    ) -> impl Future<
-        Output = Result<
-            (
-                TableSchema,
-                futures::stream::LocalBoxStream<'stream, RowCow<'rowdata>>,
-            ),
-            Self::LoadingError,
-        >,
-    >
-    where
-        'own: 'stream,
-        'name: 'stream,
-        'transaction: 'stream,
-        'own: 'rowdata;
-
-    fn relation_exists(
-        &self,
-        name: &str,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<bool, Self::LoadingError>>;
-
-    fn create_relation(
-        &self,
-        name: &str,
-        fields: std::vec::Vec<(String, DataType, Vec<TypeModifier>)>,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn rename_relation(
-        &self,
-        name: &str,
-        target: &str,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn remove_relation(
-        &self,
-        name: &str,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn modify_relation(
-        &self,
-        name: &str,
-        modification: ModifyRelation,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn schemas(&self) -> impl Future<Output = Result<Schemas, Self::LoadingError>>;
-
-    fn insert_rows(
-        &self,
-        name: &str,
-        rows: &mut dyn Iterator<Item = Vec<Data>>,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn update_rows(
-        &self,
-        name: &str,
-        rows: &mut dyn Iterator<Item = (u64, Vec<Data>)>,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-
-    fn delete_rows(
-        &self,
-        name: &str,
-        rids: &mut dyn Iterator<Item = u64>,
-        transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
-}
+pub trait Storage: SequenceStorage + RelationStorage {}
 
 impl Row {
     pub fn new(rid: u64, data: Vec<Data>) -> Self {

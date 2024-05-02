@@ -27,12 +27,20 @@ pub struct InMemoryTransactionGuard {
     latest_commit: u64,
 }
 
+#[derive(Debug)]
+pub enum LoadingError {
+    Other(&'static str),
+}
+
 impl RelationStorage for InMemoryStorage {
-    type LoadingError = ();
+    type LoadingError = LoadingError;
     type TransactionGuard = InMemoryTransactionGuard;
 
     async fn schemas(&self) -> Result<crate::Schemas, Self::LoadingError> {
-        let schemas = self.schemas.try_borrow().map_err(|_| ())?;
+        let schemas = self
+            .schemas
+            .try_borrow()
+            .map_err(|_| LoadingError::Other("Borrowing Schemas"))?;
 
         Ok(schemas.clone())
     }
@@ -106,8 +114,16 @@ impl RelationStorage for InMemoryStorage {
         'transaction: 'stream,
         'own: 'rowdata,
     {
-        let tmp: Rc<internal::RelationList> =
-            self.relations.borrow().get(name).cloned().ok_or(())?;
+        let tmp: Rc<internal::RelationList> = self
+            .relations
+            .borrow()
+            .get(name)
+            .cloned()
+            .ok_or(LoadingError::Other("Borrow Relations"))?;
+        let schemas = self
+            .schemas
+            .try_borrow()
+            .map_err(|e| LoadingError::Other("Borrow Schemas"))?;
 
         let handle = loop {
             match tmp.clone().try_get_handle() {
@@ -118,7 +134,10 @@ impl RelationStorage for InMemoryStorage {
             }
         };
 
-        let schema = crate::TableSchema { rows: Vec::new() };
+        let schema = schemas
+            .get_table(name)
+            .ok_or(LoadingError::Other("Get Schema for Table"))?;
+
         let stream = futures::stream::iter(
             handle
                 .into_iter()
@@ -135,7 +154,7 @@ impl RelationStorage for InMemoryStorage {
                 .map(|r| crate::RowCow::Owned(r.into_row())),
         );
 
-        Ok((schema, stream.boxed_local()))
+        Ok((schema.clone(), stream.boxed_local()))
     }
 
     async fn insert_rows(
@@ -144,8 +163,12 @@ impl RelationStorage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = Vec<crate::Data>>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let tmp: Rc<internal::RelationList> =
-            self.relations.borrow().get(name).cloned().ok_or(())?;
+        let tmp: Rc<internal::RelationList> = self
+            .relations
+            .borrow()
+            .get(name)
+            .cloned()
+            .ok_or(LoadingError::Other("Borrow Relations"))?;
 
         let handle = loop {
             match tmp.clone().try_get_handle() {
@@ -168,8 +191,12 @@ impl RelationStorage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = (u64, Vec<crate::Data>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let tmp: Rc<internal::RelationList> =
-            self.relations.borrow().get(name).cloned().ok_or(())?;
+        let tmp: Rc<internal::RelationList> = self
+            .relations
+            .borrow()
+            .get(name)
+            .cloned()
+            .ok_or(LoadingError::Other("Borrow Relations"))?;
 
         let handle = loop {
             match tmp.clone().try_get_handle() {
@@ -220,8 +247,12 @@ impl RelationStorage for InMemoryStorage {
         rids: &mut dyn Iterator<Item = u64>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let tmp: Rc<internal::RelationList> =
-            self.relations.borrow().get(name).cloned().ok_or(())?;
+        let tmp: Rc<internal::RelationList> = self
+            .relations
+            .borrow()
+            .get(name)
+            .cloned()
+            .ok_or(LoadingError::Other("Borrow Relations"))?;
 
         let handle = loop {
             match tmp.clone().try_get_handle() {
@@ -270,7 +301,10 @@ impl RelationStorage for InMemoryStorage {
         name: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<bool, Self::LoadingError> {
-        let schemas = self.schemas.try_borrow().map_err(|e| ())?;
+        let schemas = self
+            .schemas
+            .try_borrow()
+            .map_err(|e| LoadingError::Other("Borrow Schemas"))?;
 
         Ok(schemas.tables.contains_key(name))
     }
@@ -280,11 +314,17 @@ impl RelationStorage for InMemoryStorage {
         fields: std::vec::Vec<(String, sql::DataType, Vec<sql::TypeModifier>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let mut tables_mut = self.relations.try_borrow_mut().map_err(|_| ())?;
+        let mut tables_mut = self
+            .relations
+            .try_borrow_mut()
+            .map_err(|_| LoadingError::Other("Relations"))?;
 
         tables_mut.insert(name.to_owned(), Rc::new(internal::RelationList::new()));
 
-        let mut schemas_mut = self.schemas.try_borrow_mut().map_err(|_| ())?;
+        let mut schemas_mut = self
+            .schemas
+            .try_borrow_mut()
+            .map_err(|_| LoadingError::Other("Schemas"))?;
         schemas_mut.tables.insert(
             name.to_owned(),
             crate::TableSchema {
@@ -304,13 +344,24 @@ impl RelationStorage for InMemoryStorage {
         target: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let mut schemas = self.schemas.try_borrow_mut().map_err(|e| ())?;
-        let mut relations = self.relations.try_borrow_mut().map_err(|e| ())?;
+        let mut schemas = self
+            .schemas
+            .try_borrow_mut()
+            .map_err(|e| LoadingError::Other("Schemas"))?;
+        let mut relations = self
+            .relations
+            .try_borrow_mut()
+            .map_err(|e| LoadingError::Other("Relations"))?;
 
-        let schema = schemas.tables.remove(name).ok_or(())?;
+        let schema = schemas
+            .tables
+            .remove(name)
+            .ok_or(LoadingError::Other("Removing Schema"))?;
         schemas.tables.insert(target.to_owned(), schema);
 
-        let list = relations.remove(name).ok_or(())?;
+        let list = relations
+            .remove(name)
+            .ok_or(LoadingError::Other("Removing Relation"))?;
         relations.insert(target.to_owned(), list);
 
         Ok(())
@@ -320,11 +371,22 @@ impl RelationStorage for InMemoryStorage {
         name: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let mut schemas = self.schemas.try_borrow_mut().map_err(|e| ())?;
-        let mut relations = self.relations.try_borrow_mut().map_err(|e| ())?;
+        let mut schemas = self
+            .schemas
+            .try_borrow_mut()
+            .map_err(|e| LoadingError::Other("Borrowing Schemas"))?;
+        let mut relations = self
+            .relations
+            .try_borrow_mut()
+            .map_err(|e| LoadingError::Other("Borrowing Relations"))?;
 
-        let schema = schemas.tables.remove(name).ok_or(())?;
-        let list = relations.remove(name).ok_or(())?;
+        let schema = schemas
+            .tables
+            .remove(name)
+            .ok_or(LoadingError::Other("Removing Schema"))?;
+        let list = relations
+            .remove(name)
+            .ok_or(LoadingError::Other("Remove Relation"))?;
 
         Ok(())
     }
@@ -334,17 +396,66 @@ impl RelationStorage for InMemoryStorage {
         modification: crate::ModifyRelation,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        todo!()
+        let mut schemas = self
+            .schemas
+            .try_borrow_mut()
+            .map_err(|e| LoadingError::Other("Borrow Schemas"))?;
+        let relations = self
+            .relations
+            .try_borrow()
+            .map_err(|e| LoadingError::Other("Borrow Relations"))?;
+
+        let schema = schemas
+            .tables
+            .get_mut(name)
+            .ok_or(LoadingError::Other("Getting TableSchema"))?;
+        let list = relations
+            .get(name)
+            .ok_or(LoadingError::Other("Getting Relation"))?;
+
+        for modification in modification.modifications {
+            schema.apply_mod(&modification);
+
+            match modification {
+                crate::RelationModification::AddColumn {
+                    name,
+                    ty,
+                    modifiers,
+                } => {
+                    todo!()
+                }
+                crate::RelationModification::ChangeType { name, ty } => {
+                    todo!()
+                }
+                _ => {}
+            };
+        }
+
+        Ok(())
     }
 }
 
 impl InMemoryStorage {
     pub fn new() -> Self {
+        let mut relations = HashMap::new();
+        let mut table_schemas = HashMap::new();
+
+        for (name, schema, rows) in super::postgres_tables() {
+            let list = Rc::new(internal::RelationList::new());
+            let handle = list.clone().try_get_handle().unwrap();
+            for r in rows {
+                handle.insert_row(r.data, 0);
+            }
+
+            relations.insert(name.clone(), list);
+            table_schemas.insert(name, schema);
+        }
+
         Self {
             schemas: RefCell::new(crate::Schemas {
-                tables: HashMap::new(),
+                tables: table_schemas,
             }),
-            relations: RefCell::new(HashMap::new()),
+            relations: RefCell::new(relations),
             latest_commit: atomic::AtomicU64::new(0),
             aborted_tids: RefCell::new(HashSet::new()),
             active_tids: RefCell::new(HashSet::new()),
