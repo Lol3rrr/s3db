@@ -5,6 +5,7 @@ const BLOCK_SIZE: usize = 512;
 
 pub struct RelationList {
     head: atomic::AtomicPtr<RelationBlock<BLOCK_SIZE>>,
+    tail: atomic::AtomicPtr<RelationBlock<BLOCK_SIZE>>,
     locked: atomic::AtomicBool,
     active_handles: atomic::AtomicUsize,
     newest_row_id: atomic::AtomicU64,
@@ -59,9 +60,11 @@ pub struct HandleRowIter {
 impl RelationList {
     pub fn new() -> Self {
         let head_block = RelationBlock::alloced();
+        let head_ptr = Box::into_raw(Box::new(head_block));
 
         Self {
-            head: atomic::AtomicPtr::new(Box::into_raw(Box::new(head_block))),
+            head: atomic::AtomicPtr::new(head_ptr),
+            tail: atomic::AtomicPtr::new(head_ptr),
             locked: atomic::AtomicBool::new(false),
             active_handles: atomic::AtomicUsize::new(0),
             newest_row_id: atomic::AtomicU64::new(0),
@@ -98,7 +101,7 @@ impl RelationListHandle {
     }
 
     pub fn insert_row(&self, data: Vec<crate::Data>, created: u64) {
-        let mut block_ptr = self.list.head.load(atomic::Ordering::SeqCst);
+        let mut block_ptr = self.list.tail.load(atomic::Ordering::SeqCst);
         let mut last_block_ptr = block_ptr;
 
         let (block_ref, slot_idx) = loop {
@@ -119,6 +122,8 @@ impl RelationListHandle {
                 ) {
                     Ok(_) => {
                         block_ptr = n_block_ptr;
+                        let _ = self.list.tail.compare_exchange(last_block_ptr, n_block_ptr, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst);
+
                         continue;
                     }
                     Err(other_new) => {
@@ -263,6 +268,28 @@ impl Iterator for HandleRowIter {
 impl RelationSlot {
     pub fn into_row(self) -> crate::Row {
         todo!()
+    }
+}
+
+impl Drop for RelationList {
+    fn drop(&mut self) {
+        assert_eq!(0, self.active_handles.load(atomic::Ordering::SeqCst));
+        assert_eq!(false, self.locked.load(atomic::Ordering::SeqCst));
+
+        let mut block_ptr = self.head.load(atomic::Ordering::SeqCst);
+        while !block_ptr.is_null() {
+            let block = unsafe { Box::from_raw(block_ptr) };
+
+            block_ptr = block.next.load(atomic::Ordering::SeqCst);
+
+            let _ = block;
+        }
+    }
+}
+
+impl Drop for RelationListHandle {
+    fn drop(&mut self) {
+        self.list.active_handles.fetch_sub(1, atomic::Ordering::SeqCst);
     }
 }
 
