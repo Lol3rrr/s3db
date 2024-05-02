@@ -168,7 +168,51 @@ impl RelationStorage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = (u64, Vec<crate::Data>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        todo!()
+        let tmp: Rc<internal::RelationList> =
+            self.relations.borrow().get(name).cloned().ok_or(())?;
+
+        let handle = loop {
+            match tmp.clone().try_get_handle() {
+                Some(h) => break h,
+                None => {
+                    tokio::task::yield_now().await;
+                }
+            }
+        };
+
+        for (row_id, nvalues) in rows {
+            let slot_iter = handle.iter().flat_map(|b| b.iter()).filter(|r| {
+                mvcc::check(
+                    transaction.id,
+                    &transaction.active,
+                    &transaction.aborted,
+                    transaction.latest_commit,
+                    r.created.load(atomic::Ordering::SeqCst),
+                    r.expired.load(atomic::Ordering::SeqCst),
+                ) == mvcc::Visibility::Visible
+            });
+            for slot in slot_iter {
+                if slot.row_id.load(atomic::Ordering::SeqCst) == row_id {
+                    match slot.expired.compare_exchange(
+                        0,
+                        transaction.id,
+                        atomic::Ordering::SeqCst,
+                        atomic::Ordering::SeqCst,
+                    ) {
+                        Ok(_) => {}
+                        Err(_) => {
+                            // TODO
+                            // Someone else also updated this row
+                        }
+                    };
+                    break;
+                }
+            }
+
+            handle.insert_row(nvalues, transaction.id);
+        }
+
+        Ok(())
     }
     async fn delete_rows(
         &self,
@@ -176,7 +220,49 @@ impl RelationStorage for InMemoryStorage {
         rids: &mut dyn Iterator<Item = u64>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        todo!()
+        let tmp: Rc<internal::RelationList> =
+            self.relations.borrow().get(name).cloned().ok_or(())?;
+
+        let handle = loop {
+            match tmp.clone().try_get_handle() {
+                Some(h) => break h,
+                None => {
+                    tokio::task::yield_now().await;
+                }
+            }
+        };
+
+        for row_id in rids {
+            let slot_iter = handle.iter().flat_map(|b| b.iter()).filter(|r| {
+                mvcc::check(
+                    transaction.id,
+                    &transaction.active,
+                    &transaction.aborted,
+                    transaction.latest_commit,
+                    r.created.load(atomic::Ordering::SeqCst),
+                    r.expired.load(atomic::Ordering::SeqCst),
+                ) == mvcc::Visibility::Visible
+            });
+            for slot in slot_iter {
+                if slot.row_id.load(atomic::Ordering::SeqCst) == row_id {
+                    match slot.expired.compare_exchange(
+                        0,
+                        transaction.id,
+                        atomic::Ordering::SeqCst,
+                        atomic::Ordering::SeqCst,
+                    ) {
+                        Ok(_) => {}
+                        Err(_) => {
+                            // TODO
+                            // Someone else also updated this row
+                        }
+                    };
+                    break;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn relation_exists(
@@ -184,7 +270,9 @@ impl RelationStorage for InMemoryStorage {
         name: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<bool, Self::LoadingError> {
-        todo!()
+        let schemas = self.schemas.try_borrow().map_err(|e| ())?;
+
+        Ok(schemas.tables.contains_key(name))
     }
     async fn create_relation(
         &self,
@@ -192,22 +280,20 @@ impl RelationStorage for InMemoryStorage {
         fields: std::vec::Vec<(String, sql::DataType, Vec<sql::TypeModifier>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        let mut tables_mut = self
-            .relations
-            .try_borrow_mut()
-            .map_err(|_| ())?;
+        let mut tables_mut = self.relations.try_borrow_mut().map_err(|_| ())?;
 
-        tables_mut.insert(
-            name.to_owned(),Rc::new(internal::RelationList::new()),
-        );
+        tables_mut.insert(name.to_owned(), Rc::new(internal::RelationList::new()));
 
         let mut schemas_mut = self.schemas.try_borrow_mut().map_err(|_| ())?;
-        schemas_mut.tables.insert(name.to_owned(), crate::TableSchema {
-            rows: fields.into_iter().map(|(name, ty, mods)| crate::ColumnSchema {
-                name,
-                ty,mods
-            }).collect()
-        });
+        schemas_mut.tables.insert(
+            name.to_owned(),
+            crate::TableSchema {
+                rows: fields
+                    .into_iter()
+                    .map(|(name, ty, mods)| crate::ColumnSchema { name, ty, mods })
+                    .collect(),
+            },
+        );
 
         Ok(())
     }
@@ -218,14 +304,29 @@ impl RelationStorage for InMemoryStorage {
         target: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        todo!()
+        let mut schemas = self.schemas.try_borrow_mut().map_err(|e| ())?;
+        let mut relations = self.relations.try_borrow_mut().map_err(|e| ())?;
+
+        let schema = schemas.tables.remove(name).ok_or(())?;
+        schemas.tables.insert(target.to_owned(), schema);
+
+        let list = relations.remove(name).ok_or(())?;
+        relations.insert(target.to_owned(), list);
+
+        Ok(())
     }
     async fn remove_relation(
         &self,
         name: &str,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
-        todo!()
+        let mut schemas = self.schemas.try_borrow_mut().map_err(|e| ())?;
+        let mut relations = self.relations.try_borrow_mut().map_err(|e| ())?;
+
+        let schema = schemas.tables.remove(name).ok_or(())?;
+        let list = relations.remove(name).ok_or(())?;
+
+        Ok(())
     }
     async fn modify_relation(
         &self,

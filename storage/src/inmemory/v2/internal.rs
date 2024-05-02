@@ -11,7 +11,7 @@ pub struct RelationList {
     newest_row_id: atomic::AtomicU64,
 }
 
-struct RelationBlock<const N: usize> {
+pub struct RelationBlock<const N: usize> {
     next: atomic::AtomicPtr<Self>,
     block_idx: usize,
     position: atomic::AtomicUsize,
@@ -41,12 +41,12 @@ pub struct RelationListHandle {
     list: Rc<RelationList>,
 }
 
-struct RelationListIter<'h> {
+pub struct RelationListIter<'h> {
     handle: &'h RelationListHandle,
     current_block: *mut RelationBlock<BLOCK_SIZE>,
 }
 
-struct RelationBlockIter<'b, const N: usize> {
+pub struct RelationBlockIter<'b, const N: usize> {
     block: &'b RelationBlock<N>,
     idx: usize,
 }
@@ -122,7 +122,12 @@ impl RelationListHandle {
                 ) {
                     Ok(_) => {
                         block_ptr = n_block_ptr;
-                        let _ = self.list.tail.compare_exchange(last_block_ptr, n_block_ptr, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst);
+                        let _ = self.list.tail.compare_exchange(
+                            last_block_ptr,
+                            n_block_ptr,
+                            atomic::Ordering::SeqCst,
+                            atomic::Ordering::SeqCst,
+                        );
 
                         continue;
                     }
@@ -267,7 +272,10 @@ impl Iterator for HandleRowIter {
 
 impl RelationSlot {
     pub fn into_row(self) -> crate::Row {
-        todo!()
+        crate::Row {
+            rid: self.row_id.load(atomic::Ordering::SeqCst),
+            data: self.data.into_inner(),
+        }
     }
 }
 
@@ -289,7 +297,9 @@ impl Drop for RelationList {
 
 impl Drop for RelationListHandle {
     fn drop(&mut self) {
-        self.list.active_handles.fetch_sub(1, atomic::Ordering::SeqCst);
+        self.list
+            .active_handles
+            .fetch_sub(1, atomic::Ordering::SeqCst);
     }
 }
 

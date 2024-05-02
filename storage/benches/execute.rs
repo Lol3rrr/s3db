@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_main, criterion_group, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
-use storage::{Storage, RelationStorage};
+use storage::{RelationStorage, Storage};
 
 fn insert(c: &mut Criterion) {
     let mut group = c.benchmark_group("create_insert");
@@ -9,27 +9,69 @@ fn insert(c: &mut Criterion) {
         group.throughput(criterion::Throughput::Elements(size));
 
         group.bench_function(BenchmarkId::new("v1", size), |b| {
-            b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap()).iter_batched(|| {
-                storage::inmemory::v1::InMemoryStorage::new()
-            }, |engine| async move {
+            b.to_async(
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap(),
+            )
+            .iter_batched(
+                || storage::inmemory::v1::InMemoryStorage::new(),
+                |engine| async move {
                     let transaction = engine.start_transaction().await.unwrap();
-                    
-                    engine.create_relation("test", vec![("index".to_string(), sql::DataType::Integer, Vec::new())], &transaction).await.unwrap();
 
-                    let _ = engine.insert_rows("test", &mut (0..black_box(size)).map(|idx| vec![storage::Data::Integer(idx as i32)]), &transaction).await;
-                }, criterion::BatchSize::LargeInput);
+                    engine
+                        .create_relation(
+                            "test",
+                            vec![("index".to_string(), sql::DataType::Integer, Vec::new())],
+                            &transaction,
+                        )
+                        .await
+                        .unwrap();
+
+                    let _ = engine
+                        .insert_rows(
+                            "test",
+                            &mut (0..black_box(size))
+                                .map(|idx| vec![storage::Data::Integer(idx as i32)]),
+                            &transaction,
+                        )
+                        .await;
+                },
+                criterion::BatchSize::LargeInput,
+            );
         });
 
         group.bench_function(BenchmarkId::new("v2", size), |b| {
-            b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap()).iter_batched(|| {
-                storage::inmemory::v2::InMemoryStorage::new()
-            }, |engine| async move {
+            b.to_async(
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap(),
+            )
+            .iter_batched(
+                || storage::inmemory::v2::InMemoryStorage::new(),
+                |engine| async move {
                     let transaction = engine.start_transaction().await.unwrap();
-                    
-                    engine.create_relation("test", vec![("index".to_string(), sql::DataType::Integer, Vec::new())], &transaction).await.unwrap();
 
-                    let _ = engine.insert_rows("test", &mut (0..black_box(size)).map(|idx| vec![storage::Data::Integer(idx as i32)]), &transaction).await;
-                }, criterion::BatchSize::LargeInput);
+                    engine
+                        .create_relation(
+                            "test",
+                            vec![("index".to_string(), sql::DataType::Integer, Vec::new())],
+                            &transaction,
+                        )
+                        .await
+                        .unwrap();
+
+                    let _ = engine
+                        .insert_rows(
+                            "test",
+                            &mut (0..black_box(size))
+                                .map(|idx| vec![storage::Data::Integer(idx as i32)]),
+                            &transaction,
+                        )
+                        .await;
+                },
+                criterion::BatchSize::LargeInput,
+            );
         });
     }
 }
