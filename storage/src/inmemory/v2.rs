@@ -306,7 +306,7 @@ impl RelationStorage for InMemoryStorage {
     async fn relation_exists(
         &self,
         name: &str,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<bool, Self::LoadingError> {
         let schemas = self
             .schemas
@@ -319,7 +319,7 @@ impl RelationStorage for InMemoryStorage {
         &self,
         name: &str,
         fields: std::vec::Vec<(String, sql::DataType, Vec<sql::TypeModifier>)>,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
         let mut tables_mut = self
             .relations
@@ -349,7 +349,7 @@ impl RelationStorage for InMemoryStorage {
         &self,
         name: &str,
         target: &str,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
         let mut schemas = self
             .schemas
@@ -376,7 +376,7 @@ impl RelationStorage for InMemoryStorage {
     async fn remove_relation(
         &self,
         name: &str,
-        transaction: &Self::TransactionGuard,
+        _transaction: &Self::TransactionGuard,
     ) -> Result<(), Self::LoadingError> {
         let mut schemas = self
             .schemas
@@ -387,11 +387,11 @@ impl RelationStorage for InMemoryStorage {
             .try_borrow_mut()
             .map_err(|e| LoadingError::Other("Borrowing Relations"))?;
 
-        let schema = schemas
+        let _schema = schemas
             .tables
             .remove(name)
             .ok_or(LoadingError::Other("Removing Schema"))?;
-        let list = relations
+        let _list = relations
             .remove(name)
             .ok_or(LoadingError::Other("Remove Relation"))?;
 
@@ -420,19 +420,58 @@ impl RelationStorage for InMemoryStorage {
             .get(name)
             .ok_or(LoadingError::Other("Getting Relation"))?;
 
+        let mut list_handle = loop {
+            match internal::RelationList::try_get_exclusive_handle(list.clone()) {
+                Some(h) => break h,
+                None => {
+                    _yield().await;
+                }
+            }
+        };
+
         for modification in modification.modifications {
             schema.apply_mod(&modification);
 
             match modification {
-                crate::RelationModification::AddColumn {
-                    name,
-                    ty,
-                    modifiers,
-                } => {
-                    todo!()
+                crate::RelationModification::AddColumn { modifiers, .. } => {
+                    let mut value = crate::Data::Null;
+                    for modification in modifiers {
+                        if let crate::TypeModifier::DefaultValue { value: Some(v) } = modification {
+                            value = crate::Data::from_literal(&v);
+                        }
+                    }
+
+                    list_handle.update_rows(|row| {
+                        row.push(value.clone());
+                    });
                 }
                 crate::RelationModification::ChangeType { name, ty } => {
-                    todo!()
+                    let idx = match schema.rows.iter().enumerate().find_map(|(idx, column)| {
+                        if column.name == name {
+                            Some(idx)
+                        } else {
+                            None
+                        }
+                    }) {
+                        Some(i) => i,
+                        None => {
+                            // TODO
+                            // How to handle this?
+                            continue;
+                        }
+                    };
+
+                    list_handle.update_rows(|row| {
+                        let slot = &mut row[idx];
+
+                        let prev = core::mem::replace(slot, crate::Data::Null);
+                        let nvalue = match prev.try_cast(&ty) {
+                            Ok(v) => v,
+                            _ => crate::Data::Null,
+                        };
+
+                        *slot = nvalue;
+                    });
                 }
                 _ => {}
             };

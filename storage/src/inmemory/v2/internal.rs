@@ -91,7 +91,12 @@ impl RelationList {
     }
 
     pub fn try_get_exclusive_handle(list: Arc<Self>) -> Option<RelationListExclusiveHandle> {
-        match list.locked.compare_exchange(false, true, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst) {
+        match list.locked.compare_exchange(
+            false,
+            true,
+            atomic::Ordering::SeqCst,
+            atomic::Ordering::SeqCst,
+        ) {
             Ok(_) => {}
             Err(_) => return None,
         };
@@ -191,6 +196,30 @@ impl RelationListHandle {
         *slot_data = data;
 
         slot.flags.store(2, atomic::Ordering::SeqCst);
+    }
+}
+
+impl RelationListExclusiveHandle {
+    pub fn update_rows<F>(&mut self, mut func: F)
+    where
+        F: FnMut(&mut Vec<crate::Data>),
+    {
+        let mut block_ptr = self.list.head.load(atomic::Ordering::SeqCst);
+
+        while let Some(block_ptr_nn) = core::ptr::NonNull::new(block_ptr) {
+            let block = unsafe { block_ptr_nn.as_ref() };
+
+            for slot in block.slots.iter() {
+                if slot.flags.load(atomic::Ordering::SeqCst) != 2 {
+                    continue;
+                }
+
+                let data = unsafe { &mut *slot.data.get() };
+                func(data);
+            }
+
+            block_ptr = block.next.load(atomic::Ordering::SeqCst);
+        }
     }
 }
 
@@ -437,6 +466,49 @@ mod tests {
         drop(handle);
         assert!(RelationList::try_get_exclusive_handle(list.clone()).is_some());
     }
+
+    #[test]
+    fn update_rows() {
+        let list = Arc::new(RelationList::new());
+
+        {
+            let handle = RelationList::try_get_handle(list.clone()).unwrap();
+            for idx in 0..5 {
+                handle.insert_row(vec![crate::Data::Integer(idx)], 0);
+            }
+        }
+
+        let mut handle = RelationList::try_get_exclusive_handle(list.clone()).unwrap();
+        handle.update_rows(|row| {
+            row.push(crate::Data::Null);
+        });
+
+        drop(handle);
+
+        let handle = RelationList::try_get_handle(list.clone()).unwrap();
+        let mut iter = handle.into_iter();
+        assert_eq!(
+            Some(vec![crate::Data::Integer(0), crate::Data::Null]),
+            iter.next().map(|s| s.data.into_inner())
+        );
+        assert_eq!(
+            Some(vec![crate::Data::Integer(1), crate::Data::Null]),
+            iter.next().map(|s| s.data.into_inner())
+        );
+        assert_eq!(
+            Some(vec![crate::Data::Integer(2), crate::Data::Null]),
+            iter.next().map(|s| s.data.into_inner())
+        );
+        assert_eq!(
+            Some(vec![crate::Data::Integer(3), crate::Data::Null]),
+            iter.next().map(|s| s.data.into_inner())
+        );
+        assert_eq!(
+            Some(vec![crate::Data::Integer(4), crate::Data::Null]),
+            iter.next().map(|s| s.data.into_inner())
+        );
+        assert_eq!(None, iter.next().map(|s| s.data.into_inner()));
+    }
 }
 
 #[cfg(loom)]
@@ -478,9 +550,7 @@ mod loom_tests {
             let ths: Vec<_> = (0..2)
                 .map(|idx| {
                     let list = list.clone();
-                    loom::thread::spawn(move || {
-                        RelationList::try_get_exclusive_handle(list)
-                    })
+                    loom::thread::spawn(move || RelationList::try_get_exclusive_handle(list))
                 })
                 .collect();
 

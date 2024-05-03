@@ -13,10 +13,12 @@ pub fn check<TAC, TAB>(
     t_latest: u64,
     row_created: u64,
     row_expired: u64,
-) -> Visibility where TAC: TransactionSet, TAB: TransactionSet {
-    if (t_active.contains(row_created)
-        || row_created > t_latest
-        || t_aborted.contains(row_created))
+) -> Visibility
+where
+    TAC: TransactionSet,
+    TAB: TransactionSet,
+{
+    if (t_active.contains(row_created) || row_created > t_latest || t_aborted.contains(row_created))
         && row_created != t_current
     {
         return Visibility::NotVisible;
