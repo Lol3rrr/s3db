@@ -3,6 +3,7 @@ import time
 import signal
 import sys
 import argparse
+import json
 
 parser = argparse.ArgumentParser(description="Run pgbench benchmarks")
 parser.add_argument("--metrics", action="store_true")
@@ -10,7 +11,7 @@ parser.add_argument("--repo-path", default="./")
 
 args = parser.parse_args()
 
-def parse_metrics(raw: str):
+def parse_metrics(raw: str, benchname: str):
     metrics = {}
 
     print(f"Raw: \n{raw}")
@@ -19,11 +20,11 @@ def parse_metrics(raw: str):
             rest = line.removeprefix("tps = ")
             rest = rest.removesuffix(" (without initial connection time)")
             tps = float(rest)
-            metrics["tps"] = tps
+            metrics["throughput"] = { "value": tps }
         else:
             print(f"Unknown Line: {line}")
 
-    return metrics
+    return { benchname: metrics }
 
 print(f"Compiling S3DB in release mode", flush=True)
 build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True, cwd=args.repo_path)
@@ -53,6 +54,6 @@ with subprocess.Popen(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_durati
 s3db_process.kill()
 
 if args.metrics:
-    bench_results = parse_metrics(output)
+    bench_results = parse_metrics(output, "pgbench/tpc-b")
     with open("metrics.json", mode='w') as f:
-        f.write(f"{{\"pgbench/tpc-b\": {{ \"throughput\": {{ \"value\": { bench_results['tps'] } }} }}}}\n")
+        json.dump(bench_results, f)
