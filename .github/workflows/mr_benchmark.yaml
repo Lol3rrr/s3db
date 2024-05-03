@@ -76,13 +76,16 @@ jobs:
           cargo bench --bench execute-iai
 
   pgbench:
-    name: Postgres Benchmarks
+    name: Continuous Benchmarking PRs with Bencher
     # DO NOT REMOVE: For handling Fork PRs see Pull Requests from Forks
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
+      - uses: bencherdev/bencher@main
+        with:
+          version: 0.4.6
       - name: Install pgbench
         run: |
           sudo apt-get update
@@ -97,42 +100,22 @@ jobs:
           toolchain: nightly
           override: true
       - uses: actions/checkout@v4
-      - name: Run benchmark
-        uses: mathiasvr/command-output@v2.0.0
-        id: run_current
-        with:
-          run: python3 pgbench.py
       - uses: actions/checkout@v4
         with:
-          ref: 'main'
-      - name: Run main benchmark
-        uses: mathiasvr/command-output@v2.0.0
-        id: run_main
-        with:
-          run: python3 pgbench.py
-      - name: Get current date
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d %H:%M:%S')"
-      - name: Comment PGbench results
-        uses: thollander/actions-comment-pull-request@v2
-        with:
-          message: |
-            # PGBench Results
-            <details>
-              <summary>Current Branch Results</summary>
-              
-              ```
-              ${{ steps.run_current.outputs.stdout }}
-              ```
-            </details>
-
-            <details>
-              <summary>Main Branch Results</summary>
-              
-              ```
-              ${{ steps.run_main.outputs.stdout }}
-              ```
-            </details>
-
-            Date: ${{ steps.date.outputs.date }}
-          comment_tag: pgbench_results
+          path: "current"
+      - name: Run benchmark
+        run: python3 pgbench.py --metrics --repo-path ./current/
+      - name: Track pgbench PR benchmarks with Bencher
+        run: |
+          bencher run \
+          --host https://api.bencher.lol3r.com \
+          --project s3db \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch '${{ github.head_ref }}' \
+          --branch-start-point '${{ github.base_ref }}' \
+          --branch-start-point-hash '${{ github.event.pull_request.base.sha }}' \
+          --testbed gh-ci-ubuntu-lastest \
+          --adapter json \
+          --err \
+          --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+          --file metrics.json
