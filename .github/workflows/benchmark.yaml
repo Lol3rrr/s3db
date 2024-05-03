@@ -62,3 +62,37 @@ jobs:
           --adapter rust_iai_callgrind \
           --err \
           cargo bench --bench execute-iai
+  pgbench:
+    name: Postgres Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install pgbench
+        run: |
+          sudo apt-get update
+          sudo apt install gnupg2 wget nano
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt update
+          sudo apt install postgresql-16 postgresql-client-16
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          path: "main"
+      - name: Run benchmark
+        run: python3 pgbench.py --metrics --repo-path ./main/
+      - name: Track base branch benchmarks with Bencher
+        run: |
+          bencher run \
+          --host https://api.bencher.lol3r.com \
+          --project s3db \
+          --token '${{ secrets.BENCHER_API_TOKEN }}' \
+          --branch main \
+          --testbed gh-ci-ubuntu-lastest \
+          --adapter json \
+          --err \
+          --file metrics.json
