@@ -1,6 +1,5 @@
 #[cfg(loom)]
 use loom::sync::{atomic, Arc};
-use std::rc::Rc;
 #[cfg(not(loom))]
 use std::sync::{atomic, Arc};
 
@@ -47,8 +46,12 @@ pub struct RelationListHandle {
     list: Arc<RelationList>,
 }
 
+pub struct RelationListExclusiveHandle {
+    list: Arc<RelationList>,
+}
+
 pub struct RelationListIter<'h> {
-    handle: &'h RelationListHandle,
+    _handle: &'h RelationListHandle,
     current_block: *mut RelationBlock<BLOCK_SIZE>,
 }
 
@@ -58,7 +61,7 @@ pub struct RelationBlockIter<'b, const N: usize> {
 }
 
 pub struct HandleRowIter {
-    handle: RelationListHandle,
+    _handle: RelationListHandle,
     block: *mut RelationBlock<BLOCK_SIZE>,
     idx: usize,
 }
@@ -86,12 +89,27 @@ impl RelationList {
 
         Some(RelationListHandle { list })
     }
+
+    pub fn try_get_exclusive_handle(list: Arc<Self>) -> Option<RelationListExclusiveHandle> {
+        match list.locked.compare_exchange(false, true, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst) {
+            Ok(_) => {}
+            Err(_) => return None,
+        };
+
+        let active_handles = list.active_handles.load(atomic::Ordering::SeqCst);
+        if active_handles != 0 {
+            list.locked.store(false, atomic::Ordering::SeqCst);
+            return None;
+        }
+
+        Some(RelationListExclusiveHandle { list })
+    }
 }
 
 impl RelationListHandle {
     pub fn iter<'h>(&'h self) -> RelationListIter<'h> {
         RelationListIter {
-            handle: self,
+            _handle: self,
             current_block: self.list.head.load(atomic::Ordering::SeqCst),
         }
     }
@@ -100,7 +118,7 @@ impl RelationListHandle {
         let block = self.list.head.load(atomic::Ordering::SeqCst);
 
         HandleRowIter {
-            handle: self,
+            _handle: self,
             block,
             idx: 0,
         }
@@ -315,6 +333,12 @@ impl Drop for RelationListHandle {
     }
 }
 
+impl Drop for RelationListExclusiveHandle {
+    fn drop(&mut self) {
+        self.list.locked.store(false, atomic::Ordering::SeqCst);
+    }
+}
+
 #[cfg(all(test, not(loom)))]
 mod tests {
     use super::*;
@@ -383,6 +407,36 @@ mod tests {
         let iter = handle.into_iter();
         assert_eq!(BLOCK_SIZE + 1, iter.count());
     }
+
+    #[test]
+    fn getting_exclusive_handle() {
+        let list = Arc::new(RelationList::new());
+
+        let _ehandle = RelationList::try_get_exclusive_handle(list).unwrap();
+    }
+
+    #[test]
+    fn getting_two_exclusive_handles() {
+        let list = Arc::new(RelationList::new());
+
+        let first = RelationList::try_get_exclusive_handle(list.clone());
+        let second = RelationList::try_get_exclusive_handle(list.clone());
+
+        assert!(first.is_some());
+        assert!(second.is_none());
+    }
+
+    #[test]
+    fn handle_then_exclusive() {
+        let list = Arc::new(RelationList::new());
+
+        let handle = RelationList::try_get_handle(list.clone()).unwrap();
+        assert!(RelationList::try_get_exclusive_handle(list.clone()).is_none());
+        assert!(RelationList::try_get_handle(list.clone()).is_some());
+
+        drop(handle);
+        assert!(RelationList::try_get_exclusive_handle(list.clone()).is_some());
+    }
 }
 
 #[cfg(loom)]
@@ -413,6 +467,26 @@ mod loom_tests {
             let mut iter = handle.into_iter();
             assert!(iter.next().is_some());
             assert!(iter.next().is_some());
+        });
+    }
+
+    #[test]
+    fn get_two_exclusive() {
+        loom::model(|| {
+            let list = Arc::new(RelationList::new());
+
+            let ths: Vec<_> = (0..2)
+                .map(|idx| {
+                    let list = list.clone();
+                    loom::thread::spawn(move || {
+                        RelationList::try_get_exclusive_handle(list)
+                    })
+                })
+                .collect();
+
+            let results: Vec<_> = ths.into_iter().map(|t| t.join().unwrap()).collect();
+            assert!(!results.iter().all(|h| h.is_some()));
+            assert!(!results.iter().all(|h| h.is_none()));
         });
     }
 }
