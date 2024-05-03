@@ -66,6 +66,9 @@ jobs:
     name: Postgres Benchmarks
     runs-on: ubuntu-latest
     steps:
+      - uses: bencherdev/bencher@main
+        with:
+          version: 0.4.6
       - name: Install pgbench
         run: |
           sudo apt-get update
