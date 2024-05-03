@@ -19,6 +19,9 @@ criterion = { version = "0.5.1", features = ["async_tokio"] }
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = [] }
 
+[target.'cfg(flamegraph)'.dependencies]
+pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
+
 
 [[bench]]
 name = "execute"
