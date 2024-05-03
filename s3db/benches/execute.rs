@@ -3,7 +3,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use s3db::execution::Execute;
 
 use sql::CompatibleParser;
-use storage::Storage;
+use storage::RelationStorage;
 
 macro_rules! benchmark_query {
     ($query:expr, $rows:expr, $group:expr, $benchname:literal) => {{

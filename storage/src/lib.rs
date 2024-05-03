@@ -14,6 +14,10 @@ pub use schema::{ColumnSchema, Schemas, TableSchema};
 
 pub mod inmemory;
 
+pub mod composed;
+
+mod mvcc;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Row {
     rid: u64,
@@ -130,7 +134,7 @@ pub trait Sequence {
     fn get_next(&self) -> impl Future<Output = u64>;
 }
 
-pub trait Storage: SequenceStorage {
+pub trait RelationStorage {
     type LoadingError: Debug;
     type TransactionGuard: Debug;
 
@@ -246,6 +250,8 @@ pub trait Storage: SequenceStorage {
         transaction: &Self::TransactionGuard,
     ) -> impl Future<Output = Result<(), Self::LoadingError>>;
 }
+
+pub trait Storage: SequenceStorage + RelationStorage {}
 
 impl Row {
     pub fn new(rid: u64, data: Vec<Data>) -> Self {

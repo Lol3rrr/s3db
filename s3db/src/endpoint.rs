@@ -96,6 +96,8 @@ pub mod postgres {
                         }
                     };
 
+                    tracing::info!("Got new Connection");
+
                     tokio::task::spawn_local(handle_postgres_connection(c, addr, engine.clone()));
                 }
             }

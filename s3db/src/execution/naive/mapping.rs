@@ -1,13 +1,17 @@
 use super::EvaulateRaError;
+use std::borrow::Cow;
 
-pub enum ShortCircuit<V> {
-    Nothing(V),
-    Skip { amount: usize, result: V },
+pub enum ShortCircuit<'vs, V>
+where
+    V: Clone + ToOwned,
+{
+    Nothing(Cow<'vs, V>),
+    Skip { amount: usize, result: Cow<'vs, V> },
 }
 
 pub trait MappingInstruction<'expr>: Sized {
     type Input;
-    type Output;
+    type Output: Clone;
     type ConstructContext<'ctx>;
 
     fn push_nested(input: &'expr Self::Input, pending: &mut Vec<&'expr Self::Input>);
@@ -17,51 +21,83 @@ pub trait MappingInstruction<'expr>: Sized {
         ctx: &Self::ConstructContext<'ctx>,
     ) -> Result<Self, EvaulateRaError<SE>>;
 
-    fn evaluate<S>(
+    fn evaluate<'vs, 'row, S>(
         &self,
-        result_stack: &mut Vec<Self::Output>,
-        row: &storage::RowCow<'_>,
+        result_stack: &mut Vec<Cow<'vs, Self::Output>>,
+        row: &'row storage::RowCow<'_>,
         engine: &super::NaiveEngine<S>,
         transaction: &S::TransactionGuard,
         arena: &bumpalo::Bump,
-    ) -> impl core::future::Future<Output = Option<Self::Output>>
-    where
-        S: storage::Storage;
-
-    fn evaluate_mut<S>(
-        &mut self,
-        result_stack: &mut Vec<Self::Output>,
-        row: &storage::RowCow<'_>,
-        engine: &super::NaiveEngine<S>,
-        transaction: &S::TransactionGuard,
-        arena: &bumpalo::Bump,
-    ) -> impl core::future::Future<Output = Option<Self::Output>>
+    ) -> impl core::future::Future<Output = Option<Cow<'vs, Self::Output>>>
     where
         S: storage::Storage,
+        'row: 'vs;
+
+    fn evaluate_mut<'vs, 'row, S>(
+        &mut self,
+        result_stack: &mut Vec<Cow<'vs, Self::Output>>,
+        row: &'row storage::RowCow<'_>,
+        engine: &super::NaiveEngine<S>,
+        transaction: &S::TransactionGuard,
+        arena: &bumpalo::Bump,
+    ) -> impl core::future::Future<Output = Option<Cow<'vs, Self::Output>>>
+    where
+        S: storage::Storage,
+        'row: 'vs,
     {
         self.evaluate(result_stack, row, engine, transaction, arena)
     }
 
-    fn peek_short_circuit(
+    fn peek_short_circuit<'vs>(
         &self,
-        outcome: Self::Output,
+        outcome: Cow<'vs, Self::Output>,
         _own_index: usize,
-        _values: &Vec<Self::Output>,
-    ) -> ShortCircuit<Self::Output> {
+        _values: &Vec<Cow<'_, Self::Output>>,
+    ) -> ShortCircuit<'vs, Self::Output> {
         ShortCircuit::Nothing(outcome)
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Mapper<I, V> {
+#[derive(Debug)]
+pub struct Mapper<I, V>
+where
+    V: 'static + Clone,
+{
     pub instruction_stack: Vec<I>,
-    pub value_stack: Vec<V>,
+    pub value_stack: Vec<std::borrow::Cow<'static, V>>,
+}
+
+impl<I, V> PartialEq for Mapper<I, V>
+where
+    I: PartialEq,
+    V: 'static + PartialEq + ToOwned + Clone,
+{
+    fn eq(&self, other: &Self) -> bool {
+        if self.instruction_stack != other.instruction_stack {
+            return false;
+        }
+
+        self.value_stack
+            .iter()
+            .zip(other.value_stack.iter())
+            .all(|(f, s)| f.as_ref() == s.as_ref())
+    }
 }
 
 impl<'expr, I> Mapper<I, I::Output>
 where
     I: MappingInstruction<'expr>,
 {
+    fn shorten_stack_lifetime<'r, 'og, 'target>(
+        input: &'r mut Vec<Cow<'og, I::Output>>,
+    ) -> &'r mut Vec<Cow<'target, I::Output>>
+    where
+        'og: 'target,
+    {
+        assert!(input.is_empty());
+        unsafe { core::mem::transmute(input) }
+    }
+
     pub fn construct<'ctx, SE>(
         start: &'expr I::Input,
         ctx: I::ConstructContext<'ctx>,
@@ -103,7 +139,8 @@ where
     where
         S: storage::Storage,
     {
-        let mut value_stack: Vec<I::Output> = Vec::with_capacity(self.instruction_stack.len());
+        let mut value_stack: Vec<Cow<'_, I::Output>> =
+            Vec::with_capacity(self.instruction_stack.len());
 
         let mut idx = self.instruction_stack.len() - 1;
         loop {
@@ -115,11 +152,11 @@ where
             let (n_idx, value) = match instr.peek_short_circuit(value, idx, &value_stack) {
                 ShortCircuit::Nothing(v) => match idx.checked_sub(1) {
                     Some(i) => (i, v),
-                    None => return Some(v),
+                    None => return Some(v.into_owned()),
                 },
                 ShortCircuit::Skip { amount, result } => match idx.checked_sub(amount) {
                     Some(i) => (i, result),
-                    None => return Some(result),
+                    None => return Some(result.into_owned()),
                 },
             };
 
@@ -139,27 +176,28 @@ where
         S: storage::Storage,
     {
         self.value_stack.clear();
+        let stack = Self::shorten_stack_lifetime(&mut self.value_stack);
 
         let mut idx = self.instruction_stack.len() - 1;
         loop {
             let instr = self.instruction_stack.get_mut(idx).expect("We just know");
             let value = instr
-                .evaluate_mut(&mut self.value_stack, row, engine, transaction, arena)
+                .evaluate_mut(stack, row, engine, transaction, arena)
                 .await?;
 
-            let (n_idx, value) = match instr.peek_short_circuit(value, idx, &self.value_stack) {
+            let (n_idx, value) = match instr.peek_short_circuit(value, idx, &stack) {
                 ShortCircuit::Nothing(v) => match idx.checked_sub(1) {
                     Some(i) => (i, v),
-                    None => return Some(v),
+                    None => return Some(v.into_owned()),
                 },
                 ShortCircuit::Skip { amount, result } => match idx.checked_sub(amount) {
                     Some(i) => (i, result),
-                    None => return Some(result),
+                    None => return Some(result.into_owned()),
                 },
             };
 
             idx = n_idx;
-            self.value_stack.push(value);
+            stack.push(value);
         }
     }
 }

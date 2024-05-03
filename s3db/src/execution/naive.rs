@@ -15,7 +15,7 @@ use crate::{
 };
 
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
-use storage::{self, Data, Sequence, Storage, TableSchema};
+use storage::{self, Data, RelationStorage, Sequence, Storage, TableSchema};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -106,6 +106,8 @@ pub enum EvaulateRaError<SE> {
     UnknownAttribute {
         name: String,
         id: AttributeId,
+        possible: Vec<(String, AttributeId)>,
+        ctx: &'static str,
     },
     CastingType {
         value: storage::Data,
@@ -1657,6 +1659,36 @@ where
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
+                    self.storage
+                        .insert_rows(
+                            "pg_tables",
+                            &mut core::iter::once(vec![
+                                Data::Name("".to_string()),
+                                Data::Name(create.identifier.0.to_string()),
+                                Data::Name("".to_string()),
+                                Data::Name("".to_string()),
+                                Data::Boolean(false),
+                                Data::Boolean(false),
+                                Data::Boolean(false),
+                                Data::Boolean(false),
+                            ]),
+                            transaction,
+                        )
+                        .await
+                        .map_err(ExecuteBoundError::StorageError)?;
+                    self.storage
+                        .insert_rows(
+                            "pg_class",
+                            &mut core::iter::once(vec![
+                                Data::Integer(0), // This should be the pg_class_id, which is the same as the row id, but no idea how to handle this currently
+                                Data::Name(create.identifier.0.to_string()),
+                                Data::Integer(0),
+                            ]),
+                            transaction,
+                        )
+                        .await
+                        .map_err(ExecuteBoundError::StorageError)?;
+
                     Ok(ExecuteResult::Create)
                 }
                 Query::CreateIndex(create) => {
@@ -1833,6 +1865,17 @@ where
                     };
 
                     for name in drop_table.names.iter() {
+                        if drop_table.if_exists {
+                            let exists = self
+                                .storage
+                                .relation_exists(&name.0, transaction)
+                                .await
+                                .map_err(ExecuteBoundError::StorageError)?;
+                            if !exists {
+                                continue;
+                            }
+                        }
+
                         self.storage
                             .remove_relation(&name.0, transaction)
                             .await
