@@ -1081,6 +1081,13 @@ where
 
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
+                    let scheme = storage::TableSchema {
+                        rows: ra_expression.get_columns().into_iter().map(|(_, n, t, id)| storage::ColumnSchema {
+                            name: n,
+                            ty: t,
+                            mods: Vec::new(),
+                        }).collect(),
+                    };
 
                     let tmp = HashMap::new();
                     let mut vm = ravm::RaVm::construct::<S::LoadingError>(&ra_expression, &placeholder_values, &cte_queries, &tmp).map_err(|e| ExecuteBoundError::NotImplemented("Error Constructing RaVm"))?;
@@ -1091,7 +1098,9 @@ where
                     }
 
 
-                    let (scheme, rows) = match self
+                    #[cfg(debug_assertions)]
+                    {
+                        let (_, rows) = match self
                         .evaluate_ra(
                             &ra_expression,
                             &placeholder_values,
@@ -1109,8 +1118,6 @@ where
                         }
                     };
 
-                    #[cfg(debug_assertions)]
-                    {
                         let ra_rows: Vec<_> = rows.map(|r| r.into_owned()).collect().await;
                         assert_eq!(&ra_rows, &vm_rows);
                     }

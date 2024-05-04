@@ -289,7 +289,12 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                 let arena = bumpalo::Bump::new();
                 for expr in expressions.iter_mut() {
                     let value = expr.evaluate_mut(&row, engine, tguard, &arena).await.ok_or(())?;
-                    result.push(value);
+                    result.push(match value {
+                        storage::Data::List(mut v) if v.len() == 1 => {
+                            v.pop().unwrap()
+                        }
+                        other => other,
+                    });
                 }
 
                 Ok(ExecuteResult::Ok(vec![storage::Row::new(0, result)]))
