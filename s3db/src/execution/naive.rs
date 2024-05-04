@@ -392,15 +392,13 @@ where
                         ra::AggregationCondition::Everything => {
                             let mut states = Vec::with_capacity(attributes.len());
                             for attr in attributes.iter() {
-                                states.push(
-                                    AggregateState::new::<S>(
-                                        &attr.value,
-                                        &inner_columns,
-                                        placeholders,
-                                        ctes,
-                                        outer,
-                                    ),
-                                );
+                                states.push(AggregateState::new::<S>(
+                                    &attr.value,
+                                    &inner_columns,
+                                    placeholders,
+                                    ctes,
+                                    outer,
+                                ));
                             }
 
                             while let Some(row) = rows.next().await {
@@ -473,15 +471,13 @@ where
                             for group in groups.into_iter() {
                                 let mut states = Vec::with_capacity(attributes.len());
                                 for attr in attributes.iter() {
-                                    states.push(
-                                        AggregateState::new::<S>(
-                                            &attr.value,
-                                            &inner_columns,
-                                            placeholders,
-                                            ctes,
-                                            outer,
-                                        ),
-                                    );
+                                    states.push(AggregateState::new::<S>(
+                                        &attr.value,
+                                        &inner_columns,
+                                        placeholders,
+                                        ctes,
+                                        outer,
+                                    ));
                                 }
 
                                 for row in group {
@@ -1082,49 +1078,55 @@ where
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
                     let scheme = storage::TableSchema {
-                        rows: ra_expression.get_columns().into_iter().map(|(_, n, t, id)| storage::ColumnSchema {
-                            name: n,
-                            ty: t,
-                            mods: Vec::new(),
-                        }).collect(),
+                        rows: ra_expression
+                            .get_columns()
+                            .into_iter()
+                            .map(|(_, n, t, id)| storage::ColumnSchema {
+                                name: n,
+                                ty: t,
+                                mods: Vec::new(),
+                            })
+                            .collect(),
                     };
 
                     let tmp = HashMap::new();
-                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(&ra_expression, &placeholder_values, &cte_queries, &tmp).map_err(|e| ExecuteBoundError::NotImplemented("Error Constructing RaVm"))?;
+                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(
+                        &ra_expression,
+                        &placeholder_values,
+                        &cte_queries,
+                        &tmp,
+                    )
+                    .map_err(|e| ExecuteBoundError::NotImplemented("Error Constructing RaVm"))?;
 
                     let mut vm_rows = Vec::new();
                     while let Some(v) = vm.get_next(self, transaction).await {
                         vm_rows.push(v);
                     }
 
-
                     #[cfg(debug_assertions)]
                     {
                         let (_, rows) = match self
-                        .evaluate_ra(
-                            &ra_expression,
-                            &placeholder_values,
-                            &cte_queries,
-                            &tmp,
-                            transaction,
-                            &arena,
-                        )
-                        .await
-                    {
-                        Ok(r) => r,
-                        Err(e) => {
-                            tracing::error!("RA-Error: {:?}", e);
-                            return Err(ExecuteBoundError::Executing(e));
-                        }
-                    };
+                            .evaluate_ra(
+                                &ra_expression,
+                                &placeholder_values,
+                                &cte_queries,
+                                &tmp,
+                                transaction,
+                                &arena,
+                            )
+                            .await
+                        {
+                            Ok(r) => r,
+                            Err(e) => {
+                                tracing::error!("RA-Error: {:?}", e);
+                                return Err(ExecuteBoundError::Executing(e));
+                            }
+                        };
 
                         let ra_rows: Vec<_> = rows.map(|r| r.into_owned()).collect().await;
                         assert_eq!(&ra_rows, &vm_rows);
                     }
-                    let result = storage::EntireRelation::from_parts(
-                        scheme,
-                        vm_rows,
-                    );
+                    let result = storage::EntireRelation::from_parts(scheme, vm_rows);
 
                     tracing::debug!("RA-Result: {:?}", result);
 
@@ -2057,7 +2059,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use storage::{EntireRelation, PartialRelation, Row, RelationStorage};
+    use storage::{EntireRelation, PartialRelation, RelationStorage, Row};
 
     use self::storage::inmemory::InMemoryStorage;
 

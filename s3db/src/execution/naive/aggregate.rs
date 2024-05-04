@@ -31,8 +31,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
         placeholders: &'placeholders HashMap<usize, storage::Data>,
         ctes: &'ctes HashMap<String, storage::EntireRelation>,
         outer: &'outer HashMap<AttributeId, storage::Data>,
-    ) -> Self 
-    {
+    ) -> Self {
         match expr {
             ra::AggregateExpression::CountRows => Self::CountRows {
                 attribute_index: None,
@@ -63,11 +62,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
             }
             ra::AggregateExpression::Max { inner, .. } => Self::Max {
                 value: None,
-                expr: value::Mapper::construct::<SE>(
-                    &inner,
-                    (columns, placeholders, ctes, outer),
-                )
-                .map_err(|e| ()).unwrap(),
+                expr: value::Mapper::construct::<SE>(&inner, (columns, placeholders, ctes, outer))
+                    .map_err(|e| ())
+                    .unwrap(),
             },
             other => todo!("{:?}", other),
         }
