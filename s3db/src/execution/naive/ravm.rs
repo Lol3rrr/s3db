@@ -80,6 +80,8 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
 
 pub struct RaVm<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     instructions: Vec<RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream>>,
+    return_stack: Vec<usize>,
+    result_stack: Vec<Input>,
 }
 
 impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
@@ -249,26 +251,33 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
             instructions.push(instr);
         }
 
+        let return_stack = Vec::with_capacity(instructions.len());
+        let result_stack = vec![Input { rows: VecDeque::new(), done: false }; instructions.len()];
+
         Ok(Self {
             instructions,
+            return_stack,
+            result_stack,
         })
     }
 
     pub async fn get_next<'tg, 'engine, S>(&mut self, engine: &'engine super::NaiveEngine<S>, tguard: &'tg S::TransactionGuard) -> Option<storage::Row> where S: storage::Storage, 'tg: 'stream, 'engine: 'stream, 'expr: 'stream {
         let mut idx = self.instructions.len() - 1;
 
-        let mut results = vec![Input { rows: VecDeque::new(), done: false }; self.instructions.len()];
-        let mut return_stack = Vec::with_capacity(self.instructions.len());
+        for input in self.result_stack.iter_mut() {
+            input.done = false;
+            input.rows.clear();
+        }
 
         loop {
             let instr = self.instructions.get_mut(idx)?;
-            let input = results.get_mut(idx)?;
+            let input = self.result_stack.get_mut(idx)?;
             
             match instr.try_execute(input, engine, tguard).await {
                 Ok(ExecuteResult::Ok(v)) => {
-                    match return_stack.pop() {
+                    match self.return_stack.pop() {
                         Some(prev_idx) => {
-                            let prev_inputs: &mut Input = results.get_mut(prev_idx)?;
+                            let prev_inputs: &mut Input = self.result_stack.get_mut(prev_idx)?;
                             prev_inputs.rows.push_back(v);
                             prev_inputs.done = false;
 
@@ -280,8 +289,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
                     };
                 }
                 Ok(ExecuteResult::OkEmpty) => {
-                    let prev_idx = return_stack.pop()?;
-                    let prev_inputs: &mut Input = results.get_mut(prev_idx)?;
+                    let prev_idx = self.return_stack.pop()?;
+                    let prev_inputs: &mut Input = self.result_stack.get_mut(prev_idx)?;
 
                     prev_inputs.done = true;
 
@@ -291,7 +300,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
                     return None;
                 }
                 Ok(ExecuteResult::PendingInput(input_idx)) => {
-                    return_stack.push(idx);
+                    self.return_stack.push(idx);
                     idx = input_idx;
                 }
                 Err(v) => {
