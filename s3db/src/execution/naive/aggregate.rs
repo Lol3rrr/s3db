@@ -8,6 +8,7 @@ use storage::{self, Storage};
 
 use super::{value, EvaulateRaError, NaiveEngine};
 
+#[derive(Debug)]
 pub enum AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
     CountRows {
         attribute_index: Option<usize>,
@@ -24,15 +25,13 @@ pub enum AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
 }
 
 impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
-    pub async fn new<S>(
+    pub fn new<SE>(
         expr: &'expr ra::AggregateExpression,
         columns: &[(String, DataType, ra::AttributeId)],
         placeholders: &'placeholders HashMap<usize, storage::Data>,
         ctes: &'ctes HashMap<String, storage::EntireRelation>,
         outer: &'outer HashMap<AttributeId, storage::Data>,
-    ) -> Self
-    where
-        S: storage::Storage,
+    ) -> Self 
     {
         match expr {
             ra::AggregateExpression::CountRows => Self::CountRows {
@@ -60,17 +59,15 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                 value: None,
             },
             ra::AggregateExpression::Renamed { inner, .. } => {
-                Self::new::<S>(inner, columns, placeholders, ctes, outer)
-                    .boxed_local()
-                    .await
+                Self::new::<SE>(inner, columns, placeholders, ctes, outer)
             }
             ra::AggregateExpression::Max { inner, .. } => Self::Max {
                 value: None,
-                expr: value::Mapper::construct::<S::LoadingError>(
+                expr: value::Mapper::construct::<SE>(
                     &inner,
                     (columns, placeholders, ctes, outer),
                 )
-                .unwrap(),
+                .map_err(|e| ()).unwrap(),
             },
             other => todo!("{:?}", other),
         }

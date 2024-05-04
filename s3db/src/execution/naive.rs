@@ -15,7 +15,7 @@ use crate::{
 };
 
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
-use storage::{self, Data, RelationStorage, Sequence, Storage, TableSchema};
+use storage::{self, Data, Sequence, Storage, TableSchema};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -26,6 +26,8 @@ mod condition;
 mod mapping;
 mod pattern;
 mod value;
+
+mod ravm;
 
 pub struct NaiveEngine<S> {
     storage: S,
@@ -397,8 +399,7 @@ where
                                         placeholders,
                                         ctes,
                                         outer,
-                                    )
-                                    .await,
+                                    ),
                                 );
                             }
 
@@ -479,8 +480,7 @@ where
                                             placeholders,
                                             ctes,
                                             outer,
-                                        )
-                                        .await,
+                                        ),
                                     );
                                 }
 
@@ -1081,7 +1081,16 @@ where
 
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
+
                     let tmp = HashMap::new();
+                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(&ra_expression, &placeholder_values, &cte_queries, &tmp).map_err(|e| ExecuteBoundError::NotImplemented("Error Constructing RaVm"))?;
+
+                    let mut vm_rows = Vec::new();
+                    while let Some(v) = vm.get_next(self, transaction).await {
+                        vm_rows.push(v);
+                    }
+
+
                     let (scheme, rows) = match self
                         .evaluate_ra(
                             &ra_expression,
@@ -1100,9 +1109,14 @@ where
                         }
                     };
 
+                    #[cfg(debug_assertions)]
+                    {
+                        let ra_rows: Vec<_> = rows.map(|r| r.into_owned()).collect().await;
+                        assert_eq!(&ra_rows, &vm_rows);
+                    }
                     let result = storage::EntireRelation::from_parts(
                         scheme,
-                        rows.map(|r| r.into_owned()).collect().await,
+                        vm_rows,
                     );
 
                     tracing::debug!("RA-Result: {:?}", result);
@@ -2036,7 +2050,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use storage::{EntireRelation, PartialRelation, Row, Storage};
+    use storage::{EntireRelation, PartialRelation, Row, RelationStorage};
 
     use self::storage::inmemory::InMemoryStorage;
 
