@@ -18,6 +18,13 @@ jobs:
           override: true
       - name: Run Profiling for 10 seconds
         run: RUSTFLAGS="--cfg flamegraph" cargo bench --bench parse --bench execute -- --profile-time 10
+      - name: Upload to pyroscope
+        run: python3 profiles.py
+        env:
+          PROFILECLI_URL: ${{ secrets.PYROSCOPE_URL }}
+          PROFILECLI_USERNAME: ${{ secrets.PYROSCOPE_USERNAME }}
+          PROFILECLI_PASSWORD: ${{ secrets.PYROSCOPE_PASSWORD }}
+          GIT_BRANCH: "pyroscope"
       - name: Upload result artifacts
         id: upload-artifacts
         uses: actions/upload-artifact@v4
