@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use storage::Row;
 
-use crate::ra::{RaExpression, AttributeId};
+use crate::ra::{RaExpression, AttributeId, self};
 use super::{value, condition};
 
 use futures::stream::StreamExt;
@@ -12,6 +12,13 @@ pub enum ExecuteResult {
     Ok(Row),
     OkEmpty,
 }
+
+#[derive(Debug, Clone)]
+pub struct Input {
+    rows: VecDeque<Row>,
+    done: bool,
+}
+
 
 pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     EmptyRelation {
@@ -33,6 +40,7 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
         input: usize,
         limit: usize,
         offset: usize,
+        count: usize,
     },
     Join {
         left_input: usize,
@@ -48,8 +56,13 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     },
     Aggregation {
         input: usize,
-        attributes: Vec<super::AggregateState<'expr, 'outer, 'placeholders, 'ctes>>,
-        condition: crate::ra::AggregationCondition,
+        attributes: &'expr [ra::Attribute<ra::AggregateExpression>],
+        grouping_func: Box<dyn Fn(&Row, &Row) -> bool>,
+        groups: VecDeque<Vec<Row>>,
+    columns: Vec<(String, sql::DataType, AttributeId)>,
+    placeholders: &'placeholders HashMap<usize, storage::Data>,
+    ctes: &'ctes HashMap<String, storage::EntireRelation>,
+    outer: &'outer HashMap<AttributeId, storage::Data>
     },
     OrderBy {
         input: usize,
@@ -134,7 +147,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
                     RaInstruction::Selection { condition: cond, input: instructions.len() - 1 }
                 }
                 RaExpression::Limit { limit, offset, .. } => {
-                    RaInstruction::Limit { input: instructions.len() -1, limit: *limit , offset: *offset}
+                    RaInstruction::Limit { input: instructions.len() -1, limit: *limit , offset: *offset, count: 0,}
                 }
                 RaExpression::Renamed { .. } => continue,
                 RaExpression::OrderBy { inner, attributes } => {
@@ -155,17 +168,34 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
                     RaInstruction::OrderBy { attributes: orderings, input: instructions.len() -1 }
                 }
                 RaExpression::Aggregation { inner, attributes, aggregation_condition } => {
-                    dbg!(attributes, aggregation_condition);
-
                     let columns: Vec<_> = inner.get_columns().into_iter().map(|(_, n, t, i)| (n, t, i)).collect();
 
-                    let mut states = Vec::new();
-                    for attr in attributes.iter() {
-                        let state = super::AggregateState::new::<SE>(&attr.value, &columns, placeholders, ctes, outer);
-                        states.push(state);
-                    }
+                    let grouping_func: Box<dyn Fn(&Row, &Row) -> bool> = match aggregation_condition {
+                        crate::ra::AggregationCondition::Everything => {
+                            Box::new(|_, _| true)
+                        }
+                        crate::ra::AggregationCondition::GroupBy { fields } => {
+                                let compare_indices: Vec<_> = fields
+                                    .iter()
+                                    .map(|(_, src_id)| {
+                                        columns
+                                            .iter()
+                                            .enumerate()
+                                            .find(|(_, (_, _, c_id))| c_id == src_id)
+                                            .map(|(i, _)| i)
+                                            .unwrap()
+                                    })
+                                    .collect();
 
-                    RaInstruction::Aggregation { attributes: states, condition: aggregation_condition.clone(), input: instructions.len() - 1 }
+                            Box::new(move |first, second| {
+                                compare_indices.iter().all(|idx| {
+                                    first.data[*idx] == second.data[*idx]
+                                })
+                            })
+                        }
+                    };
+
+                    RaInstruction::Aggregation { attributes: &attributes, input: instructions.len() - 1, grouping_func, groups: VecDeque::new(), columns, placeholders, ctes, outer }
                 }
                 RaExpression::Join { left, right, kind, condition } => {
                     let left_columns = left.get_columns();
@@ -227,8 +257,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
     pub async fn get_next<'tg, 'engine, S>(&mut self, engine: &'engine super::NaiveEngine<S>, tguard: &'tg S::TransactionGuard) -> Option<storage::Row> where S: storage::Storage, 'tg: 'stream, 'engine: 'stream, 'expr: 'stream {
         let mut idx = self.instructions.len() - 1;
 
-        let mut results = vec![VecDeque::new(); self.instructions.len()];
-        let mut return_stack = Vec::new();
+        let mut results = vec![Input { rows: VecDeque::new(), done: false }; self.instructions.len()];
+        let mut return_stack = Vec::with_capacity(self.instructions.len());
 
         loop {
             let instr = self.instructions.get_mut(idx)?;
@@ -238,8 +268,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
                 Ok(ExecuteResult::Ok(v)) => {
                     match return_stack.pop() {
                         Some(prev_idx) => {
-                            let prev_inputs: &mut VecDeque<_> = results.get_mut(prev_idx)?;
-                            prev_inputs.push_back(v);
+                            let prev_inputs: &mut Input = results.get_mut(prev_idx)?;
+                            prev_inputs.rows.push_back(v);
+                            prev_inputs.done = false;
 
                             idx = prev_idx;
                         }
@@ -249,6 +280,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
                     };
                 }
                 Ok(ExecuteResult::OkEmpty) => {
+                    let prev_idx = return_stack.pop()?;
+                    let prev_inputs: &mut Input = results.get_mut(prev_idx)?;
+
+                    prev_inputs.done = true;
+
+                    idx = prev_idx;
+                }
+                Ok(ExecuteResult::PendingInput(_)) if input.done => {
                     return None;
                 }
                 Ok(ExecuteResult::PendingInput(input_idx)) => {
@@ -265,7 +304,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
 }
 
 impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeholders, 'ctes, 'outer, 'stream> where 'expr: 'stream {
-    async fn try_execute<'tg, 'engine, S>(&mut self, input_rows: &mut VecDeque<storage::Row>, engine: &'engine super::NaiveEngine<S>, tguard: &'tg S::TransactionGuard) -> Result<ExecuteResult, ()> where S: storage::Storage, 'tg: 'stream, 'engine: 'stream {
+    async fn try_execute<'tg, 'engine, S>(&mut self, input_data: &mut Input, engine: &'engine super::NaiveEngine<S>, tguard: &'tg S::TransactionGuard) -> Result<ExecuteResult, ()> where S: storage::Storage, 'tg: 'stream, 'engine: 'stream {
         match self {
             Self::EmptyRelation { used } => {
                 if *used {
@@ -276,7 +315,7 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                 }
             },
             Self::Projection { input, expressions } => {
-                let row = match input_rows.pop_front() {
+                let row = match input_data.rows.pop_front() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
@@ -299,7 +338,7 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                 Ok(ExecuteResult::Ok(storage::Row::new(0, result)))
             }
             Self::Selection { input, condition } => {
-                let row = match input_rows.pop_front() {
+                let row = match input_data.rows.pop_front() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
@@ -331,8 +370,29 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                     None => Ok(ExecuteResult::OkEmpty)
                 }
             }
-            Self::Limit { input, limit, offset } => {
-                todo!("Limit")
+            Self::Limit { input, limit, offset, count } => {
+                if count < offset {
+                    let tmp = input_data.rows.pop_front();
+                    if tmp.is_some() {
+                        *count += 1;
+                    }
+
+                    return Ok(ExecuteResult::PendingInput(*input));
+                }
+
+                if *count >= *offset + *limit {
+                    return Ok(ExecuteResult::OkEmpty);
+                }
+
+                match input_data.rows.pop_front() {
+                    Some(row) => {
+                        *count += 1;
+                        return Ok(ExecuteResult::Ok(row));
+                    }
+                    None => {
+                        return Ok(ExecuteResult::PendingInput(*input))
+                    }
+                }
             }
             Self::CTE { rows, part, row } => {
                 while let Some(part_ref) = rows.parts.get(*part) {
@@ -358,8 +418,50 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
             Self::OrderBy { input, attributes } => {
                 todo!("OrderBy")
             }
-            Self::Aggregation { input, attributes, condition } => {
-                todo!("Aggregation")
+            Self::Aggregation { input, attributes, grouping_func , groups, columns, placeholders, ctes, outer } => {
+                if !input_data.done {
+                    match input_data.rows.pop_front() {
+                        Some(row) => {
+                            for group in groups.iter_mut() {
+                                let rep = group.first().expect("Every group has at least one member row");
+
+                                if grouping_func(rep, &row) {
+                                    group.push(row);
+
+                                    return Ok(ExecuteResult::PendingInput(*input));
+                                }
+                            }
+
+                            groups.push_back(vec![row]);
+
+                            return Ok(ExecuteResult::PendingInput(*input));
+                        }
+                        None => return Ok(ExecuteResult::PendingInput(*input)),
+                    };
+                }
+
+                let group = match groups.pop_front() {
+                    Some(g) => g,
+                    None => return Ok(ExecuteResult::OkEmpty),
+                };
+                
+                let mut states = Vec::with_capacity(attributes.len());
+                for attr in attributes.iter() {
+                    let state = super::AggregateState::new::<S::LoadingError>(&attr.value, &columns, placeholders, ctes, outer);
+                    states.push(state);
+                }
+
+                let arena = bumpalo::Bump::new();
+                for row in group {
+                    let row = storage::RowCow::Owned(row);
+                    for state in states.iter_mut() {
+                        state.update(engine, &row, tguard, &arena).await.unwrap();
+                    }
+                }
+
+                let resulting_row: Vec<_> = states.into_iter().map(|r| r.to_data().unwrap()).collect();
+                
+                Ok(ExecuteResult::Ok(storage::Row::new(0, resulting_row)))
             }
             Self::Join { left_input, right_input, condition, kind } => {
                 todo!("Join")
