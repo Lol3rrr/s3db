@@ -9,7 +9,7 @@ use futures::stream::StreamExt;
 
 pub enum ExecuteResult {
     PendingInput(usize),
-    Ok(Vec<Row>),
+    Ok(Row),
     OkEmpty,
 }
 
@@ -235,17 +235,16 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> RaVm<'expr, 'outer, 'placehol
             let input = results.get_mut(idx)?;
             
             match instr.try_execute(input, engine, tguard).await {
-                Ok(ExecuteResult::Ok(mut v)) => {
+                Ok(ExecuteResult::Ok(v)) => {
                     match return_stack.pop() {
                         Some(prev_idx) => {
                             let prev_inputs: &mut VecDeque<_> = results.get_mut(prev_idx)?;
-                            prev_inputs.extend(v);
+                            prev_inputs.push_back(v);
 
                             idx = prev_idx;
                         }
                         None => {
-                            let value = v.pop()?;
-                            return Some(value)
+                            return Some(v)
                         },
                     };
                 }
@@ -273,7 +272,7 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                     Ok(ExecuteResult::OkEmpty)
                 } else {
                     *used = true;
-                    Ok(ExecuteResult::Ok(vec![storage::Row::new(0, Vec::new())]))
+                    Ok(ExecuteResult::Ok(storage::Row::new(0, Vec::new())))
                 }
             },
             Self::Projection { input, expressions } => {
@@ -297,7 +296,7 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                     });
                 }
 
-                Ok(ExecuteResult::Ok(vec![storage::Row::new(0, result)]))
+                Ok(ExecuteResult::Ok(storage::Row::new(0, result)))
             }
             Self::Selection { input, condition } => {
                 let row = match input_rows.pop_front() {
@@ -310,7 +309,7 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                 let cond_res = condition.evaluate_mut(&row, engine, tguard, &arena).await.ok_or(())?;
 
                 if cond_res {
-                    Ok(ExecuteResult::Ok(vec![row.into_owned()]))
+                    Ok(ExecuteResult::Ok(row.into_owned()))
                 } else {
                     Ok(ExecuteResult::PendingInput(*input))
                 }
@@ -328,7 +327,7 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
                 let tmp = stream.next().await;
 
                 match tmp {
-                    Some(r) => Ok(ExecuteResult::Ok(vec![r])),
+                    Some(r) => Ok(ExecuteResult::Ok(r)),
                     None => Ok(ExecuteResult::OkEmpty)
                 }
             }
@@ -348,7 +347,7 @@ impl<'expr, 'placeholders, 'ctes, 'outer, 'stream> RaInstruction<'expr, 'placeho
 
                     *row += 1;
 
-                    return Ok(ExecuteResult::Ok(vec![row_ref.clone()]))
+                    return Ok(ExecuteResult::Ok(row_ref.clone()))
                 }
 
                 Ok(ExecuteResult::OkEmpty)
