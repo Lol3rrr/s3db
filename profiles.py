@@ -12,6 +12,8 @@ def main():
 
     output = (
         "## Profiling Links\n\n"
+        "| Name | View (Grafana) |\n"
+        "|---|---|"
     )
 
     for project in listdir("target/criterion"):
@@ -34,7 +36,7 @@ def main():
                     continue
 
                 link = upload_file(pb_path, branch, test_group, param)
-                output += f"[{test_group} - {param}]({link})\n"
+                output += f"| {test_group} - {param} | [View in Grafana]({link}) |\n"
 
     current_dateTime = datetime.now()
     output += f"\nDate: {current_dateTime}"
