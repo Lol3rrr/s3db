@@ -381,8 +381,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
         }
 
         loop {
-            let instr = self.instructions.get_mut(idx)?;
-            let input = self.result_stack.get_mut(idx)?;
+            let instr = self.instructions.get_mut(idx).expect("");
+            let input = self.result_stack.get_mut(idx).expect("");
 
             match instr.try_execute(input, engine, tguard).await {
                 Ok(ExecuteResult::Ok(v)) => {

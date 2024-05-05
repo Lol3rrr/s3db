@@ -88,6 +88,9 @@ jobs:
           path: "main"
       - name: Run benchmark
         run: python3 pgbench.py --metrics --repo-path ./main/
+      - name: Print S3DB logs
+        if: always()
+        run: cat s3db.log
       - name: Track base branch benchmarks with Bencher
         run: |
           bencher run \

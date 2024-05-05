@@ -105,6 +105,9 @@ jobs:
           path: "current"
       - name: Run benchmark
         run: python3 pgbench.py --metrics --repo-path ./current/
+      - name: Print S3DB logs
+        if: always()
+        run: cat s3db.log
       - name: Track pgbench PR benchmarks with Bencher
         run: |
           bencher run \
