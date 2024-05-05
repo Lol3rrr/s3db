@@ -98,7 +98,7 @@ fn with_conditon(c: &mut Criterion) {
 #[cfg(flamegraph)]
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_profiler(pprof::criterion::PProfProfiler::new(500, pprof::criterion::Output::Flamegraph(None)));
+    config = Criterion::default().with_profiler(pprof::criterion::PProfProfiler::new(500, pprof::criterion::Output::Protobuf));
     targets = select,with_conditon
 );
 #[cfg(not(flamegraph))]

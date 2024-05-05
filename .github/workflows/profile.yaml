@@ -11,18 +11,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           override: true
+      - name: Install Profilecli 
+        run: |
+          curl -fL https://github.com/grafana/pyroscope/releases/download/v1.5.0/profilecli_1.5.0_linux_amd64.tar.gz | tar xvz
+          chmod +x profilecli
+          sudo mv profilecli /usr/local/bin
       - name: Run Profiling for 10 seconds
         run: RUSTFLAGS="--cfg flamegraph" cargo bench --bench parse --bench execute -- --profile-time 10
-      - name: Upload result artifacts
-        id: upload-artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          path: target/criterion/
+      - name: Upload to pyroscope
+        run: python3 profiles.py
+        env:
+          PROFILECLI_URL: ${{ secrets.PYROSCOPE_URL }}
+          PROFILECLI_USERNAME: ${{ secrets.PYROSCOPE_USERNAME }}
+          PROFILECLI_PASSWORD: ${{ secrets.PYROSCOPE_PASSWORD }}
+          GIT_BRANCH: ${{ steps.extract_branch.outputs.branch }}
       - id: pr-check
         uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Get current date
@@ -32,10 +43,6 @@ jobs:
         if: steps.pr-check.outputs.pr_found == 'true'
         uses: thollander/actions-comment-pull-request@v2
         with:
-          message: |
-            # Profiling Results
-            Link: ${{ steps.upload-artifacts.outputs.artifact-url }}
-
-            Date: ${{ steps.date.outputs.date }}
+          filePath: profile-report.md
           pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: profiling_results
