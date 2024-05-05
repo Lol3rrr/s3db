@@ -1,5 +1,5 @@
 from os import listdir, environ
-from os.path import isfile, exists, join
+from os.path import isfile, exists, join, getmtime
 import subprocess
 import time
 from datetime import datetime
@@ -45,6 +45,7 @@ def main():
 def upload_file(path, branch, name, param):
     print(f"Uploading: {path} - branch: {branch} - bench-name: {name} - param: {param}")
 
+
     subprocess.run(
         [
             "profilecli",
@@ -57,10 +58,10 @@ def upload_file(path, branch, name, param):
         ],
     )
 
-    now_in_secs = time.time()
-    now_in_ms = now_in_secs * 1000
-    from_ms = now_in_ms - (60 * 1000)
-    to_ms = now_in_ms + (60 * 1000)
+    mod_time = getmtime(path)
+    mod_time_ms = mod_time * 1000
+    from_ms = mod_time_ms - (60 * 1000)
+    to_ms = mod_time_ms + (60 * 1000)
 
     return f"https://grafana.lol3r.com/d/adkqscb0pineof/s3db?orgId=3&from={from_ms:.0f}&to={to_ms:.0f}&var-branch={branch}&var-benchname={name}&var-benchparam={param}"
 
