@@ -30,10 +30,12 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     Projection {
         input: usize,
         expressions: Vec<value::Mapper<'expr, 'outer, 'placeholders, 'ctes>>,
+        arena: bumpalo::Bump,
     },
     Selection {
         input: usize,
         condition: condition::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
+        arena: bumpalo::Bump,
     },
     Limit {
         input: usize,
@@ -166,6 +168,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     RaInstruction::Projection {
                         expressions,
                         input: instructions.len() - 1,
+                        arena: bumpalo::Bump::new(),
                     }
                 }
                 RaExpression::Selection { inner, filter } => {
@@ -184,6 +187,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     RaInstruction::Selection {
                         condition: cond,
                         input: instructions.len() - 1,
+                        arena: bumpalo::Bump::new()
                     }
                 }
                 RaExpression::Limit { limit, offset, .. } => RaInstruction::Limit {
@@ -446,7 +450,7 @@ where
                     Ok(ExecuteResult::Ok(storage::Row::new(0, Vec::new())))
                 }
             }
-            Self::Projection { input, expressions } => {
+            Self::Projection { input, expressions, arena } => {
                 let row = match input_data.rows.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
@@ -456,7 +460,7 @@ where
 
                 let mut result = Vec::with_capacity(expressions.len());
 
-                let arena = bumpalo::Bump::new();
+                arena.reset();
                 for expr in expressions.iter_mut() {
                     let value = expr
                         .evaluate_mut(&row, engine, tguard, &arena)
@@ -470,21 +474,24 @@ where
 
                 Ok(ExecuteResult::Ok(storage::Row::new(0, result)))
             }
-            Self::Selection { input, condition } => {
+            Self::Selection { input, condition, arena } => {
                 let row = match input_data.rows.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
-                let row = storage::RowCow::Owned(row);
+                let row_cow = storage::RowCow::Borrowed(storage::BorrowedRow {
+                    rid: row.id(),
+                    data: &row.data,
+                });
 
-                let arena = bumpalo::Bump::new();
+                arena.reset();
                 let cond_res = condition
-                    .evaluate_mut(&row, engine, tguard, &arena)
+                    .evaluate_mut(&row_cow, engine, tguard, &arena)
                     .await
                     .ok_or(())?;
 
                 if cond_res {
-                    Ok(ExecuteResult::Ok(row.into_owned()))
+                    Ok(ExecuteResult::Ok(row))
                 } else {
                     Ok(ExecuteResult::PendingInput(*input))
                 }

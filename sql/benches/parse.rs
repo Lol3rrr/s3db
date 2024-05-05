@@ -72,5 +72,13 @@ pub fn select_conditions(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(not(flamegraph))]
 criterion_group!(benches, simple_select, select_conditions);
+#[cfg(flamegraph)]
+criterion_group!(
+    name = benches;
+    config = Criterion::default().with_profiler(pprof::criterion::PProfProfiler::new(1000, pprof::criterion::Output::Protobuf));
+    targets = simple_select, select_conditions
+);
+
 criterion_main!(benches);

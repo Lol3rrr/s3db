@@ -1625,6 +1625,7 @@ dependencies = [
  "bumpalo",
  "criterion",
  "nom",
+ "pprof",
  "pretty_assertions",
 ]
 
