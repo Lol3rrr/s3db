@@ -13,7 +13,7 @@ def main():
     output = (
         "## Profiling Links\n\n"
         "| Name | View (Grafana) |\n"
-        "|---|---|"
+        "|---|---|\n"
     )
 
     for project in listdir("target/criterion"):
