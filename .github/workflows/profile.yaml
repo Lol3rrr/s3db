@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -29,7 +33,7 @@ jobs:
           PROFILECLI_URL: ${{ secrets.PYROSCOPE_URL }}
           PROFILECLI_USERNAME: ${{ secrets.PYROSCOPE_USERNAME }}
           PROFILECLI_PASSWORD: ${{ secrets.PYROSCOPE_PASSWORD }}
-          GIT_BRANCH: ${{ env.GITHUB_REF }}
+          GIT_BRANCH: ${{ steps.extract_branch.outputs.branch }}
       - id: pr-check
         uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Get current date
