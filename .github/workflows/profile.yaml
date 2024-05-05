@@ -16,6 +16,11 @@ jobs:
         with:
           toolchain: nightly
           override: true
+      - name: Install Profilecli 
+        run: |
+          curl -fL https://github.com/grafana/pyroscope/releases/download/v1.5.0/profilecli_1.5.0_linux_amd64.tar.gz | tar xvz
+          chmod +x profilecli
+          sudo mv profilecli /usr/local/bin
       - name: Run Profiling for 10 seconds
         run: RUSTFLAGS="--cfg flamegraph" cargo bench --bench parse --bench execute -- --profile-time 10
       - name: Upload to pyroscope
