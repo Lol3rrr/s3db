@@ -1,12 +1,18 @@
 from os import listdir, environ
 from os.path import isfile, exists, join
 import subprocess
+import time
+from datetime import datetime
+
 
 def main():
     print(f"Starting Upload...")
 
     branch = environ.get("GIT_BRANCH")
 
+    output = (
+        "## Profiling Links\n\n"
+    )
 
     for project in listdir("target/criterion"):
         project_path = join("target/criterion", project)
@@ -27,7 +33,14 @@ def main():
                 if not exists(pb_path):
                     continue
 
-                upload_file(pb_path, branch, test_group, param)
+                link = upload_file(pb_path, branch, test_group, param)
+                output += f"[{test_group} - {param}]({link})\n"
+
+    current_dateTime = datetime.now()
+    output += f"\nDate: {current_dateTime}"
+
+    with open("profile-report.md", mode='w') as f:
+        f.write(output)
 
 def upload_file(path, branch, name, param):
     print(f"Uploading: {path} - branch: {branch} - bench-name: {name} - param: {param}")
@@ -43,6 +56,13 @@ def upload_file(path, branch, name, param):
             path
         ],
     )
+
+    now_in_secs = time.time()
+    now_in_ms = now_in_secs * 1000
+    from_ms = now_in_ms - (60 * 1000)
+    to_ms = now_in_ms + (60 * 1000)
+
+    return f"https://grafana.lol3r.com/d/adkqscb0pineof/s3db?orgId=3&from={from_ms:.0f}&to={to_ms:.0f}&var-branch={branch}&var-benchname={name}&var-benchparam={param}"
 
 if __name__ == '__main__':
     main()

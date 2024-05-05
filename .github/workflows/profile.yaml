@@ -30,11 +30,6 @@ jobs:
           PROFILECLI_USERNAME: ${{ secrets.PYROSCOPE_USERNAME }}
           PROFILECLI_PASSWORD: ${{ secrets.PYROSCOPE_PASSWORD }}
           GIT_BRANCH: "pyroscope"
-      - name: Upload result artifacts
-        id: upload-artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          path: target/criterion/
       - id: pr-check
         uses: 8BitJonny/gh-get-current-pr@3.0.0
       - name: Get current date
@@ -44,10 +39,6 @@ jobs:
         if: steps.pr-check.outputs.pr_found == 'true'
         uses: thollander/actions-comment-pull-request@v2
         with:
-          message: |
-            # Profiling Results
-            Link: ${{ steps.upload-artifacts.outputs.artifact-url }}
-
-            Date: ${{ steps.date.outputs.date }}
+          filePath: profile-report.md
           pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: profiling_results
