@@ -46,6 +46,8 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
         right_input: usize,
         condition: condition::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
         kind: sql::JoinKind,
+        right_rows: Vec<Row>,
+        right_done: bool,
     },
     LateralJoin {
         left_input: usize,
@@ -66,6 +68,8 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     OrderBy {
         input: usize,
         attributes: Vec<(usize, sql::OrderBy)>,
+        sorted: bool,
+        rows: Vec<Row>,
     },
     Chain {
         inputs: Vec<usize>,
@@ -211,6 +215,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     RaInstruction::OrderBy {
                         attributes: orderings,
                         input: instructions.len() - 1,
+                        sorted: false,
+                        rows: Vec::new(),
                     }
                 }
                 RaExpression::Aggregation {
@@ -285,6 +291,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         right_input: instructions.len() - 1,
                         condition: join_cond,
                         kind: kind.clone(),
+                        right_rows: Vec::new(),
+                        right_done: false,
                     }
                 }
                 RaExpression::LateralJoin {
@@ -550,8 +558,44 @@ where
             Self::Chain { inputs } => {
                 todo!("Chain")
             }
-            Self::OrderBy { input, attributes } => {
-                todo!("OrderBy")
+            Self::OrderBy { input, attributes, sorted, rows } => {
+                if !input_data.done {
+                    if let Some(r) = input_data.rows.pop_front() {
+                        rows.push(r);
+                    }
+
+                    return Ok(ExecuteResult::PendingInput(*input))
+                }
+
+                if !*sorted {
+                    rows.sort_unstable_by(|first, second| {
+                        for (idx, order) in attributes.iter() {
+                            let fvalue: &storage::Data = &first.data[*idx];
+                            let svalue: &storage::Data = &second.data[*idx];
+
+                            match fvalue.partial_cmp(svalue) {
+                                Some(core::cmp::Ordering::Equal) => continue,
+                                Some(core::cmp::Ordering::Less) => match order {
+                                    sql::OrderBy::Ascending => return core::cmp::Ordering::Greater,
+                                    sql::OrderBy::Descending => return core::cmp::Ordering::Less,
+                                },
+                                Some(core::cmp::Ordering::Greater) => match order {
+                                    sql::OrderBy::Ascending => return core::cmp::Ordering::Less,
+                                    sql::OrderBy::Descending => return core::cmp::Ordering::Greater,
+                                },
+                                None => continue,
+                            };
+                        }
+
+                        core::cmp::Ordering::Equal
+                    });
+                }
+                *sorted = true;
+
+                match rows.pop() {
+                    Some(r) => Ok(ExecuteResult::Ok(r)),
+                    None => Ok(ExecuteResult::OkEmpty),
+                }
             }
             Self::Aggregation {
                 input,
@@ -621,7 +665,30 @@ where
                 right_input,
                 condition,
                 kind,
+                right_rows,
+                right_done,
             } => {
+                if !*right_done {
+                    if !input_data.done {
+                        if let Some(row) = input_data.rows.pop_front() {
+                            right_rows.push(row);
+                        }
+
+                        return Ok(ExecuteResult::PendingInput(*right_input));
+                    } else {
+                        *right_done = true;
+                        input_data.done = false;
+                        return Ok(ExecuteResult::PendingInput(*left_input));
+                    }
+                }
+
+                let left_row = match input_data.rows.pop_front() {
+                    Some(r) => r,
+                    None => return Ok(ExecuteResult::PendingInput(*left_input)),
+                };
+
+                dbg!(&left_row, &right_rows);
+
                 todo!("Join")
             }
             Self::LateralJoin {

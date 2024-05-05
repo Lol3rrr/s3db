@@ -180,7 +180,9 @@ where
 
         let mut idx = self.instruction_stack.len() - 1;
         loop {
-            let instr = self.instruction_stack.get_mut(idx).expect("We just know");
+            // SAFETY
+            // TODO
+            let instr = unsafe { self.instruction_stack.get_unchecked_mut(idx) }; 
             let value = instr
                 .evaluate_mut(stack, row, engine, transaction, arena)
                 .await?;

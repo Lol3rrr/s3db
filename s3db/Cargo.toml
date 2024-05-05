@@ -17,6 +17,7 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 
 bumpalo = { workspace = true }
+console-subscriber = "0.2.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
