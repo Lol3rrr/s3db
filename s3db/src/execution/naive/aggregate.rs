@@ -121,7 +121,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                 }
                 Self::Max { value, expr, .. } => {
                     let tmp = expr
-                        .evaluate(row, engine, transaction, arena)
+                        .evaluate_mut(row, engine, transaction, arena)
                         .await
                         .ok_or_else(|| EvaulateRaError::Other("Test"))?;
 
