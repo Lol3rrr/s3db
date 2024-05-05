@@ -15,7 +15,7 @@ pub enum ExecuteResult {
 
 #[derive(Debug, Clone)]
 pub struct Input {
-    rows: VecDeque<Row>,
+    rows: Option<Row>,
     done: bool,
 }
 
@@ -349,7 +349,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
         let return_stack = Vec::with_capacity(instructions.len());
         let result_stack = vec![
             Input {
-                rows: VecDeque::new(),
+                rows: None,
                 done: false
             };
             instructions.len()
@@ -377,7 +377,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
 
         for input in self.result_stack.iter_mut() {
             input.done = false;
-            input.rows.clear();
+            input.rows =None;
         }
 
         loop {
@@ -389,7 +389,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     match self.return_stack.pop() {
                         Some(prev_idx) => {
                             let prev_inputs: &mut Input = self.result_stack.get_mut(prev_idx)?;
-                            prev_inputs.rows.push_back(v);
+                            let _ = prev_inputs.rows.replace(v);
                             prev_inputs.done = false;
 
                             idx = prev_idx;
@@ -447,7 +447,7 @@ where
                 }
             }
             Self::Projection { input, expressions } => {
-                let row = match input_data.rows.pop_front() {
+                let row = match input_data.rows.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
@@ -471,7 +471,7 @@ where
                 Ok(ExecuteResult::Ok(storage::Row::new(0, result)))
             }
             Self::Selection { input, condition } => {
-                let row = match input_data.rows.pop_front() {
+                let row = match input_data.rows.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
@@ -517,7 +517,7 @@ where
                 count,
             } => {
                 if count < offset {
-                    let tmp = input_data.rows.pop_front();
+                    let tmp = input_data.rows.take();
                     if tmp.is_some() {
                         *count += 1;
                     }
@@ -529,7 +529,7 @@ where
                     return Ok(ExecuteResult::OkEmpty);
                 }
 
-                match input_data.rows.pop_front() {
+                match input_data.rows.take() {
                     Some(row) => {
                         *count += 1;
                         return Ok(ExecuteResult::Ok(row));
@@ -560,7 +560,7 @@ where
             }
             Self::OrderBy { input, attributes, sorted, rows } => {
                 if !input_data.done {
-                    if let Some(r) = input_data.rows.pop_front() {
+                    if let Some(r) = input_data.rows.take() {
                         rows.push(r);
                     }
 
@@ -608,7 +608,7 @@ where
                 outer,
             } => {
                 if !input_data.done {
-                    match input_data.rows.pop_front() {
+                    match input_data.rows.take() {
                         Some(row) => {
                             for group in groups.iter_mut() {
                                 let rep = group
@@ -670,7 +670,7 @@ where
             } => {
                 if !*right_done {
                     if !input_data.done {
-                        if let Some(row) = input_data.rows.pop_front() {
+                        if let Some(row) = input_data.rows.take() {
                             right_rows.push(row);
                         }
 
@@ -682,7 +682,7 @@ where
                     }
                 }
 
-                let left_row = match input_data.rows.pop_front() {
+                let left_row = match input_data.rows.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*left_input)),
                 };
