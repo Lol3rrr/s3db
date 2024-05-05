@@ -38,7 +38,7 @@ def upload_file(path, branch, name, param):
             "upload",
             "--extra-labels=project=s3db",
             f"--extra-labels=branch={branch}",
-            f"--extra-labels=bench-name={name}",
+            f"--extra-labels=benchname={name}",
             f"--extra-labels=params={param}",
             path
         ],
