@@ -5,7 +5,7 @@ use storage::Row;
 use super::{condition, value};
 use crate::ra::{self, AttributeId, RaExpression};
 
-use futures::stream::StreamExt;
+use futures::{future::FutureExt, stream::StreamExt};
 
 pub enum ExecuteResult {
     PendingInput(usize),
@@ -44,17 +44,26 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     },
     Join {
         left_input: usize,
+        returned_left: bool,
         right_input: usize,
         condition: condition::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
         kind: sql::JoinKind,
         right_rows: Vec<Row>,
+        right_index: usize,
         right_done: bool,
+        right_column_count: usize,
     },
     LateralJoin {
         left_input: usize,
+        left_ids: Vec<AttributeId>,
+        left_row: Option<Row>,
+        right_rows: Vec<Row>,
         right_expr: RaExpression,
         condition: condition::Mapper<'expr, 'outer, 'placeholders, 'ctes>,
         kind: sql::JoinKind,
+        placeholders: &'placeholders HashMap<usize, storage::Data>,
+        ctes: &'ctes HashMap<String, storage::EntireRelation>,
+        outer: &'outer HashMap<AttributeId, storage::Data>,
     },
     Aggregation {
         input: usize,
@@ -88,6 +97,13 @@ pub struct RaVm<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     result_stack: Vec<Input>,
 }
 
+#[derive(Debug)]
+pub enum VmConstructError<SE> {
+    Storage(SE),
+    ConstructValueMapper(super::EvaulateRaError<SE>),
+    Other(&'static str),
+}
+
 impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
     RaVm<'expr, 'outer, 'placeholders, 'ctes, 'stream>
 {
@@ -96,9 +112,10 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
         placeholders: &'placeholders HashMap<usize, storage::Data>,
         ctes: &'ctes HashMap<String, storage::EntireRelation>,
         outer: &'outer HashMap<AttributeId, storage::Data>,
-    ) -> Result<Self, ()>
+    ) -> Result<Self, VmConstructError<SE>>
     where
         'e: 'expr,
+        SE: core::fmt::Debug,
     {
         let mut pending = vec![expr];
         let mut expression_stack = Vec::new();
@@ -160,7 +177,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                             &attribute.value,
                             (&columns, placeholders, ctes, outer),
                         )
-                        .map_err(|e| ())?;
+                        .map_err(|e| VmConstructError::ConstructValueMapper(e))?;
                         expressions.push(mapper);
                     }
 
@@ -181,7 +198,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         filter,
                         (&columns, placeholders, ctes, outer),
                     )
-                    .map_err(|e| ())?;
+                    .map_err(|e| {
+                        VmConstructError::Other(concat!("Constructing Mapper - ", line!()))
+                    })?;
 
                     RaInstruction::Selection {
                         condition: cond,
@@ -277,6 +296,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     let left_columns = left.get_columns();
                     let right_columns = right.get_columns();
 
+                    let right_column_count = right_columns.len();
+
                     let combined_columns: Vec<_> = left_columns
                         .into_iter()
                         .chain(right_columns.into_iter())
@@ -287,15 +308,20 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         condition,
                         (&combined_columns, placeholders, ctes, outer),
                     )
-                    .map_err(|e| ())?;
+                    .map_err(|e| {
+                        VmConstructError::Other(concat!("Constructing Mapper - ", line!()))
+                    })?;
 
                     RaInstruction::Join {
+                        returned_left: false,
                         left_input: instructions.len() - 2,
                         right_input: instructions.len() - 1,
                         condition: join_cond,
                         kind: kind.clone(),
                         right_rows: Vec::new(),
+                        right_index: 0,
                         right_done: false,
+                        right_column_count,
                     }
                 }
                 RaExpression::LateralJoin {
@@ -308,7 +334,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     let right_columns = right.get_columns();
 
                     let combined_columns: Vec<_> = left_columns
-                        .into_iter()
+                        .iter()
+                        .cloned()
                         .chain(right_columns.into_iter())
                         .map(|(_, n, t, i)| (n, t, i))
                         .collect();
@@ -317,19 +344,27 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         condition,
                         (&combined_columns, placeholders, ctes, outer),
                     )
-                    .map_err(|e| ())?;
+                    .map_err(|e| {
+                        VmConstructError::Other(concat!("Constructing Condition: ", line!()))
+                    })?;
 
                     RaInstruction::LateralJoin {
+                        left_ids: left_columns.into_iter().map(|(_, _, _, id)| id).collect(),
                         left_input: instructions.len() - 1,
+                        left_row: None,
+                        right_rows: Vec::new(),
                         right_expr: *right.clone(),
                         condition: join_cond,
                         kind: kind.clone(),
+                        placeholders,
+                        outer,
+                        ctes,
                     }
                 }
                 RaExpression::CTE { name, .. } => {
                     let cte = match ctes.get(name) {
                         Some(c) => c,
-                        None => return Err(())?,
+                        None => return Err(VmConstructError::Other("Getting CTE"))?,
                     };
 
                     RaInstruction::CTE {
@@ -350,12 +385,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
         }
 
         let return_stack = Vec::with_capacity(instructions.len());
-        let result_stack = vec![
-            Input {
-                done: false
-            };
-            instructions.len()
-        ];
+        let result_stack = vec![Input { done: false }; instructions.len()];
 
         Ok(Self {
             instructions,
@@ -409,7 +439,12 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     idx = prev_idx;
                 }
                 Ok(ExecuteResult::PendingInput(_)) if input.done => {
-                    return None;
+                    let prev_idx = self.return_stack.pop()?;
+                    let prev_inputs: &mut Input = self.result_stack.get_mut(prev_idx)?;
+
+                    prev_inputs.done = true;
+
+                    idx = prev_idx;
                 }
                 Ok(ExecuteResult::PendingInput(input_idx)) => {
                     self.return_stack.push(idx);
@@ -579,10 +614,14 @@ where
                 sorted,
                 rows,
             } => {
+                dbg!(&rows, &input_data);
+
                 if !input_data.done {
                     if let Some(r) = input_row.take() {
                         rows.push(r);
                     }
+
+                    dbg!(&rows, &input_data);
 
                     return Ok(ExecuteResult::PendingInput(*input));
                 }
@@ -683,12 +722,15 @@ where
                 Ok(ExecuteResult::Ok(storage::Row::new(0, resulting_row)))
             }
             Self::Join {
+                returned_left,
                 left_input,
                 right_input,
                 condition,
                 kind,
                 right_rows,
                 right_done,
+                right_index,
+                right_column_count,
             } => {
                 if !*right_done {
                     if !input_data.done {
@@ -696,36 +738,199 @@ where
                             right_rows.push(row);
                         }
 
+                        *right_index = 0;
+                        *returned_left = false;
                         return Ok(ExecuteResult::PendingInput(*right_input));
                     } else {
                         *right_done = true;
                         input_data.done = false;
+                        *returned_left = false;
                         return Ok(ExecuteResult::PendingInput(*left_input));
                     }
                 }
 
-                let left_row = match input_row.take() {
+                let left_row = match input_row.as_ref() {
                     Some(r) => r,
-                    None => return Ok(ExecuteResult::PendingInput(*left_input)),
+                    None => {
+                        *returned_left = false;
+                        *right_index = 0;
+                        return Ok(ExecuteResult::PendingInput(*left_input));
+                    }
                 };
 
-                dbg!(&left_row, &right_rows);
-
+                let arena = bumpalo::Bump::new();
                 match kind {
-                    sql::JoinKind::Inner => todo!("Inner Join"),
-                    sql::JoinKind::LeftOuter => todo!("Left Outer Join"),
+                    sql::JoinKind::Inner => {
+                        while *right_index < right_rows.len() {
+                            let right = right_rows.get(*right_index).unwrap();
+                            let tmp_row = storage::Row::new(
+                                0,
+                                left_row
+                                    .data
+                                    .iter()
+                                    .cloned()
+                                    .chain(right.data.iter().cloned())
+                                    .collect(),
+                            );
+                            let row = storage::RowCow::Owned(tmp_row);
+
+                            *right_index += 1;
+
+                            if condition
+                                .evaluate_mut(&row, engine, tguard, &arena)
+                                .await
+                                .unwrap_or(false)
+                            {
+                                return Ok(ExecuteResult::Ok(row.into_owned()));
+                            }
+                        }
+                        input_row.take();
+
+                        Ok(ExecuteResult::PendingInput(*left_input))
+                    }
+                    sql::JoinKind::LeftOuter => {
+                        while *right_index < right_rows.len() {
+                            let right = right_rows.get(*right_index).unwrap();
+                            let tmp_row = storage::Row::new(
+                                0,
+                                left_row
+                                    .data
+                                    .iter()
+                                    .cloned()
+                                    .chain(right.data.iter().cloned())
+                                    .collect(),
+                            );
+                            let row = storage::RowCow::Owned(tmp_row);
+
+                            *right_index += 1;
+
+                            if condition
+                                .evaluate_mut(&row, engine, tguard, &arena)
+                                .await
+                                .unwrap_or(false)
+                            {
+                                *returned_left = true;
+                                return Ok(ExecuteResult::Ok(row.into_owned()));
+                            }
+                        }
+
+                        if !*returned_left {
+                            *returned_left = true;
+                            let row = storage::Row::new(
+                                0,
+                                left_row
+                                    .data
+                                    .iter()
+                                    .cloned()
+                                    .chain((0..*right_column_count).map(|_| storage::Data::Null))
+                                    .collect(),
+                            );
+                            return Ok(ExecuteResult::Ok(row));
+                        }
+
+                        input_row.take();
+
+                        Ok(ExecuteResult::PendingInput(*left_input))
+                    }
                     sql::JoinKind::RightOuter => todo!("Right Outer Join"),
                     sql::JoinKind::FullOuter => todo!("Full Outer Join"),
                     sql::JoinKind::Cross => todo!("Cross Join"),
                 }
             }
             Self::LateralJoin {
+                left_ids,
                 left_input,
+                left_row,
+                right_rows,
                 right_expr,
                 condition,
                 kind,
+                ctes,
+                outer,
+                placeholders,
             } => {
-                todo!("LateralJoin")
+                if right_rows.is_empty() {
+                    left_row.take();
+                }
+
+                if left_row.is_none() {
+                    match input_row.take() {
+                        Some(r) => {
+                            *left_row = Some(r);
+                        }
+                        None => return Ok(ExecuteResult::PendingInput(*left_input)),
+                    }
+                }
+
+                let left_row = left_row.as_ref().expect("");
+
+                if right_rows.is_empty() {
+                    let mut outer = outer.clone();
+                    for (idx, id) in left_ids.iter().enumerate() {
+                        outer.insert(id.clone(), left_row.data[idx].clone());
+                    }
+
+                    let mut right_vm =
+                        RaVm::construct::<S::LoadingError>(right_expr, placeholders, ctes, &outer)
+                            .expect("");
+                    async {
+                        while let Some(n_row) = right_vm.get_next(engine, tguard).await {
+                            right_rows.push(n_row);
+                        }
+                    }
+                    .boxed_local()
+                    .await;
+                }
+
+                let arena = bumpalo::Bump::new();
+                match kind {
+                    sql::JoinKind::Inner => {
+                        while !right_rows.is_empty() {
+                            let right = right_rows.remove(0);
+                            let tmp_row = storage::Row::new(
+                                0,
+                                left_row
+                                    .data
+                                    .iter()
+                                    .cloned()
+                                    .chain(right.data.into_iter())
+                                    .collect(),
+                            );
+                            let row = storage::RowCow::Owned(tmp_row);
+
+                            if condition
+                                .evaluate_mut(&row, engine, tguard, &arena)
+                                .await
+                                .unwrap_or(false)
+                            {
+                                return Ok(ExecuteResult::Ok(row.into_owned()));
+                            }
+                        }
+
+                        Ok(ExecuteResult::PendingInput(*left_input))
+                    }
+                    sql::JoinKind::LeftOuter => todo!("Left Outer Join"),
+                    sql::JoinKind::RightOuter => todo!("Right Outer Join"),
+                    sql::JoinKind::FullOuter => todo!("Full Outer Join"),
+                    sql::JoinKind::Cross => {
+                        while !right_rows.is_empty() {
+                            let right = right_rows.remove(0);
+                            let row = storage::Row::new(
+                                0,
+                                left_row
+                                    .data
+                                    .iter()
+                                    .cloned()
+                                    .chain(right.data.into_iter())
+                                    .collect(),
+                            );
+
+                            return Ok(ExecuteResult::Ok(row));
+                        }
+
+                        Ok(ExecuteResult::PendingInput(*left_input))
+                    }
+                }
             }
         }
     }

@@ -41,6 +41,19 @@ macro_rules! storage_setup {
     }};
 }
 
+macro_rules! select_query {
+    ($query:literal, $engine:ident, $ctx:ident) => {{
+        let arena = bumpalo::Bump::new();
+        let query = Query::parse($query.as_bytes(), &arena).unwrap();
+        let res = $engine.execute(&query, &mut $ctx, &arena).await.unwrap();
+
+        match res {
+            ExecuteResult::Select { content, .. } => content,
+            other => panic!("{:?}", other),
+        }
+    }};
+}
+
 #[tokio::test]
 async fn create_table_with_sequence() {
     let storage = InMemoryStorage::new();
@@ -1576,4 +1589,87 @@ async fn serial_usage_with_setval() {
         }],
         tmp.parts
     );
+}
+
+#[ignore = "Just for testing"]
+#[tokio::test]
+async fn pgbench_setup() {
+    let storage = InMemoryStorage::new();
+    let transaction = storage.start_transaction().await.unwrap();
+    let engine = NaiveEngine::new(storage);
+
+    let mut ctx = Context::new();
+    ctx.transaction = Some(transaction);
+
+    let arena = bumpalo::Bump::new();
+
+    for query_str in ["create table pgbench_history(tid int,bid int,aid    int,delta int,mtime timestamp,filler char(22))", "create table pgbench_tellers(tid int not null,bid int,tbalance int,filler char(84)) with (fillfactor=100)", "create table pgbench_accounts(aid    int not null,bid int,abalance int,filler char(84)) with (fillfactor=100)", "create table pgbench_branches(bid int not null,bbalance int,filler char(88)) with (fillfactor=100)"] {
+        let query = Query::parse(query_str.as_bytes(), &arena).unwrap();
+        let res = engine
+            .execute(&query, &mut ctx, &bumpalo::Bump::new())
+            .await
+            .unwrap();
+        assert!(matches!(res, ExecuteResult::Create), "{:?}", res);
+    }
+
+    let pg_class_res = select_query!("select * FROM pg_catalog.pg_class", engine, ctx);
+    dbg!(pg_class_res);
+
+    let pg_namespace_res = select_query!("select * FROM pg_catalog.pg_namespace", engine, ctx);
+    dbg!(pg_namespace_res);
+
+    let select_array_position_res = select_query!(
+        "select pg_catalog.array_position(pg_catalog.current_schemas(true), 'default')",
+        engine,
+        ctx
+    );
+    dbg!(select_array_position_res);
+
+    let partial_join_without_condition = select_query!(
+        "select 
+    *
+from 
+    pg_catalog.pg_class as c 
+    join pg_catalog.pg_namespace as n on (n.oid = c.relnamespace)",
+        engine,
+        ctx
+    );
+    dbg!(partial_join_without_condition);
+
+    let without_condition = select_query!("select 
+    o.n, p.partstrat, c.relname
+from 
+    pg_catalog.pg_class as c 
+    join pg_catalog.pg_namespace as n on (n.oid = c.relnamespace) 
+    cross join lateral (select pg_catalog.array_position(pg_catalog.current_schemas(true), n.nspname)) as o(n) 
+    left join pg_catalog.pg_partitioned_table as p on (p.partrelid = c.oid) 
+    left join pg_catalog.pg_inherits as i on (c.oid = i.inhparent)", engine, ctx);
+    dbg!(without_condition);
+
+    let query = Query::parse("
+select 
+    o.n, p.partstrat, pg_catalog.count(i.inhparent)
+from 
+    pg_catalog.pg_class as c 
+    join pg_catalog.pg_namespace as n on (n.oid = c.relnamespace) 
+    cross join lateral (select pg_catalog.array_position(pg_catalog.current_schemas(true), n.nspname)) as o(n) 
+    left join pg_catalog.pg_partitioned_table as p on (p.partrelid = c.oid) 
+    left join pg_catalog.pg_inherits as i on (c.oid = i.inhparent) 
+where c.relname = 'pgbench_accounts' and o.n is not null 
+group by 1, 2 
+order by 1 asc 
+limit 1".as_bytes(), &arena).unwrap();
+    let res = engine
+        .execute(&query, &mut ctx, &bumpalo::Bump::new())
+        .await
+        .unwrap();
+
+    let content = match res {
+        ExecuteResult::Select { content, .. } => content,
+        other => panic!("{:?}", other),
+    };
+
+    dbg!(content);
+
+    todo!()
 }

@@ -377,3 +377,28 @@ fn delete_with_correlated_subquery() {
 
     todo!()
 }
+
+#[ignore = "TODO"]
+#[test]
+fn compare_namespace_with_fixed() {
+    let arena = Bump::new();
+    let query_str = "SELECT name FROM tables WHERE name = 'something'";
+
+    let query = match Query::parse(query_str.as_bytes(), &arena) {
+        Ok(Query::Select(s)) => s,
+        other => panic!("{:?}", other),
+    };
+
+    let schemas: Schemas = [(
+        "tables".to_string(),
+        vec![("name".to_string(), DataType::Name)],
+    )]
+    .into_iter()
+    .collect();
+
+    let (tmp, parameter_types) = RaExpression::parse_select(&query, &schemas).unwrap();
+
+    dbg!(tmp);
+
+    todo!();
+}

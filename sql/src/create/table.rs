@@ -11,6 +11,7 @@ pub struct CreateTable<'s, 'a> {
     pub fields: crate::arenas::Vec<'a, TableField<'s, 'a>>,
     pub if_not_exists: bool,
     pub primary_key: Option<crate::arenas::Vec<'a, Identifier<'s>>>,
+    pub partitioned: Option<()>,
     pub withs: crate::arenas::Vec<'a, WithOptions>,
 }
 
@@ -43,6 +44,7 @@ impl<'s, 'a> CompatibleParser for CreateTable<'s, 'a> {
             primary_key: self.primary_key.as_ref().map(|parts| {
                 crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())
             }),
+            partitioned: self.partitioned.clone(),
             withs: self.withs.clone_to_heap(),
         }
     }
@@ -56,92 +58,118 @@ pub fn create_table<'i, 's, 'a>(
 where
     'i: 's,
 {
-    let (remaining, (_, _, _, if_not_exists, _, table_ident, _, _, _, raw_parts, _, _, with)) =
-        nom::sequence::tuple((
-            nom::bytes::complete::tag_no_case("CREATE"),
+    let (
+        remaining,
+        (_, _, _, if_not_exists, _, table_ident, _, _, _, raw_parts, _, _, partition, with),
+    ) = nom::sequence::tuple((
+        nom::bytes::complete::tag_no_case("CREATE"),
+        nom::character::complete::multispace1,
+        nom::bytes::complete::tag_no_case("TABLE"),
+        nom::combinator::opt(nom::sequence::tuple((
             nom::character::complete::multispace1,
-            nom::bytes::complete::tag_no_case("TABLE"),
-            nom::combinator::opt(nom::sequence::tuple((
-                nom::character::complete::multispace1,
-                nom::bytes::complete::tag_no_case("IF NOT EXISTS"),
-            ))),
-            nom::character::complete::multispace1,
-            Identifier::parse(),
-            nom::character::complete::multispace0,
-            nom::bytes::complete::tag("("),
-            nom::character::complete::multispace0,
-            crate::nom_util::bump_separated_list1(
-                a,
+            nom::bytes::complete::tag_no_case("IF NOT EXISTS"),
+        ))),
+        nom::character::complete::multispace1,
+        Identifier::parse(),
+        nom::character::complete::multispace0,
+        nom::bytes::complete::tag("("),
+        nom::character::complete::multispace0,
+        crate::nom_util::bump_separated_list1(
+            a,
+            nom::sequence::tuple((
+                nom::character::complete::multispace0,
+                nom::bytes::complete::tag(","),
+                nom::character::complete::multispace0,
+            )),
+            nom::branch::alt((
+                TableField::parse_arena(a).map(ParsedTableField::Field),
                 nom::sequence::tuple((
-                    nom::character::complete::multispace0,
-                    nom::bytes::complete::tag(","),
-                    nom::character::complete::multispace0,
-                )),
-                nom::branch::alt((
-                    TableField::parse_arena(a).map(ParsedTableField::Field),
-                    nom::sequence::tuple((
-                        nom::bytes::complete::tag_no_case("PRIMARY"),
-                        nom::character::complete::multispace1,
-                        nom::bytes::complete::tag_no_case("KEY"),
-                        nom::character::complete::multispace0,
-                        nom::bytes::complete::tag("("),
-                        nom::character::complete::multispace0,
-                        crate::nom_util::bump_separated_list1(
-                            a,
-                            nom::sequence::tuple((
-                                nom::character::complete::multispace0,
-                                nom::bytes::complete::tag(","),
-                                nom::character::complete::multispace0,
-                            )),
-                            Identifier::parse(),
-                        ),
-                        nom::character::complete::multispace0,
-                        nom::bytes::complete::tag(")"),
-                    ))
-                    .map(|(_, _, _, _, _, _, parts, _, _)| ParsedTableField::PrimaryKey(parts)),
-                )),
-            ),
-            nom::character::complete::multispace0,
-            nom::bytes::complete::tag(")"),
-            nom::combinator::opt(
-                nom::sequence::tuple((
+                    nom::bytes::complete::tag_no_case("PRIMARY"),
                     nom::character::complete::multispace1,
-                    nom::bytes::complete::tag_no_case("WITH"),
-                    nom::character::complete::multispace1,
-                    nom::sequence::delimited(
-                        nom::bytes::complete::tag("("),
-                        crate::nom_util::bump_separated_list0(
-                            a,
-                            nom::sequence::tuple((
-                                nom::character::complete::multispace0,
-                                nom::bytes::complete::tag(","),
-                                nom::character::complete::multispace0,
-                            )),
-                            nom::branch::alt((nom::sequence::tuple((
-                                nom::bytes::complete::tag("fillfactor"),
-                                nom::bytes::complete::tag("="),
-                                Literal::parse(),
-                            ))
-                            .map(|(_, _, val)| {
-                                let value = match val {
-                                    Literal::SmallInteger(v) => v as usize,
-                                    Literal::Integer(v) => v as usize,
-                                    Literal::BigInteger(v) => v as usize,
-                                    other => panic!(
-                                        "Fill Factor needs to be a number, but got {:?}",
-                                        other
-                                    ),
-                                };
-
-                                WithOptions::FillFactor(value)
-                            }),)),
-                        ),
-                        nom::bytes::complete::tag(")"),
+                    nom::bytes::complete::tag_no_case("KEY"),
+                    nom::character::complete::multispace0,
+                    nom::bytes::complete::tag("("),
+                    nom::character::complete::multispace0,
+                    crate::nom_util::bump_separated_list1(
+                        a,
+                        nom::sequence::tuple((
+                            nom::character::complete::multispace0,
+                            nom::bytes::complete::tag(","),
+                            nom::character::complete::multispace0,
+                        )),
+                        Identifier::parse(),
                     ),
+                    nom::character::complete::multispace0,
+                    nom::bytes::complete::tag(")"),
                 ))
-                .map(|(_, _, _, parts)| parts),
+                .map(|(_, _, _, _, _, _, parts, _, _)| ParsedTableField::PrimaryKey(parts)),
+            )),
+        ),
+        nom::character::complete::multispace0,
+        nom::bytes::complete::tag(")"),
+        nom::combinator::opt(nom::sequence::tuple((
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("PARTITION"),
+            nom::character::complete::multispace1,
+            nom::bytes::complete::tag_no_case("BY"),
+            nom::character::complete::multispace1,
+            nom::branch::alt((nom::combinator::map(
+                nom::bytes::complete::tag_no_case("range"),
+                |_| (),
+            ),)),
+            nom::character::complete::multispace1,
+            nom::sequence::delimited(
+                nom::sequence::tuple((
+                    nom::bytes::complete::tag("("),
+                    nom::character::complete::multispace0,
+                )),
+                Identifier::parse(),
+                nom::sequence::tuple((
+                    nom::character::complete::multispace0,
+                    nom::bytes::complete::tag(")"),
+                )),
             ),
-        ))(i)?;
+        ))),
+        nom::combinator::opt(
+            nom::sequence::tuple((
+                nom::character::complete::multispace1,
+                nom::bytes::complete::tag_no_case("WITH"),
+                nom::character::complete::multispace1,
+                nom::sequence::delimited(
+                    nom::bytes::complete::tag("("),
+                    crate::nom_util::bump_separated_list0(
+                        a,
+                        nom::sequence::tuple((
+                            nom::character::complete::multispace0,
+                            nom::bytes::complete::tag(","),
+                            nom::character::complete::multispace0,
+                        )),
+                        nom::branch::alt((nom::sequence::tuple((
+                            nom::bytes::complete::tag("fillfactor"),
+                            nom::bytes::complete::tag("="),
+                            Literal::parse(),
+                        ))
+                        .map(|(_, _, val)| {
+                            let value = match val {
+                                Literal::SmallInteger(v) => v as usize,
+                                Literal::Integer(v) => v as usize,
+                                Literal::BigInteger(v) => v as usize,
+                                other => {
+                                    panic!("Fill Factor needs to be a number, but got {:?}", other)
+                                }
+                            };
+
+                            WithOptions::FillFactor(value)
+                        }),)),
+                    ),
+                    nom::bytes::complete::tag(")"),
+                ),
+            ))
+            .map(|(_, _, _, parts)| parts),
+        ),
+    ))(i)?;
+
+    dbg!(&partition);
 
     let mut fields = crate::arenas::Vec::arena(a);
     let mut primary_key = None;
@@ -168,6 +196,7 @@ where
             fields,
             if_not_exists: if_not_exists.is_some(),
             primary_key,
+            partitioned: partition.map(|_| ()),
             withs: with.unwrap_or(crate::arenas::Vec::arena(a)),
         },
     ))
@@ -220,6 +249,7 @@ mod tests {
                     }
                 ].into(),
                 primary_key: None,
+                partitioned: None,
                 withs: Vec::new().into(),
             },
             &[b';']
@@ -273,6 +303,7 @@ mod tests {
                 identifier: "alert_instance".into(),
                 withs: vec![].into(),
                 primary_key: Some(vec!["def_org_id".into(), "def_uid".into(), "labels_hash".into()].into()),
+                partitioned: None,
                 if_not_exists: true,
             },
             &[b';']
@@ -295,7 +326,29 @@ mod tests {
                 .into(),
                 if_not_exists: false,
                 primary_key: None,
+                partitioned: None,
                 withs: vec![WithOptions::FillFactor(100)].into()
+            }
+        );
+    }
+
+    #[test]
+    fn create_partioned() {
+        arena_parser_parse!(
+            CreateTable,
+            "CREATE TABLE testing (name int) partition by range (name)",
+            CreateTable {
+                identifier: "testing".into(),
+                fields: vec![TableField {
+                    ident: "name".into(),
+                    datatype: DataType::Integer,
+                    modifiers: Vec::new().into(),
+                }]
+                .into(),
+                if_not_exists: false,
+                primary_key: None,
+                partitioned: Some(()),
+                withs: Vec::new().into(),
             }
         );
     }

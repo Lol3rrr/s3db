@@ -347,14 +347,16 @@ where
 
                         async move {
                             let mut condition_mapper = condition_mapper.try_borrow_mut().unwrap();
-                            if condition_mapper
+                            match condition_mapper
                                 .evaluate_mut(&row, self, transaction, arena)
                                 .await
-                                .unwrap()
                             {
-                                Some(row)
-                            } else {
-                                None
+                                Some(true) => Some(row),
+                                Some(false) => None,
+                                None => {
+                                    // TODO
+                                    None
+                                }
                             }
                         }
                     })
@@ -1686,7 +1688,7 @@ where
                         .insert_rows(
                             "pg_tables",
                             &mut core::iter::once(vec![
-                                Data::Name("".to_string()),
+                                Data::Name("default".to_string()),
                                 Data::Name(create.identifier.0.to_string()),
                                 Data::Name("".to_string()),
                                 Data::Name("".to_string()),
@@ -1705,7 +1707,7 @@ where
                             &mut core::iter::once(vec![
                                 Data::Integer(0), // This should be the pg_class_id, which is the same as the row id, but no idea how to handle this currently
                                 Data::Name(create.identifier.0.to_string()),
-                                Data::Integer(0),
+                                Data::Integer(1),
                             ]),
                             transaction,
                         )

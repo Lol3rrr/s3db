@@ -29,7 +29,7 @@ fn serialize<'d>(
     match format {
         FormatCode::Text => {
             let tmp = match data {
-                storage::Data::Null => Cow::Borrowed("NULL".as_bytes()),
+                storage::Data::Null => Cow::Borrowed("null".as_bytes()),
                 storage::Data::Name(n) => Cow::Borrowed(n.as_bytes()),
                 storage::Data::Varchar(c) => Cow::Owned(c.iter().map(|c| *c as u8).collect()),
                 storage::Data::Text(c) => Cow::Owned(c.as_bytes().to_vec()),

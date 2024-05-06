@@ -151,6 +151,7 @@ impl Data {
             (Self::Varchar(d), sql::DataType::VarChar { .. }) => Ok(Self::Varchar(d)),
             (Self::Varchar(d), sql::DataType::Text) => Ok(Self::Text(d.into_iter().collect())),
             (Self::Text(d), sql::DataType::Text) => Ok(Self::Text(d)),
+            (Self::Text(d), sql::DataType::Name) => Ok(Self::Name(d)),
             (Self::Text(d), sql::DataType::VarChar { .. }) => {
                 Ok(Self::Varchar(d.chars().collect()))
             }
@@ -180,6 +181,7 @@ impl Data {
             (Self::BigInt(d), sql::DataType::BigInteger) => Ok(Self::BigInt(d)),
             (Self::Boolean(b), sql::DataType::Bool) => Ok(Self::Boolean(b)),
             (Self::Timestamp(d), sql::DataType::Timestamp) => Ok(Self::Timestamp(d)),
+            (Self::Null, sql::DataType::Integer) => Ok(Self::Integer(0)),
             (v, _) => Err((v, target)),
         }
     }
@@ -195,7 +197,9 @@ impl PartialOrd for Data {
             (Self::Char(v1), Self::Char(v2)) => Some(v1.cmp(v2)),
             (Self::Varchar(v1), Self::Varchar(v2)) => Some(v1.cmp(v2)),
             (Self::Text(v1), Self::Text(v2)) => Some(v1.cmp(v2)),
+            (Self::Text(v1), Self::Name(v2)) => Some(v1.cmp(v2)),
             (Self::Name(v1), Self::Name(v2)) => Some(v1.cmp(v2)),
+            (Self::Name(v1), Self::Text(v2)) => Some(v1.cmp(v2)),
             (Self::Timestamp(v1), Self::Timestamp(v2)) => Some(v1.cmp(v2)),
             (Self::List(v1), Self::List(v2)) => v1.partial_cmp(v2),
             _ => None,

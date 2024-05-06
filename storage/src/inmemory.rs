@@ -137,7 +137,7 @@ fn postgres_tables() -> impl Iterator<Item = (String, crate::TableSchema, Vec<cr
             vec![crate::Row::new(
                 0,
                 vec![
-                    crate::Data::Integer(0),
+                    crate::Data::Integer(1),
                     crate::Data::Name("default".to_string()),
                     crate::Data::Integer(0),
                 ],
@@ -155,7 +155,9 @@ fn postgres_tables() -> impl Iterator<Item = (String, crate::TableSchema, Vec<cr
                     crate::ColumnSchema {
                         name: "partstrat".into(),
                         ty: sql::DataType::Text,
-                        mods: Vec::new(),
+                        mods: vec![sql::TypeModifier::DefaultValue {
+                            value: Some(sql::Literal::Str("r".into())),
+                        }],
                     },
                     crate::ColumnSchema {
                         name: "partdefid".into(),

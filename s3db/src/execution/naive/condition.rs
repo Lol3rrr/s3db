@@ -357,10 +357,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         _ => Some(Cow::Owned(false)),
                     },
                     ra::RaComparisonOperator::IsNot => {
-                        dbg!(&first_value, &second_value);
-
-                        // Err(EvaulateRaError::Other("Not implemented - IsNot Operator "))
-                        None
+                        Some(Cow::Owned(first_value != second_value))
                     }
                 }
             }

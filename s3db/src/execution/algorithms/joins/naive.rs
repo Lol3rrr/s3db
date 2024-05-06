@@ -115,6 +115,22 @@ where
 
                 Ok((result_schema, futures::stream::iter(result_rows).boxed()))
             }
+            sql::JoinKind::Cross => {
+                let mut result_rows = Vec::new();
+                while let Some(left_row) = left_result.next().await {
+                    for right_row in right_rows.iter() {
+                        let joined_row_data = {
+                            let mut tmp: Vec<storage::Data> = left_row.as_ref().to_vec();
+                            tmp.extend(right_row.as_ref().iter().cloned());
+                            tmp
+                        };
+
+                        result_rows.push(storage::Row::new(0, joined_row_data));
+                    }
+                }
+
+                Ok((result_schema, futures::stream::iter(result_rows).boxed()))
+            }
             other => {
                 dbg!(other);
 
