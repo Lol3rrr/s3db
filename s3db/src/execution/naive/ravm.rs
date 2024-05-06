@@ -913,7 +913,7 @@ where
                     sql::JoinKind::RightOuter => todo!("Right Outer Join"),
                     sql::JoinKind::FullOuter => todo!("Full Outer Join"),
                     sql::JoinKind::Cross => {
-                        while !right_rows.is_empty() {
+                        if !right_rows.is_empty() {
                             let right = right_rows.remove(0);
                             let row = storage::Row::new(
                                 0,

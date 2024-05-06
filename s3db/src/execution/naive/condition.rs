@@ -235,11 +235,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let (_, mut rows) = engine
-                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, arena)
-                        .await
-                        .ok()?;
-                    Some(rows.next().await.is_some())
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(query,placeholders,ctes,&n_outer).ok()?;
+                    Some(vm.get_next(engine, transaction).await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;
@@ -382,11 +379,8 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let (_, mut rows) = engine
-                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, arena)
-                        .await
-                        .ok()?;
-                    Some(rows.next().await.is_some())
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(query, placeholders, ctes, &n_outer).ok()?;
+                    Some(vm.get_next(engine, transaction).await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;

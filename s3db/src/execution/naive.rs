@@ -127,6 +127,7 @@ impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
 {
+    #[deprecated]
     async fn evaluate_ra<'s, 'exp, 'p, 'f, 'o, 'c, 't, 'arena, 'rd>(
         &'s self,
         expr: &'exp ra::RaExpression,
@@ -786,12 +787,23 @@ where
             ra::CTEValue::Standard { query } => match query {
                 ra::CTEQuery::Select(s) => {
                     let tmp = HashMap::new();
-                    let (evaluated_schema, rows) = self
-                        .evaluate_ra(&s, placeholders, ctes, &tmp, transaction, &arena)
-                        .await?;
+                    let evaluated_schema = TableSchema {
+                        rows: s.get_columns().into_iter().map(|(_, n, t, _)| storage::ColumnSchema {
+                            name: n,
+                            ty: t,
+                            mods: Vec::new(),
+                        }).collect(),
+                    };
+
+                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp).map_err(|e| EvaulateRaError::Other("Construct VM"))?;
+                    let mut rows = Vec::new();
+                    while let Some(r) = vm.get_next(self, transaction).await {
+                        rows.push(r);
+                    }
+
                     Ok(storage::EntireRelation::from_parts(
                         evaluated_schema,
-                        rows.map(|r| r.into_owned()).collect().await,
+                        rows,
                     ))
                 }
             },
@@ -833,15 +845,26 @@ where
 
                     loop {
                         let tmp = HashMap::new();
-                        let (mut tmp_schema, tmp_rows) = self
-                            .evaluate_ra(&s, placeholders, &inner_cte, &tmp, transaction, &arena)
-                            .await?;
+
+                        let mut tmp_schema = TableSchema {
+                        rows: s.get_columns().into_iter().map(|(_, n, t, _)| storage::ColumnSchema {
+                            name: n,
+                            ty: t,
+                            mods: Vec::new(),
+                        }).collect(),
+                    };
+
+                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp).map_err(|e| EvaulateRaError::Other("Construct VM"))?;
+                    let mut tmp_rows = Vec::new();
+                    while let Some(r) = vm.get_next(self, transaction).await {
+                        tmp_rows.push(r);
+                    }
+
 
                         for (column, name) in tmp_schema.rows.iter_mut().zip(columns.iter()) {
                             column.name.clone_from(name);
                         }
 
-                        let tmp_rows: Vec<_> = tmp_rows.map(|r| r.into_owned()).collect().await;
                         let previous_rows = inner_cte
                             .get(&cte.name)
                             .into_iter()
@@ -1107,6 +1130,7 @@ where
 
                     #[cfg(debug_assertions)]
                     {
+                        #[allow(deprecated)]
                         let (_, rows) = match self
                             .evaluate_ra(
                                 &ra_expression,

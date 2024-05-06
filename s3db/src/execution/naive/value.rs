@@ -323,12 +323,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let (_, rows) = engine
-                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, &arena)
-                        .await
-                        .ok()?;
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(query, placeholders, ctes, &n_outer).ok()?;
+                    
+                    let mut parts = Vec::new();
+                    while let Some(mut row) = vm.get_next(engine, transaction).await {
+                        let v = row.data.swap_remove(0);
+                        parts.push(v);
+                    }
 
-                    let parts: Vec<_> = rows.map(|r| r.as_ref()[0].clone()).collect().await;
                     Some(parts)
                 }
                 .boxed_local();
