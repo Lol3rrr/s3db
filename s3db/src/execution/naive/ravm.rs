@@ -15,7 +15,6 @@ pub enum ExecuteResult {
 
 #[derive(Debug, Clone)]
 pub struct Input {
-    rows: Option<Row>,
     done: bool,
 }
 
@@ -353,7 +352,6 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
         let return_stack = Vec::with_capacity(instructions.len());
         let result_stack = vec![
             Input {
-                rows: None,
                 done: false
             };
             instructions.len()
@@ -381,19 +379,20 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
 
         for input in self.result_stack.iter_mut() {
             input.done = false;
-            input.rows = None;
         }
+
+        let mut row = None;
 
         loop {
             let instr = self.instructions.get_mut(idx).expect("");
             let input = self.result_stack.get_mut(idx).expect("");
 
-            match instr.try_execute(input, engine, tguard).await {
+            match instr.try_execute(input, &mut row, engine, tguard).await {
                 Ok(ExecuteResult::Ok(v)) => {
                     match self.return_stack.pop() {
                         Some(prev_idx) => {
                             let prev_inputs: &mut Input = self.result_stack.get_mut(prev_idx)?;
-                            let _ = prev_inputs.rows.replace(v);
+                            let _ = row.replace(v);
                             prev_inputs.done = false;
 
                             idx = prev_idx;
@@ -433,6 +432,7 @@ where
     async fn try_execute<'tg, 'engine, S>(
         &mut self,
         input_data: &mut Input,
+        input_row: &mut Option<Row>,
         engine: &'engine super::NaiveEngine<S>,
         tguard: &'tg S::TransactionGuard,
     ) -> Result<ExecuteResult, ()>
@@ -455,7 +455,7 @@ where
                 expressions,
                 arena,
             } => {
-                let row = match input_data.rows.take() {
+                let row = match input_row.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
@@ -483,7 +483,7 @@ where
                 condition,
                 arena,
             } => {
-                let row = match input_data.rows.take() {
+                let row = match input_row.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
@@ -532,7 +532,7 @@ where
                 count,
             } => {
                 if count < offset {
-                    let tmp = input_data.rows.take();
+                    let tmp = input_row.take();
                     if tmp.is_some() {
                         *count += 1;
                     }
@@ -544,7 +544,7 @@ where
                     return Ok(ExecuteResult::OkEmpty);
                 }
 
-                match input_data.rows.take() {
+                match input_row.take() {
                     Some(row) => {
                         *count += 1;
                         return Ok(ExecuteResult::Ok(row));
@@ -580,7 +580,7 @@ where
                 rows,
             } => {
                 if !input_data.done {
-                    if let Some(r) = input_data.rows.take() {
+                    if let Some(r) = input_row.take() {
                         rows.push(r);
                     }
 
@@ -630,7 +630,7 @@ where
                 outer,
             } => {
                 if !input_data.done {
-                    match input_data.rows.take() {
+                    match input_row.take() {
                         Some(row) => {
                             for group in groups.iter_mut() {
                                 let rep = group
@@ -692,7 +692,7 @@ where
             } => {
                 if !*right_done {
                     if !input_data.done {
-                        if let Some(row) = input_data.rows.take() {
+                        if let Some(row) = input_row.take() {
                             right_rows.push(row);
                         }
 
@@ -704,14 +704,20 @@ where
                     }
                 }
 
-                let left_row = match input_data.rows.take() {
+                let left_row = match input_row.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*left_input)),
                 };
 
                 dbg!(&left_row, &right_rows);
 
-                todo!("Join")
+                match kind {
+                    sql::JoinKind::Inner => todo!("Inner Join"),
+                    sql::JoinKind::LeftOuter => todo!("Left Outer Join"),
+                    sql::JoinKind::RightOuter => todo!("Right Outer Join"),
+                    sql::JoinKind::FullOuter => todo!("Full Outer Join"),
+                    sql::JoinKind::Cross => todo!("Cross Join"),
+                }
             }
             Self::LateralJoin {
                 left_input,
