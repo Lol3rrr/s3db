@@ -187,7 +187,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     RaInstruction::Selection {
                         condition: cond,
                         input: instructions.len() - 1,
-                        arena: bumpalo::Bump::new()
+                        arena: bumpalo::Bump::new(),
                     }
                 }
                 RaExpression::Limit { limit, offset, .. } => RaInstruction::Limit {
@@ -381,7 +381,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
 
         for input in self.result_stack.iter_mut() {
             input.done = false;
-            input.rows =None;
+            input.rows = None;
         }
 
         loop {
@@ -450,7 +450,11 @@ where
                     Ok(ExecuteResult::Ok(storage::Row::new(0, Vec::new())))
                 }
             }
-            Self::Projection { input, expressions, arena } => {
+            Self::Projection {
+                input,
+                expressions,
+                arena,
+            } => {
                 let row = match input_data.rows.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
@@ -474,7 +478,11 @@ where
 
                 Ok(ExecuteResult::Ok(storage::Row::new(0, result)))
             }
-            Self::Selection { input, condition, arena } => {
+            Self::Selection {
+                input,
+                condition,
+                arena,
+            } => {
                 let row = match input_data.rows.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
@@ -565,13 +573,18 @@ where
             Self::Chain { inputs } => {
                 todo!("Chain")
             }
-            Self::OrderBy { input, attributes, sorted, rows } => {
+            Self::OrderBy {
+                input,
+                attributes,
+                sorted,
+                rows,
+            } => {
                 if !input_data.done {
                     if let Some(r) = input_data.rows.take() {
                         rows.push(r);
                     }
 
-                    return Ok(ExecuteResult::PendingInput(*input))
+                    return Ok(ExecuteResult::PendingInput(*input));
                 }
 
                 if !*sorted {
@@ -588,7 +601,9 @@ where
                                 },
                                 Some(core::cmp::Ordering::Greater) => match order {
                                     sql::OrderBy::Ascending => return core::cmp::Ordering::Less,
-                                    sql::OrderBy::Descending => return core::cmp::Ordering::Greater,
+                                    sql::OrderBy::Descending => {
+                                        return core::cmp::Ordering::Greater
+                                    }
                                 },
                                 None => continue,
                             };

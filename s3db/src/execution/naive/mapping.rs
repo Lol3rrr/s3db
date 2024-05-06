@@ -183,7 +183,7 @@ where
         loop {
             // SAFETY
             // TODO
-            let instr = unsafe { self.instruction_stack.get_unchecked_mut(idx) }; 
+            let instr = unsafe { self.instruction_stack.get_unchecked_mut(idx) };
             let value = instr
                 .evaluate_mut(stack, row, engine, transaction, arena)
                 .await?;
