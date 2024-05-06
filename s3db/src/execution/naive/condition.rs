@@ -235,7 +235,13 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(query,placeholders,ctes,&n_outer).ok()?;
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
+                        query,
+                        placeholders,
+                        ctes,
+                        &n_outer,
+                    )
+                    .ok()?;
                     Some(vm.get_next(engine, transaction).await.is_some())
                 }
                 .boxed_local();
@@ -379,7 +385,13 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(query, placeholders, ctes, &n_outer).ok()?;
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
+                        query,
+                        placeholders,
+                        ctes,
+                        &n_outer,
+                    )
+                    .ok()?;
                     Some(vm.get_next(engine, transaction).await.is_some())
                 }
                 .boxed_local();

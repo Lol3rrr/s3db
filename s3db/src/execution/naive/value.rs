@@ -323,8 +323,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(query, placeholders, ctes, &n_outer).ok()?;
-                    
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
+                        query,
+                        placeholders,
+                        ctes,
+                        &n_outer,
+                    )
+                    .ok()?;
+
                     let mut parts = Vec::new();
                     while let Some(mut row) = vm.get_next(engine, transaction).await {
                         let v = row.data.swap_remove(0);

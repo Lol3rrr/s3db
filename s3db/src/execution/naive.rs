@@ -788,23 +788,26 @@ where
                 ra::CTEQuery::Select(s) => {
                     let tmp = HashMap::new();
                     let evaluated_schema = TableSchema {
-                        rows: s.get_columns().into_iter().map(|(_, n, t, _)| storage::ColumnSchema {
-                            name: n,
-                            ty: t,
-                            mods: Vec::new(),
-                        }).collect(),
+                        rows: s
+                            .get_columns()
+                            .into_iter()
+                            .map(|(_, n, t, _)| storage::ColumnSchema {
+                                name: n,
+                                ty: t,
+                                mods: Vec::new(),
+                            })
+                            .collect(),
                     };
 
-                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp).map_err(|e| EvaulateRaError::Other("Construct VM"))?;
+                    let mut vm =
+                        ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp)
+                            .map_err(|e| EvaulateRaError::Other("Construct VM"))?;
                     let mut rows = Vec::new();
                     while let Some(r) = vm.get_next(self, transaction).await {
                         rows.push(r);
                     }
 
-                    Ok(storage::EntireRelation::from_parts(
-                        evaluated_schema,
-                        rows,
-                    ))
+                    Ok(storage::EntireRelation::from_parts(evaluated_schema, rows))
                 }
             },
             ra::CTEValue::Recursive { query, columns } => match query {
@@ -847,19 +850,24 @@ where
                         let tmp = HashMap::new();
 
                         let mut tmp_schema = TableSchema {
-                        rows: s.get_columns().into_iter().map(|(_, n, t, _)| storage::ColumnSchema {
-                            name: n,
-                            ty: t,
-                            mods: Vec::new(),
-                        }).collect(),
-                    };
+                            rows: s
+                                .get_columns()
+                                .into_iter()
+                                .map(|(_, n, t, _)| storage::ColumnSchema {
+                                    name: n,
+                                    ty: t,
+                                    mods: Vec::new(),
+                                })
+                                .collect(),
+                        };
 
-                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp).map_err(|e| EvaulateRaError::Other("Construct VM"))?;
-                    let mut tmp_rows = Vec::new();
-                    while let Some(r) = vm.get_next(self, transaction).await {
-                        tmp_rows.push(r);
-                    }
-
+                        let mut vm =
+                            ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp)
+                                .map_err(|e| EvaulateRaError::Other("Construct VM"))?;
+                        let mut tmp_rows = Vec::new();
+                        while let Some(r) = vm.get_next(self, transaction).await {
+                            tmp_rows.push(r);
+                        }
 
                         for (column, name) in tmp_schema.rows.iter_mut().zip(columns.iter()) {
                             column.name.clone_from(name);
