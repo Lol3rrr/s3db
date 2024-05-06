@@ -44,7 +44,7 @@ impl<'s, 'a> CompatibleParser for CreateTable<'s, 'a> {
             primary_key: self.primary_key.as_ref().map(|parts| {
                 crate::arenas::Vec::Heap(parts.iter().map(|p| p.to_static()).collect())
             }),
-            partitioned: self.partitioned.clone(),
+            partitioned: self.partitioned,
             withs: self.withs.clone_to_heap(),
         }
     }
