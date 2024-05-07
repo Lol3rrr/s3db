@@ -20,9 +20,10 @@ fn main() {
             .with(
                 tracing_subscriber::fmt::Layer::new()
                     .with_writer(log_file)
-                    .with_ansi(false).with_filter(
-                tracing_subscriber::filter::filter_fn(|metadata| metadata.level() <= &Level::INFO),
-            ),
+                    .with_ansi(false)
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.level() <= &Level::INFO
+                    })),
             );
     tracing::subscriber::set_global_default(tracing_reg).unwrap();
 

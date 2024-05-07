@@ -261,7 +261,10 @@ impl<'d> MessageResponse<'d> {
                 Ok(())
             }
             Self::DataRow { values } => {
-                let total_length = 6 + values.iter().map(|v| v.as_ref().map(|v| v.len() as i32).unwrap_or(0) + 4).sum::<i32>();
+                let total_length = 6 + values
+                    .iter()
+                    .map(|v| v.as_ref().map(|v| v.len() as i32).unwrap_or(0) + 4)
+                    .sum::<i32>();
 
                 let mut buffer = bytes::BytesMut::with_capacity(total_length as usize);
 
@@ -278,12 +281,15 @@ impl<'d> MessageResponse<'d> {
                 for value in values {
                     match value {
                         Some(value) => {
-                    buff_writer
-                        .write(&(value.len() as i32).to_be_bytes())
-                        .map_err(SendError::Write)?;
-                    buff_writer.write(&value).map_err(SendError::Write)?;}
+                            buff_writer
+                                .write(&(value.len() as i32).to_be_bytes())
+                                .map_err(SendError::Write)?;
+                            buff_writer.write(&value).map_err(SendError::Write)?;
+                        }
                         None => {
-                            buff_writer.write(&(-1 as i32).to_be_bytes()).map_err(SendError::Write)?;
+                            buff_writer
+                                .write(&(-1 as i32).to_be_bytes())
+                                .map_err(SendError::Write)?;
                         }
                     };
                 }
