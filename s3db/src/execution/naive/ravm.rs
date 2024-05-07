@@ -91,6 +91,23 @@ pub enum RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     },
 }
 
+impl<'expr, 'outer, 'placeholders, 'ctes, 'stream> core::fmt::Debug for RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyRelation { .. } => f.debug_struct("EmptyRelation").finish(),
+            Self::BaseRelation { relation, .. } => f.debug_struct("BaseRelation").field("relation", relation).finish(),
+            Self::Projection { input, .. } => f.debug_struct("Projection").field("input", input).finish(),
+            Self::Selection { input, .. } => f.debug_struct("Selection").field("input", input).finish(),
+            Self::Limit { input, limit, offset, .. } => f.debug_struct("Limit").field("inout", input).field("limit", limit).field("offset", offset).finish(),
+            Self::CTE { .. }  => f.debug_struct("CTE").finish(),
+            Self::Chain { inputs } => f.debug_struct("Chain").field("inputs", inputs).finish(),
+            Self::Join { .. } => f.debug_struct("Join").finish(),
+            Self::LateralJoin { .. } => f.debug_struct("LateralJoin").finish(),
+            other => write!(f, "Other RaInstruction"),
+        }
+    }
+}
+
 pub struct RaVm<'expr, 'outer, 'placeholders, 'ctes, 'stream> {
     instructions: Vec<RaInstruction<'expr, 'outer, 'placeholders, 'ctes, 'stream>>,
     return_stack: Vec<usize>,
@@ -117,6 +134,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
         'e: 'expr,
         SE: core::fmt::Debug,
     {
+
         let mut pending = vec![expr];
         let mut expression_stack = Vec::new();
         while let Some(tmp) = pending.pop() {
@@ -150,20 +168,21 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                     pending.push(inner);
                 }
                 RaExpression::Chain { parts } => {
-                    pending.extend(parts.iter());
+                    pending.extend(parts.iter().rev());
                 }
                 RaExpression::CTE { .. } => {}
             };
         }
 
+        let mut instruction_children = Vec::new();
         let mut instructions = Vec::new();
         while let Some(expr) = expression_stack.pop() {
-            let instr = match expr {
-                RaExpression::EmptyRelation => RaInstruction::EmptyRelation { used: false },
-                RaExpression::BaseRelation { name, .. } => RaInstruction::BaseRelation {
+            let (children, instr) = match expr {
+                RaExpression::EmptyRelation => (0, RaInstruction::EmptyRelation { used: false }),
+                RaExpression::BaseRelation { name, .. } => (0, RaInstruction::BaseRelation {
                     relation: &name.0,
                     stream: None,
-                },
+                }),
                 RaExpression::Projection { attributes, inner } => {
                     let columns: Vec<_> = inner
                         .get_columns()
@@ -181,11 +200,13 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         expressions.push(mapper);
                     }
 
-                    RaInstruction::Projection {
+                    let children = instruction_children.last().unwrap();
+
+                    (children + 1, RaInstruction::Projection {
                         expressions,
                         input: instructions.len() - 1,
                         arena: bumpalo::Bump::new(),
-                    }
+                    })
                 }
                 RaExpression::Selection { inner, filter } => {
                     let columns: Vec<_> = inner
@@ -202,17 +223,23 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         VmConstructError::Other(concat!("Constructing Mapper - ", line!()))
                     })?;
 
-                    RaInstruction::Selection {
+                    let children = instruction_children.last().unwrap();
+
+                    (children + 1, RaInstruction::Selection {
                         condition: cond,
                         input: instructions.len() - 1,
                         arena: bumpalo::Bump::new(),
-                    }
+                    })
                 }
-                RaExpression::Limit { limit, offset, .. } => RaInstruction::Limit {
-                    input: instructions.len() - 1,
-                    limit: *limit,
-                    offset: *offset,
-                    count: 0,
+                RaExpression::Limit { limit, offset, .. } => {
+                    let children = instruction_children.last().unwrap();
+
+                    (children + 1, RaInstruction::Limit {
+                        input: instructions.len() - 1,
+                        limit: *limit,
+                        offset: *offset,
+                        count: 0,
+                    })
                 },
                 RaExpression::Renamed { .. } => continue,
                 RaExpression::OrderBy { inner, attributes } => {
@@ -234,12 +261,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         orderings.push((idx, order.clone()));
                     }
 
-                    RaInstruction::OrderBy {
+                    let children = instruction_children.last().unwrap();
+
+                    (children + 1, RaInstruction::OrderBy {
                         attributes: orderings,
                         input: instructions.len() - 1,
                         sorted: false,
                         rows: Vec::new(),
-                    }
+                    })
                 }
                 RaExpression::Aggregation {
                     inner,
@@ -276,7 +305,9 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         }
                     };
 
-                    RaInstruction::Aggregation {
+                    let children = instruction_children.last().unwrap();
+
+                    (children + 1, RaInstruction::Aggregation {
                         attributes: &attributes,
                         input: instructions.len() - 1,
                         grouping_func,
@@ -285,7 +316,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         placeholders,
                         ctes,
                         outer,
-                    }
+                    })
                 }
                 RaExpression::Join {
                     left,
@@ -312,9 +343,12 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         VmConstructError::Other(concat!("Constructing Mapper - ", line!()))
                     })?;
 
-                    RaInstruction::Join {
+                    let first_child = instruction_children.last().unwrap() + 1;
+                    let second_child = instruction_children.get(instruction_children.len() - first_child).unwrap() + 1;
+
+                    (first_child + second_child, RaInstruction::Join {
                         returned_left: false,
-                        left_input: instructions.len() - 2,
+                        left_input: instructions.len() - 1 - first_child,
                         right_input: instructions.len() - 1,
                         condition: join_cond,
                         kind: kind.clone(),
@@ -322,7 +356,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         right_index: 0,
                         right_done: false,
                         right_column_count,
-                    }
+                    })
                 }
                 RaExpression::LateralJoin {
                     left,
@@ -348,7 +382,11 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         VmConstructError::Other(concat!("Constructing Condition: ", line!()))
                     })?;
 
-                    RaInstruction::LateralJoin {
+                    dbg!(&instruction_children);
+
+                    let first_child = instruction_children.last().unwrap() + 1;
+
+                    (first_child, RaInstruction::LateralJoin {
                         left_ids: left_columns.into_iter().map(|(_, _, _, id)| id).collect(),
                         left_input: instructions.len() - 1,
                         left_row: None,
@@ -359,7 +397,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         placeholders,
                         outer,
                         ctes,
-                    }
+                    })
                 }
                 RaExpression::CTE { name, .. } => {
                     let cte = match ctes.get(name) {
@@ -367,22 +405,31 @@ impl<'expr, 'outer, 'placeholders, 'ctes, 'stream>
                         None => return Err(VmConstructError::Other("Getting CTE"))?,
                     };
 
-                    RaInstruction::CTE {
+                    (0, RaInstruction::CTE {
                         rows: cte,
                         part: 0,
                         row: 0,
-                    }
+                    })
                 }
                 RaExpression::Chain { parts } => {
-                    let inputs: Vec<_> =
-                        (instructions.len() - 1 - parts.len()..instructions.len() - 1).collect();
+                    let (children, inputs) = (0..parts.len()).fold((0, Vec::new()), |(children, mut inputs), _| {
+                        inputs.push(instructions.len() - 1 - children);
+                        let input_child = instruction_children.get(instruction_children.len() - 1 - children).unwrap();
 
-                    RaInstruction::Chain { inputs }
+                        (children + input_child + 1, inputs)
+                    });
+
+                    (children, RaInstruction::Chain { inputs })
                 }
             };
 
+            dbg!(&instr, &children);
+
+            instruction_children.push(children);
             instructions.push(instr);
         }
+
+        dbg!(&instructions);
 
         let return_stack = Vec::with_capacity(instructions.len());
         let result_stack = vec![Input { done: false }; instructions.len()];
@@ -478,6 +525,8 @@ where
     {
         match self {
             Self::EmptyRelation { used } => {
+                dbg!("Empty Relation");
+
                 if *used {
                     Ok(ExecuteResult::OkEmpty)
                 } else {
@@ -490,10 +539,14 @@ where
                 expressions,
                 arena,
             } => {
+                dbg!("Projection", &input);
+
                 let row = match input_row.take() {
                     Some(r) => r,
                     None => return Ok(ExecuteResult::PendingInput(*input)),
                 };
+
+                dbg!(&row);
 
                 let row = storage::RowCow::Owned(row);
 
@@ -589,7 +642,7 @@ where
             }
             Self::CTE { rows, part, row } => {
                 while let Some(part_ref) = rows.parts.get(*part) {
-                    let row_ref = match part_ref.rows.get(*row) {
+                    let row_ref = match part_ref.rows.get(*row ) {
                         Some(r) => r,
                         None => {
                             *part += 1;
@@ -606,7 +659,28 @@ where
                 Ok(ExecuteResult::OkEmpty)
             }
             Self::Chain { inputs } => {
-                todo!("Chain")
+                dbg!(&inputs);
+
+                dbg!(&input_row);
+                if let Some (row) = input_row.take() {
+                    return Ok(ExecuteResult::Ok(row))
+                }
+
+                dbg!(input_data.done);
+
+                if input_data.done {
+                    if !inputs.is_empty() {
+                        inputs.remove(0);
+                        input_data.done = false;
+                    }
+                }
+
+                dbg!(input_data.done);
+
+                match inputs.first() {
+                    Some(idx) => return Ok(ExecuteResult::PendingInput(*idx)),
+                    None => return Ok(ExecuteResult::OkEmpty)
+                }
             }
             Self::OrderBy {
                 input,

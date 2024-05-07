@@ -801,7 +801,10 @@ where
 
                     let mut vm =
                         ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp)
-                            .map_err(|e| EvaulateRaError::Other("Construct VM"))?;
+                            .map_err(|e| {
+                            dbg!(e);
+                            EvaulateRaError::Other("Construct VM")
+                        })?;
                     let mut rows = Vec::new();
                     while let Some(r) = vm.get_next(self, transaction).await {
                         rows.push(r);
@@ -862,8 +865,11 @@ where
                         };
 
                         let mut vm =
-                            ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp)
-                                .map_err(|e| EvaulateRaError::Other("Construct VM"))?;
+                            ravm::RaVm::construct::<S::LoadingError>(s, placeholders, &inner_cte, &tmp)
+                                .map_err(|e| {
+                                dbg!(e);
+                                EvaulateRaError::Other("Construct VM")
+                            })?;
                         let mut tmp_rows = Vec::new();
                         while let Some(r) = vm.get_next(self, transaction).await {
                             tmp_rows.push(r);
