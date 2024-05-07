@@ -139,12 +139,18 @@ where
                     .zip(formats.iter())
                     .zip(content.columns.iter())
                     .map(|((data, format), column)| {
-                        serialize(data, format, column.1.clone()).ok_or_else(|| {
-                            RespondError::SerializeField {
-                                value: data.clone(),
-                                format: format.clone(),
+                        match data {
+                            storage::Data::Null => Ok(None),
+                            other => {
+                                let tmp = serialize(data, format, column.1.clone()).ok_or_else(|| {
+                                    RespondError::SerializeField {
+                                        value: data.clone(),
+                                        format: format.clone(),
+                                    }
+                                })?;
+                                Ok(Some(tmp))
                             }
-                        })
+                        }
                     })
                     .collect::<Result<_, _>>()?;
                 MessageResponse::DataRow { values }
@@ -255,14 +261,21 @@ where
                         .iter()
                         .zip(formats.iter())
                         .map(|(r, format)| {
+                            match r {
+                            storage::Data::Null => Ok(None),
+                            other => {
+                                let tmp = serialize(other, format, DataType::BigInteger).ok_or_else(|| {
+                                    RespondError::SerializeField {
+                                        value: other.clone(),
+                                        format: format.clone(),
+                                    }
+                                })?;
+                                Ok(Some(tmp))
+                            }
+                        }
+
                             // TODO
                             // Where to get the type for this?
-                            serialize(r, format, DataType::BigInteger).ok_or_else(|| {
-                                RespondError::SerializeField {
-                                    value: r.clone(),
-                                    format: format.clone(),
-                                }
-                            })
                         })
                         .collect::<Result<_, _>>()?;
 
