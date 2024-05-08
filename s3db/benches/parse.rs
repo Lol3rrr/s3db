@@ -61,5 +61,9 @@ fn select_join(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(not(flamegraph))]
 criterion_group!(benches, simple_select, select_join);
+#[cfg(not(flamegraph))]
 criterion_main!(benches);
+#[cfg(flamegraph)]
+fn main() {}

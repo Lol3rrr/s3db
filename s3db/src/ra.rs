@@ -395,6 +395,11 @@ impl RaExpression {
         }
     }
 
+    /// # Returns
+    /// 1. Relation Name
+    /// 2. Atribute Name
+    /// 3. Attribute Type
+    /// 4. Attribute ID
     pub fn get_columns(&self) -> Vec<(String, String, DataType, AttributeId)> {
         match self {
             Self::Renamed { name, inner } => inner

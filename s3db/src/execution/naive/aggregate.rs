@@ -8,6 +8,7 @@ use storage::{self, Storage};
 
 use super::{value, EvaulateRaError, NaiveEngine};
 
+#[derive(Debug)]
 pub enum AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
     CountRows {
         attribute_index: Option<usize>,
@@ -24,16 +25,13 @@ pub enum AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
 }
 
 impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeholders, 'ctes> {
-    pub async fn new<S>(
+    pub fn new<SE>(
         expr: &'expr ra::AggregateExpression,
         columns: &[(String, DataType, ra::AttributeId)],
         placeholders: &'placeholders HashMap<usize, storage::Data>,
         ctes: &'ctes HashMap<String, storage::EntireRelation>,
         outer: &'outer HashMap<AttributeId, storage::Data>,
-    ) -> Self
-    where
-        S: storage::Storage,
-    {
+    ) -> Self {
         match expr {
             ra::AggregateExpression::CountRows => Self::CountRows {
                 attribute_index: None,
@@ -60,17 +58,13 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                 value: None,
             },
             ra::AggregateExpression::Renamed { inner, .. } => {
-                Self::new::<S>(inner, columns, placeholders, ctes, outer)
-                    .boxed_local()
-                    .await
+                Self::new::<SE>(inner, columns, placeholders, ctes, outer)
             }
             ra::AggregateExpression::Max { inner, .. } => Self::Max {
                 value: None,
-                expr: value::Mapper::construct::<S::LoadingError>(
-                    &inner,
-                    (columns, placeholders, ctes, outer),
-                )
-                .unwrap(),
+                expr: value::Mapper::construct::<SE>(&inner, (columns, placeholders, ctes, outer))
+                    .map_err(|e| ())
+                    .unwrap(),
             },
             other => todo!("{:?}", other),
         }
@@ -127,7 +121,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> AggregateState<'expr, 'outer, 'placeho
                 }
                 Self::Max { value, expr, .. } => {
                     let tmp = expr
-                        .evaluate(row, engine, transaction, arena)
+                        .evaluate_mut(row, engine, transaction, arena)
                         .await
                         .ok_or_else(|| EvaulateRaError::Other("Test"))?;
 

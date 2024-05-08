@@ -235,11 +235,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let (_, mut rows) = engine
-                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, arena)
-                        .await
-                        .ok()?;
-                    Some(rows.next().await.is_some())
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
+                        query,
+                        placeholders,
+                        ctes,
+                        &n_outer,
+                    )
+                    .ok()?;
+                    Some(vm.get_next(engine, transaction).await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;
@@ -357,10 +360,7 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                         _ => Some(Cow::Owned(false)),
                     },
                     ra::RaComparisonOperator::IsNot => {
-                        dbg!(&first_value, &second_value);
-
-                        // Err(EvaulateRaError::Other("Not implemented - IsNot Operator "))
-                        None
+                        Some(Cow::Owned(first_value != second_value))
                     }
                 }
             }
@@ -385,11 +385,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let (_, mut rows) = engine
-                        .evaluate_ra(&query, placeholders, ctes, &n_outer, transaction, arena)
-                        .await
-                        .ok()?;
-                    Some(rows.next().await.is_some())
+                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
+                        query,
+                        placeholders,
+                        ctes,
+                        &n_outer,
+                    )
+                    .ok()?;
+                    Some(vm.get_next(engine, transaction).await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;

@@ -11,6 +11,10 @@ bumpalo = { workspace = true }
 pretty_assertions = "1.4.0"
 criterion = "0.5.1"
 
+[target.'cfg(flamegraph)'.dependencies]
+pprof = { version = "0.13.0", features = ["flamegraph", "criterion", "protobuf-codec"] }
+
+
 [[bench]]
 name = "parse"
 harness = false

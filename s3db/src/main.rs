@@ -5,21 +5,27 @@ use std::fs::File;
 
 use s3db::endpoint::Endpoint;
 use tracing::Level;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::layer::{Layer, SubscriberExt};
 
 fn main() {
+    let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder().build();
+
     let log_file = File::create("s3db.log").unwrap();
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::fmt::Subscriber::builder()
-            .with_max_level(Level::INFO)
-            .finish()
+    let tracing_reg =
+        tracing_subscriber::Registry::default()
+            .with(console_layer)
+            .with(tracing_subscriber::fmt::layer().with_filter(
+                tracing_subscriber::filter::filter_fn(|metadata| metadata.level() <= &Level::INFO),
+            ))
             .with(
-                tracing_subscriber::fmt::layer()
+                tracing_subscriber::fmt::Layer::new()
                     .with_writer(log_file)
-                    .with_ansi(false),
-            ),
-    )
-    .unwrap();
+                    .with_ansi(false)
+                    .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                        metadata.level() <= &Level::INFO
+                    })),
+            );
+    tracing::subscriber::set_global_default(tracing_reg).unwrap();
 
     tracing::info!("Starting...");
 
@@ -40,6 +46,11 @@ fn main() {
     local_set.spawn_local(async move {
         if let Err(e) = endpoint.run(engine).await {
             tracing::error!("Running Endpoint: {:?}", e);
+        }
+    });
+    local_set.spawn_local(async move {
+        if let Err(e) = console_server.serve().await {
+            tracing::error!("Running Console");
         }
     });
 

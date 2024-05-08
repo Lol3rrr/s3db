@@ -3,7 +3,7 @@ from os.path import isfile, exists, join, getmtime
 import subprocess
 import time
 from datetime import datetime
-
+import urllib.parse
 
 def main():
     print(f"Starting Upload...")
@@ -65,7 +65,10 @@ def upload_file(path, branch, name, param):
     from_ms = mod_time_ms - (60 * 1000)
     to_ms = mod_time_ms + (60 * 1000)
 
-    return f"https://grafana.lol3r.com/d/adkqscb0pineof/s3db?orgId=3&from={from_ms:.0f}&to={to_ms:.0f}&var-branch={branch}&var-benchname={name}&var-benchparam={param}"
+    url_branch = urllib.parse.quote(branch)
+    url_name = urllib.parse.quote(name)
+    url_param = urllib.parse.quote(param)
+    return f"https://grafana.lol3r.com/d/adkqscb0pineof/s3db?orgId=3&from={from_ms:.0f}&to={to_ms:.0f}&var-branch={url_branch}&var-benchname={url_name}&var-benchparam={url_param}"
 
 if __name__ == '__main__':
     main()

@@ -15,7 +15,7 @@ use crate::{
 };
 
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
-use storage::{self, Data, RelationStorage, Sequence, Storage, TableSchema};
+use storage::{self, Data, Sequence, Storage, TableSchema};
 
 use super::{Context, CopyState, Execute, ExecuteResult, PreparedStatement};
 
@@ -26,6 +26,8 @@ mod condition;
 mod mapping;
 mod pattern;
 mod value;
+
+mod ravm;
 
 pub struct NaiveEngine<S> {
     storage: S,
@@ -125,6 +127,7 @@ impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
 {
+    #[deprecated]
     async fn evaluate_ra<'s, 'exp, 'p, 'f, 'o, 'c, 't, 'arena, 'rd>(
         &'s self,
         expr: &'exp ra::RaExpression,
@@ -345,14 +348,16 @@ where
 
                         async move {
                             let mut condition_mapper = condition_mapper.try_borrow_mut().unwrap();
-                            if condition_mapper
+                            match condition_mapper
                                 .evaluate_mut(&row, self, transaction, arena)
                                 .await
-                                .unwrap()
                             {
-                                Some(row)
-                            } else {
-                                None
+                                Some(true) => Some(row),
+                                Some(false) => None,
+                                None => {
+                                    // TODO
+                                    None
+                                }
                             }
                         }
                     })
@@ -390,16 +395,13 @@ where
                         ra::AggregationCondition::Everything => {
                             let mut states = Vec::with_capacity(attributes.len());
                             for attr in attributes.iter() {
-                                states.push(
-                                    AggregateState::new::<S>(
-                                        &attr.value,
-                                        &inner_columns,
-                                        placeholders,
-                                        ctes,
-                                        outer,
-                                    )
-                                    .await,
-                                );
+                                states.push(AggregateState::new::<S>(
+                                    &attr.value,
+                                    &inner_columns,
+                                    placeholders,
+                                    ctes,
+                                    outer,
+                                ));
                             }
 
                             while let Some(row) = rows.next().await {
@@ -472,16 +474,13 @@ where
                             for group in groups.into_iter() {
                                 let mut states = Vec::with_capacity(attributes.len());
                                 for attr in attributes.iter() {
-                                    states.push(
-                                        AggregateState::new::<S>(
-                                            &attr.value,
-                                            &inner_columns,
-                                            placeholders,
-                                            ctes,
-                                            outer,
-                                        )
-                                        .await,
-                                    );
+                                    states.push(AggregateState::new::<S>(
+                                        &attr.value,
+                                        &inner_columns,
+                                        placeholders,
+                                        ctes,
+                                        outer,
+                                    ));
                                 }
 
                                 for row in group {
@@ -788,13 +787,30 @@ where
             ra::CTEValue::Standard { query } => match query {
                 ra::CTEQuery::Select(s) => {
                     let tmp = HashMap::new();
-                    let (evaluated_schema, rows) = self
-                        .evaluate_ra(&s, placeholders, ctes, &tmp, transaction, &arena)
-                        .await?;
-                    Ok(storage::EntireRelation::from_parts(
-                        evaluated_schema,
-                        rows.map(|r| r.into_owned()).collect().await,
-                    ))
+                    let evaluated_schema = TableSchema {
+                        rows: s
+                            .get_columns()
+                            .into_iter()
+                            .map(|(_, n, t, _)| storage::ColumnSchema {
+                                name: n,
+                                ty: t,
+                                mods: Vec::new(),
+                            })
+                            .collect(),
+                    };
+
+                    let mut vm =
+                        ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp)
+                            .map_err(|e| {
+                                dbg!(e);
+                                EvaulateRaError::Other("Construct VM")
+                            })?;
+                    let mut rows = Vec::new();
+                    while let Some(r) = vm.get_next(self, transaction).await {
+                        rows.push(r);
+                    }
+
+                    Ok(storage::EntireRelation::from_parts(evaluated_schema, rows))
                 }
             },
             ra::CTEValue::Recursive { query, columns } => match query {
@@ -835,15 +851,38 @@ where
 
                     loop {
                         let tmp = HashMap::new();
-                        let (mut tmp_schema, tmp_rows) = self
-                            .evaluate_ra(&s, placeholders, &inner_cte, &tmp, transaction, &arena)
-                            .await?;
+
+                        let mut tmp_schema = TableSchema {
+                            rows: s
+                                .get_columns()
+                                .into_iter()
+                                .map(|(_, n, t, _)| storage::ColumnSchema {
+                                    name: n,
+                                    ty: t,
+                                    mods: Vec::new(),
+                                })
+                                .collect(),
+                        };
+
+                        let mut vm = ravm::RaVm::construct::<S::LoadingError>(
+                            s,
+                            placeholders,
+                            &inner_cte,
+                            &tmp,
+                        )
+                        .map_err(|e| {
+                            dbg!(e);
+                            EvaulateRaError::Other("Construct VM")
+                        })?;
+                        let mut tmp_rows = Vec::new();
+                        while let Some(r) = vm.get_next(self, transaction).await {
+                            tmp_rows.push(r);
+                        }
 
                         for (column, name) in tmp_schema.rows.iter_mut().zip(columns.iter()) {
                             column.name.clone_from(name);
                         }
 
-                        let tmp_rows: Vec<_> = tmp_rows.map(|r| r.into_owned()).collect().await;
                         let previous_rows = inner_cte
                             .get(&cte.name)
                             .into_iter()
@@ -1081,29 +1120,57 @@ where
 
                     tracing::trace!("Placeholder-Values: {:#?}", placeholder_values);
 
-                    let tmp = HashMap::new();
-                    let (scheme, rows) = match self
-                        .evaluate_ra(
-                            &ra_expression,
-                            &placeholder_values,
-                            &cte_queries,
-                            &tmp,
-                            transaction,
-                            &arena,
-                        )
-                        .await
-                    {
-                        Ok(r) => r,
-                        Err(e) => {
-                            tracing::error!("RA-Error: {:?}", e);
-                            return Err(ExecuteBoundError::Executing(e));
-                        }
+                    let scheme = storage::TableSchema {
+                        rows: ra_expression
+                            .get_columns()
+                            .into_iter()
+                            .map(|(_, n, t, id)| storage::ColumnSchema {
+                                name: n,
+                                ty: t,
+                                mods: Vec::new(),
+                            })
+                            .collect(),
                     };
 
-                    let result = storage::EntireRelation::from_parts(
-                        scheme,
-                        rows.map(|r| r.into_owned()).collect().await,
-                    );
+                    let tmp = HashMap::new();
+                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(
+                        &ra_expression,
+                        &placeholder_values,
+                        &cte_queries,
+                        &tmp,
+                    )
+                    .map_err(|e| ExecuteBoundError::NotImplemented("Error Constructing RaVm"))?;
+
+                    let mut vm_rows = Vec::new();
+                    while let Some(v) = vm.get_next(self, transaction).await {
+                        vm_rows.push(v);
+                    }
+
+                    #[cfg(debug_assertions)]
+                    {
+                        #[allow(deprecated)]
+                        let (_, rows) = match self
+                            .evaluate_ra(
+                                &ra_expression,
+                                &placeholder_values,
+                                &cte_queries,
+                                &tmp,
+                                transaction,
+                                &arena,
+                            )
+                            .await
+                        {
+                            Ok(r) => r,
+                            Err(e) => {
+                                tracing::error!("RA-Error: {:?}", e);
+                                return Err(ExecuteBoundError::Executing(e));
+                            }
+                        };
+
+                        let ra_rows: Vec<_> = rows.map(|r| r.into_owned()).collect().await;
+                        assert_eq!(&ra_rows, &vm_rows);
+                    }
+                    let result = storage::EntireRelation::from_parts(scheme, vm_rows);
 
                     tracing::debug!("RA-Result: {:?}", result);
 
@@ -1663,7 +1730,7 @@ where
                         .insert_rows(
                             "pg_tables",
                             &mut core::iter::once(vec![
-                                Data::Name("".to_string()),
+                                Data::Name("default".to_string()),
                                 Data::Name(create.identifier.0.to_string()),
                                 Data::Name("".to_string()),
                                 Data::Name("".to_string()),
@@ -1682,7 +1749,7 @@ where
                             &mut core::iter::once(vec![
                                 Data::Integer(0), // This should be the pg_class_id, which is the same as the row id, but no idea how to handle this currently
                                 Data::Name(create.identifier.0.to_string()),
-                                Data::Integer(0),
+                                Data::Integer(1),
                             ]),
                             transaction,
                         )
@@ -2036,7 +2103,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use storage::{EntireRelation, PartialRelation, Row, Storage};
+    use storage::{EntireRelation, PartialRelation, RelationStorage, Row};
 
     use self::storage::inmemory::InMemoryStorage;
 

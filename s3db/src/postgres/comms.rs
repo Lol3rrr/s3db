@@ -29,7 +29,7 @@ fn serialize<'d>(
     match format {
         FormatCode::Text => {
             let tmp = match data {
-                storage::Data::Null => Cow::Borrowed("NULL".as_bytes()),
+                storage::Data::Null => Cow::Borrowed("null".as_bytes()),
                 storage::Data::Name(n) => Cow::Borrowed(n.as_bytes()),
                 storage::Data::Varchar(c) => Cow::Owned(c.iter().map(|c| *c as u8).collect()),
                 storage::Data::Text(c) => Cow::Owned(c.as_bytes().to_vec()),
@@ -138,13 +138,18 @@ where
                     .iter()
                     .zip(formats.iter())
                     .zip(content.columns.iter())
-                    .map(|((data, format), column)| {
-                        serialize(data, format, column.1.clone()).ok_or_else(|| {
-                            RespondError::SerializeField {
-                                value: data.clone(),
-                                format: format.clone(),
-                            }
-                        })
+                    .map(|((data, format), column)| match data {
+                        storage::Data::Null => Ok(None),
+                        other => {
+                            let tmp =
+                                serialize(data, format, column.1.clone()).ok_or_else(|| {
+                                    RespondError::SerializeField {
+                                        value: data.clone(),
+                                        format: format.clone(),
+                                    }
+                                })?;
+                            Ok(Some(tmp))
+                        }
                     })
                     .collect::<Result<_, _>>()?;
                 MessageResponse::DataRow { values }
@@ -255,14 +260,20 @@ where
                         .iter()
                         .zip(formats.iter())
                         .map(|(r, format)| {
+                            match r {
+                                storage::Data::Null => Ok(None),
+                                other => {
+                                    let tmp = serialize(other, format, DataType::BigInteger)
+                                        .ok_or_else(|| RespondError::SerializeField {
+                                            value: other.clone(),
+                                            format: format.clone(),
+                                        })?;
+                                    Ok(Some(tmp))
+                                }
+                            }
+
                             // TODO
                             // Where to get the type for this?
-                            serialize(r, format, DataType::BigInteger).ok_or_else(|| {
-                                RespondError::SerializeField {
-                                    value: r.clone(),
-                                    format: format.clone(),
-                                }
-                            })
                         })
                         .collect::<Result<_, _>>()?;
 
