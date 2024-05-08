@@ -1591,7 +1591,6 @@ async fn serial_usage_with_setval() {
     );
 }
 
-#[ignore = "Just for testing"]
 #[tokio::test]
 async fn pgbench_setup() {
     let storage = InMemoryStorage::new();
@@ -1669,7 +1668,8 @@ limit 1".as_bytes(), &arena).unwrap();
         other => panic!("{:?}", other),
     };
 
-    dbg!(content);
+    dbg!(&content);
 
-    todo!()
+    let mut content_row_iter = content.parts.into_iter().flat_map(|p| p.rows.into_iter());
+    assert_eq!(Some(storage::Row::new(0, vec![storage::Data::Integer(1), storage::Data::Null, storage::Data::BigInt(0)])), content_row_iter.next());
 }
