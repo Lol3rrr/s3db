@@ -1671,5 +1671,15 @@ limit 1".as_bytes(), &arena).unwrap();
     dbg!(&content);
 
     let mut content_row_iter = content.parts.into_iter().flat_map(|p| p.rows.into_iter());
-    assert_eq!(Some(storage::Row::new(0, vec![storage::Data::Integer(1), storage::Data::Null, storage::Data::BigInt(0)])), content_row_iter.next());
+    assert_eq!(
+        Some(storage::Row::new(
+            0,
+            vec![
+                storage::Data::Integer(1),
+                storage::Data::Null,
+                storage::Data::BigInt(0)
+            ]
+        )),
+        content_row_iter.next()
+    );
 }
