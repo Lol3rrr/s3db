@@ -55,13 +55,13 @@ impl<V> ConstructionContext<V> {
 impl<V> Input<V> {
     /// Attempts to load a value for this input or otherwise schedule the instruction to produce a
     /// value for this.
-    /// 
+    ///
     /// # Behaviour
     /// 1. If there is already a value stored for this input, this will return the value immediately
     ///    and take out the value stored.
     /// 2. If there is no value stored for this input and the instruction, that produces the value
     ///    for this, is done. it will return [`None`] immediately and also not do anything else
-    /// 3. If there is no value stored, but the instruction, that produces is not yet done, that 
+    /// 3. If there is no value stored, but the instruction, that produces is not yet done, that
     ///    instruction will be scheduled next and this future will resolve once that instruction
     ///    has produced an output
     pub fn get_value(&mut self) -> InputGetValueFuture<'_, V> {
@@ -115,7 +115,8 @@ impl<'i, V> core::future::Future for InputGetValueFuture<'i, V> {
                     .load(core::sync::atomic::Ordering::Acquire);
                 self.input
                     .data
-                    .runtime_ptr.current_fut
+                    .runtime_ptr
+                    .current_fut
                     .store(prod, core::sync::atomic::Ordering::Release);
 
                 cx.waker().wake_by_ref();
@@ -132,7 +133,7 @@ impl<V> Output<V> {
     pub fn store(&mut self, value: V) -> OutputStoreValueFuture<'_, V> {
         OutputStoreValueFuture {
             output: self,
-            value: Some(value)
+            value: Some(value),
         }
     }
 
@@ -148,7 +149,8 @@ impl<V> Output<V> {
             .consumer
             .load(core::sync::atomic::Ordering::Acquire);
         self.data
-            .runtime_ptr.current_fut
+            .runtime_ptr
+            .current_fut
             .store(consumer, core::sync::atomic::Ordering::Release);
     }
 }
@@ -164,25 +166,41 @@ pub struct OutputStoreValueFuture<'o, V> {
     value: Option<V>,
 }
 
-impl<'o, V> core::future::Future for OutputStoreValueFuture<'o, V> where V: Unpin {
+impl<'o, V> core::future::Future for OutputStoreValueFuture<'o, V>
+where
+    V: Unpin,
+{
     type Output = ();
 
-    fn poll(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
         let self_mut = self.get_mut();
 
         match self_mut.value.take() {
             Some(v) => {
                 let v_ptr = self_mut.output.data.value.get();
-        let _ = core::mem::replace(unsafe { &mut *v_ptr }, Some(v));
+                let _ = core::mem::replace(unsafe { &mut *v_ptr }, Some(v));
 
-        let consumer = self_mut.output.data
-            .consumer
-            .load(core::sync::atomic::Ordering::Acquire);
-        self_mut.output.data
-            .runtime_ptr.current_fut
-            .store(consumer, core::sync::atomic::Ordering::Release);
+                let consumer = self_mut
+                    .output
+                    .data
+                    .consumer
+                    .load(core::sync::atomic::Ordering::Acquire);
+                self_mut
+                    .output
+                    .data
+                    .runtime_ptr
+                    .current_fut
+                    .store(consumer, core::sync::atomic::Ordering::Release);
 
-                self_mut.output.data.runtime_ptr.ignore_pending.store(true, core::sync::atomic::Ordering::Release);
+                self_mut
+                    .output
+                    .data
+                    .runtime_ptr
+                    .ignore_pending
+                    .store(true, core::sync::atomic::Ordering::Release);
 
                 core::task::Poll::Pending
             }

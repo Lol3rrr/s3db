@@ -13,7 +13,7 @@ pub trait Instruction<'i> {
     type Arguments;
 
     /// This should first add all it's dependencies onto the provided `pending` Vec, so that they
-    /// will be processed as well, and then return a boxed [Future](core::future::Future) which will 
+    /// will be processed as well, and then return a boxed [Future](core::future::Future) which will
     /// do the actual processing for the given input instruction.
     ///
     /// # General Hints
@@ -27,7 +27,9 @@ pub trait Instruction<'i> {
         out: Output<Self::Value>,
         ctx: &mut ConstructionContext<Self::Value>,
         args: &Self::Arguments,
-    ) -> impl core::future::Future<Output = Result<Box<dyn core::future::Future<Output = ()> + 'i>, Self::ConstructError>>;
+    ) -> impl core::future::Future<
+        Output = Result<Box<dyn core::future::Future<Output = ()> + 'i>, Self::ConstructError>,
+    >;
 }
 
 struct RuntimeState {
@@ -49,7 +51,10 @@ pub struct VMGetNextFuture<'r, 'i, V> {
 }
 
 impl<'i, V> VM<'i, V> {
-    pub async fn construct<I>(input: &'i I::Input, args: &I::Arguments) -> Result<Self, I::ConstructError>
+    pub async fn construct<I>(
+        input: &'i I::Input,
+        args: &I::Arguments,
+    ) -> Result<Self, I::ConstructError>
     where
         I: Instruction<'i, Value = V>,
     {
@@ -87,15 +92,14 @@ impl<'i, V> VM<'i, V> {
     }
 
     pub fn get_next(&mut self) -> VMGetNextFuture<'_, 'i, V> {
-        VMGetNextFuture {
-            vm_: self,
-        }
+        VMGetNextFuture { vm_: self }
     }
 
-    fn inner_poll(&mut self, cx: &mut std::task::Context<'_>,) -> core::task::Poll<Option<V>> {
+    fn inner_poll(&mut self, cx: &mut std::task::Context<'_>) -> core::task::Poll<Option<V>> {
         loop {
             let idx = self
-                .rt_state.current_fut
+                .rt_state
+                .current_fut
                 .load(core::sync::atomic::Ordering::Acquire);
 
             if idx == 0 && self.root_io.is_done() {
@@ -109,9 +113,18 @@ impl<'i, V> VM<'i, V> {
             let pinned = unsafe { core::pin::Pin::new_unchecked(fut_ref) };
 
             match pinned.poll(cx) {
-                core::task::Poll::Pending if !self.rt_state.ignore_pending.load(core::sync::atomic::Ordering::Acquire)  => return core::task::Poll::Pending,
+                core::task::Poll::Pending
+                    if !self
+                        .rt_state
+                        .ignore_pending
+                        .load(core::sync::atomic::Ordering::Acquire) =>
+                {
+                    return core::task::Poll::Pending
+                }
                 _ => {
-                    self.rt_state.ignore_pending.store(false, core::sync::atomic::Ordering::Release);
+                    self.rt_state
+                        .ignore_pending
+                        .store(false, core::sync::atomic::Ordering::Release);
                     if idx == 0 {
                         self.rt_state
                             .current_fut
@@ -149,7 +162,10 @@ impl<'i, V> futures::stream::Stream for VM<'i, V> {
 impl<'r, 'i, V> core::future::Future for VMGetNextFuture<'r, 'i, V> {
     type Output = Option<V>;
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> core::task::Poll<Option<V>> {
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> core::task::Poll<Option<V>> {
         let inner = self.get_mut();
         VM::inner_poll(&mut inner.vm_, cx)
     }
