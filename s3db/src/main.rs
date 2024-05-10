@@ -60,7 +60,7 @@ fn main() {
 
     #[cfg(profiling)]
     let pprof_guard = pprof::ProfilerGuardBuilder::default()
-        .frequency(500)
+        .frequency(1000)
         .blocklist(&["libc", "pthread"])
         .build()
         .unwrap();
