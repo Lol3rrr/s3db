@@ -60,7 +60,7 @@ with subprocess.Popen(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_durati
         output = output + text
         print(text, end='', flush=True)
 
-s3db_process.kill()
+s3db_process.terminate()
 
 if args.metrics:
     bench_results = parse_metrics(output, "pgbench/tpc-b")

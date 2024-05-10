@@ -69,6 +69,8 @@ fn main() {
         let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
         signal.recv().await;
 
+        tracing::info!("Received Terminate");
+
         #[cfg(profiling)]
         {
             if let Ok(rep) = pprof_guard.report().build() {
