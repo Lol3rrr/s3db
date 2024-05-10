@@ -17,14 +17,14 @@ impl<'i> vm::Instruction<'i> for Instruction<'i> {
     type ConstructError = ();
     type Input = MathExpression;
     type Value = isize;
-    type Arguments<'args> = () where 'args: 'i;
+    type Arguments<'args> = () where 'args: 'i, Self: 'args;
 
     async fn construct<'p, 'args>(
         input: &'i Self::Input,
         pending: &'p mut Vec<(&'i Self::Input, vm::Output<isize>)>,
         mut out: vm::Output<isize>,
         ctx: &mut vm::ConstructionContext<isize>,
-        args: &(),
+        args: &Self::Arguments<'args>,
     ) -> Result<Box<dyn core::future::Future<Output = ()> + 'i>, ()>
     where
         'args: 'i,
