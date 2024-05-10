@@ -48,18 +48,12 @@ jobs:
           comment_tag: profiling_results
 
   profile-pgbench-matrix:
-    permissions:
-      pull-requests: write
     name: Profile pgbench benchmark
     runs-on: ubuntu-latest
     strategy:
       matrix:
         clients: [1, 2, 4]
     steps:
-      - name: Extract branch name
-        shell: bash
-        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-        id: extract_branch
       - name: Install pgbench
         run: |
           sudo apt-get update
@@ -89,7 +83,7 @@ jobs:
         run: cat s3db.std.log
       - name: Correct profile file path
         run: |
-          mkdir -p target/criterion/pgbench/pgbench/${{ matrix.clients }}/profile/
+          mkdir -p target/criterion/pgbench/pgbench/${{ matrix.clients }}-clients/profile/
           mv current/s3db.pb target/criterion/pgbench/pgbench/${{ matrix.clients }}-clients/profile/profile.pb
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
