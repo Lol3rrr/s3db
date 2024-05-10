@@ -66,10 +66,13 @@ fn main() {
             .unwrap();
 
     local_set.spawn_local(async move {
-        let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-        signal.recv().await;
+        let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+        let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap();
 
-        tracing::info!("Received Terminate");
+        tokio::select! {
+            _ = terminate.recv() => tracing::info!("Received Termiante"),
+            _ = interrupt.recv() => tracing::info!("Received Interrupt"),
+        };
 
         #[cfg(profiling)]
         {
