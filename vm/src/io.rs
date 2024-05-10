@@ -184,32 +184,32 @@ where
             return core::task::Poll::Ready(());
         }
 
-        let v = unsafe { self_mut.value.assume_init_read() }; 
+        let v = unsafe { self_mut.value.assume_init_read() };
         self_mut.run = true;
 
-                let v_ptr = self_mut.output.data.value.get();
-                let _ = core::mem::replace(unsafe { &mut *v_ptr }, Some(v));
+        let v_ptr = self_mut.output.data.value.get();
+        let _ = core::mem::replace(unsafe { &mut *v_ptr }, Some(v));
 
-                let consumer = self_mut
-                    .output
-                    .data
-                    .consumer
-                    .load(core::sync::atomic::Ordering::Acquire);
-                self_mut
-                    .output
-                    .data
-                    .runtime_ptr
-                    .current_fut
-                    .store(consumer, core::sync::atomic::Ordering::Release);
+        let consumer = self_mut
+            .output
+            .data
+            .consumer
+            .load(core::sync::atomic::Ordering::Acquire);
+        self_mut
+            .output
+            .data
+            .runtime_ptr
+            .current_fut
+            .store(consumer, core::sync::atomic::Ordering::Release);
 
-                self_mut
-                    .output
-                    .data
-                    .runtime_ptr
-                    .ignore_pending
-                    .store(true, core::sync::atomic::Ordering::Release);
+        self_mut
+            .output
+            .data
+            .runtime_ptr
+            .ignore_pending
+            .store(true, core::sync::atomic::Ordering::Release);
 
-                core::task::Poll::Pending 
+        core::task::Poll::Pending
     }
 }
 
