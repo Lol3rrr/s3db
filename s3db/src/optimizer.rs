@@ -1,4 +1,4 @@
-use crate::ra::RaExpression;
+use ra::RaExpression;
 
 mod noop;
 pub use noop::Noop;

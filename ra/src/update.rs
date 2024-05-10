@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ra::RaValueExpression;
+use crate::RaValueExpression;
 
 use sql::{DataType, Identifier, JoinKind, Update, UpdateFrom};
 use storage::Schemas;
@@ -230,7 +230,7 @@ impl RaUpdate {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::ra::{RaComparisonOperator, RaConditionValue};
+    use crate::{RaComparisonOperator, RaConditionValue};
     use bumpalo::Bump;
     use sql::{BinaryOperator, Literal, Query};
 

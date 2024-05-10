@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 sql = { path = "../sql" }
 storage = { path = "../storage" }
+ra = { path = "../ra/" }
 vm = { path = "../vm/" }
 
 bytes = "1.5.0"

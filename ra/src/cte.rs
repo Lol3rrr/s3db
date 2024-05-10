@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ra::{ParsingContext, ProjectionAttribute, RaValueExpression};
+use crate::{ParsingContext, ProjectionAttribute, RaValueExpression};
 
 use sql::{DataType, Query, WithCTE, WithCTEs};
 use storage::Schemas;
@@ -107,7 +107,7 @@ impl CTE {
                                     query: CTEQuery::Select(base_ra),
                                 },
                             });
-                            scope.context = Some(crate::ra::CustomCow::Owned(ctx));
+                            scope.context = Some(crate::CustomCow::Owned(ctx));
                         }
                     };
 
@@ -159,7 +159,7 @@ impl CTE {
 #[cfg(test)]
 mod tests {
 
-    use crate::ra::{Attribute, AttributeId};
+    use crate::{Attribute, AttributeId};
     use sql::{
         arenas::Boxed, BinaryOperator, ColumnReference, Combination, Literal, Select,
         TableExpression, ValueExpression,

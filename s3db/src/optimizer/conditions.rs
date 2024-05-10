@@ -1,4 +1,4 @@
-use crate::ra::{RaCondition, RaExpression};
+use ra::{RaCondition, RaExpression};
 
 use super::Optimize;
 
@@ -77,7 +77,7 @@ impl Optimize for Conditions {
 
 #[cfg(test)]
 mod tests {
-    use crate::ra::{AttributeId, RaConditionValue};
+    use ra::{AttributeId, RaConditionValue};
     use sql::DataType;
 
     use super::*;

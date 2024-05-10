@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 
 use bumpalo::Bump;
 
-use s3db::ra::{
+use ra::{
     self, AggregateExpression, AggregationCondition, Attribute, AttributeId, CTEQuery, CTEValue,
     ParsingContext, ProjectionAttribute, RaComparisonOperator, RaCondition, RaConditionValue,
     RaExpression, RaUpdate, RaValueExpression, CTE,

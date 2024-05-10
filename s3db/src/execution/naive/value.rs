@@ -1,7 +1,7 @@
 use futures::{future::FutureExt, stream::StreamExt};
 use std::{borrow::Cow, collections::HashMap};
 
-use crate::ra::{self, AttributeId};
+use ra::{AttributeId};
 
 use sql::{BinaryOperator, DataType};
 use storage::{self, Data, Sequence};

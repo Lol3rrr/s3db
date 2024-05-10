@@ -1,3 +1,5 @@
+#![feature(variant_count)]
+
 use std::{
     borrow::{Borrow, Cow},
     collections::HashMap,

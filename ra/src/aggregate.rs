@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ra::RaValueExpression;
+use crate::RaValueExpression;
 
 use sql::{DataType, Literal, ValueExpression};
 use storage::Schemas;

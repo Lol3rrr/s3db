@@ -1,6 +1,7 @@
 use futures::Future;
 
-use crate::{execution::naive::EvaulateRaError, ra::RaCondition};
+use crate::execution::naive::EvaulateRaError;
+use ra::RaCondition;
 
 mod naive;
 pub use naive::Naive;

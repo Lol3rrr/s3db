@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ra::Scope;
+use crate::Scope;
 
 use sql::{DataType, Delete};
 use storage::Schemas;
@@ -70,7 +70,7 @@ impl RaDelete {
 
 #[cfg(test)]
 mod tests {
-    use crate::ra::{
+    use crate::{
         AttributeId, ProjectionAttribute, RaComparisonOperator, RaCondition, RaConditionValue,
         RaExpression, RaValueExpression,
     };

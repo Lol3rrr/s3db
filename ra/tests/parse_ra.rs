@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bumpalo::Bump;
-use s3db::ra::{RaDelete, RaExpression, RaUpdate};
+use ra::{RaDelete, RaExpression, RaUpdate};
 
 use sql::{DataType, Query};
 use storage::Schemas;
