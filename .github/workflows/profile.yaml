@@ -47,7 +47,7 @@ jobs:
           pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: profiling_results
 
-  profile:
+  profile-pgbench:
     permissions:
       pull-requests: write
     name: Profile pgbench benchmark
