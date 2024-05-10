@@ -49,7 +49,6 @@ pub enum DescribeKind {
 }
 
 impl Message {
-    #[tracing::instrument(skip(reader))]
     pub async fn parse<R>(reader: &mut R) -> Result<Self, ParseMessageError>
     where
         R: tokio::io::AsyncRead + Unpin,
@@ -60,8 +59,6 @@ impl Message {
             .await
             .map_err(ParseMessageError::Receive)?
             - 4;
-
-        tracing::trace!("Raw-Type: {:?} - Length: {:?}", raw_type, length,);
 
         let mut buffer = bytes::BytesMut::with_capacity(length as usize);
         if length > 0 {
@@ -74,10 +71,7 @@ impl Message {
         }
         assert_eq!(length as usize, buffer.len());
 
-        tracing::trace!("Buffer-Len: {:?}", buffer.len());
-
         let (remaining, result) = Self::parse_internal(raw_type, &buffer).map_err(|e| {
-            tracing::error!("Buffer: {:?}", buffer);
             tracing::error!("Error: {:?}", e);
             ParseMessageError::ParsingError {}
         })?;

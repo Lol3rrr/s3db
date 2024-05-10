@@ -90,8 +90,6 @@ where
             content,
             mut formats,
         } => {
-            tracing::debug!("Content: {:?}", content);
-
             let row_count = content.parts.iter().flat_map(|p| p.rows.iter()).count();
 
             if formats.is_empty() {
@@ -131,8 +129,6 @@ where
             }
 
             for row in content.parts.into_iter().flat_map(|p| p.rows.into_iter()) {
-                tracing::trace!("Row: {:?}", row);
-
                 let values: Vec<_> = row
                     .data
                     .iter()
@@ -238,9 +234,6 @@ where
             returning,
             mut formats,
         } => {
-            tracing::trace!("Insert completed");
-            tracing::trace!("Returning: {:?}", returning);
-
             if !returning.is_empty() {
                 if formats.is_empty() {
                     formats.extend(core::iter::repeat(FormatCode::Text).take(returning[0].len()));
