@@ -8,6 +8,7 @@ use tracing::Level;
 use tracing_subscriber::layer::{Layer, SubscriberExt};
 
 fn main() {
+    #[cfg(debug_assertions)]
     let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder().build();
 
     let log_file = File::create("s3db.log").unwrap();
