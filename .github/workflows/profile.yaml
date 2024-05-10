@@ -87,7 +87,7 @@ jobs:
       - name: Correct profile file path
         run: |
           mkdir -p target/criterion/pgbench/pgbench/10s/profile/
-          mv s3db.pb target/criterion/pgbench/pgbench/10s/profile/profile.pb
+          mv current/s3db.pb target/criterion/pgbench/pgbench/10s/profile/profile.pb
       - name: Upload to pyroscope
         run: python3 profiles.py
         env:
