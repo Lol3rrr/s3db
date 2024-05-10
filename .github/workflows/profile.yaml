@@ -81,6 +81,9 @@ jobs:
           path: "current"
       - name: Run benchmark
         run: python3 pgbench.py --metrics --repo-path ./current/ --profile
+      - name: Print s3db logs
+        if: always()
+        run: cat s3db.std.log
       - name: Correct profile file path
         run: |
           mkdir -p target/criterion/pgbench/pgbench/10s/profile/

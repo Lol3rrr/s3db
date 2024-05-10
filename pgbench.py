@@ -40,7 +40,8 @@ if build_res.returncode != 0:
     sys.exit(-1)
 
 print(f"Starting database", flush=True)
-s3db_process = subprocess.Popen(["target/release/s3db"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=args.repo_path)
+s3db_file = open("s3db.std.log", 'w')
+s3db_process = subprocess.Popen(["target/release/s3db"], stdout=s3db_file, stderr=s3db_file, cwd=args.repo_path)
 
 print(f"Waiting 5 Seconds for database to get up and running", flush=True)
 time.sleep(5)
