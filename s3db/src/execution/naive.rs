@@ -3,13 +3,10 @@
 
 use std::collections::HashMap;
 
-use futures::{
-    stream::{LocalBoxStream, StreamExt},
-    FutureExt,
-};
+use futures::{stream::StreamExt, FutureExt};
 
 use crate::{
-    execution::algorithms::{self, joins::Join},
+    execution::algorithms,
     postgres::FormatCode,
     ra::{self, AttributeId, RaExpression, RaUpdate},
 };
@@ -119,10 +116,6 @@ pub enum EvaulateRaError<SE> {
     Other(&'static str),
 }
 
-struct StackedExpr<'r> {
-    expr: &'r RaExpression,
-}
-
 impl<S> NaiveEngine<S>
 where
     S: storage::Storage,
@@ -155,7 +148,9 @@ where
                     };
 
                     let ctx = (placeholders, ctes, &tmp, self, transaction);
-                    let evm = ::vm::VM::construct::<rainstr::RaVmInstruction<_>>(s, &ctx).await.unwrap();
+                    let evm = ::vm::VM::construct::<rainstr::RaVmInstruction<_>>(s, &ctx)
+                        .await
+                        .unwrap();
 
                     let rows = evm.collect().await;
 
@@ -214,7 +209,9 @@ where
                         };
 
                         let ctx = (placeholders, &inner_cte, &tmp, self, transaction);
-                        let evm = ::vm::VM::construct::<rainstr::RaVmInstruction<_>>(s, &ctx).await.unwrap();
+                        let evm = ::vm::VM::construct::<rainstr::RaVmInstruction<_>>(s, &ctx)
+                            .await
+                            .unwrap();
 
                         let tmp_rows: Vec<_> = evm.collect().await;
 

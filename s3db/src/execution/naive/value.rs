@@ -323,13 +323,12 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let alt_ctx: (&_, &_, &_, &_, &_) = (*placeholders, *ctes, &n_outer, engine, transaction);
-                    let mut alt_vm = ::vm::VM::construct::<super::rainstr::RaVmInstruction<S>>(
-                        query,
-                        &alt_ctx,
-                    )
-                    .await
-                    .unwrap();
+                    let alt_ctx: (&_, &_, &_, &_, &_) =
+                        (*placeholders, *ctes, &n_outer, engine, transaction);
+                    let mut alt_vm =
+                        ::vm::VM::construct::<super::rainstr::RaVmInstruction<S>>(query, &alt_ctx)
+                            .await
+                            .unwrap();
 
                     let mut parts = Vec::new();
                     while let Some(mut row) = alt_vm.next().await {
