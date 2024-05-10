@@ -15,15 +15,18 @@ impl<'i> vm::Instruction<'i> for MathInstruction {
     type ConstructError = ();
     type Input = Expression;
     type Value = isize;
-    type Arguments = ();
+    type Arguments<'args> = () where 'args: 'i;
 
-    async fn construct<'p>(
+    async fn construct<'p, 'args>(
         input: &'i Self::Input,
         pending: &'p mut Vec<(&'i Self::Input, vm::Output<Self::Value>)>,
         mut out: vm::Output<Self::Value>,
         ctx: &mut vm::ConstructionContext<Self::Value>,
         args: &(),
-    ) -> Result<Box<dyn core::future::Future<Output = ()> + 'i>, ()> {
+    ) -> Result<Box<dyn core::future::Future<Output = ()> + 'i>, ()>
+    where
+        'args: 'i,
+    {
         match input {
             Expression::Constant(v) => Ok(Box::new(async move {
                 out.store(*v).await;

@@ -10,7 +10,10 @@ pub trait Instruction<'i> {
     type Value;
 
     /// Allow for arguments to be passed from the Outside
-    type Arguments;
+    type Arguments<'args>
+    where
+        'args: 'i,
+        Self: 'args;
 
     /// This should first add all it's dependencies onto the provided `pending` Vec, so that they
     /// will be processed as well, and then return a boxed [Future](core::future::Future) which will
@@ -21,15 +24,17 @@ pub trait Instruction<'i> {
     /// then exit. However if the future is kind of like a `map` or `filter`, you will likely want
     /// to run it as a loop, which will read from it's input and then write to the output in every
     /// iteration
-    fn construct<'p>(
+    fn construct<'p, 'args>(
         input: &'i Self::Input,
         pending: &'p mut Vec<(&'i Self::Input, Output<Self::Value>)>,
         out: Output<Self::Value>,
         ctx: &mut ConstructionContext<Self::Value>,
-        args: &Self::Arguments,
+        args: &Self::Arguments<'args>,
     ) -> impl core::future::Future<
         Output = Result<Box<dyn core::future::Future<Output = ()> + 'i>, Self::ConstructError>,
-    >;
+    >
+    where
+        'args: 'i;
 }
 
 struct RuntimeState {
@@ -51,12 +56,13 @@ pub struct VMGetNextFuture<'r, 'i, V> {
 }
 
 impl<'i, V> VM<'i, V> {
-    pub async fn construct<I>(
+    pub async fn construct<'args, I>(
         input: &'i I::Input,
-        args: &I::Arguments,
+        args: &I::Arguments<'args>,
     ) -> Result<Self, I::ConstructError>
     where
         I: Instruction<'i, Value = V>,
+        'args: 'i,
     {
         let fut_ptr = std::rc::Rc::new(RuntimeState {
             current_fut: core::sync::atomic::AtomicUsize::new(0),

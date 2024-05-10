@@ -1524,6 +1524,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "vm",
 ]
 
 [[package]]

@@ -27,6 +27,7 @@ mod mapping;
 mod pattern;
 mod value;
 
+mod rainstr;
 mod ravm;
 
 pub struct NaiveEngine<S> {
@@ -1133,21 +1134,39 @@ where
                     };
 
                     let tmp = HashMap::new();
-                    let mut vm = ravm::RaVm::construct::<S::LoadingError>(
-                        &ra_expression,
-                        &placeholder_values,
-                        &cte_queries,
-                        &tmp,
-                    )
-                    .map_err(|e| ExecuteBoundError::NotImplemented("Error Constructing RaVm"))?;
 
-                    let mut vm_rows = Vec::new();
-                    while let Some(v) = vm.get_next(self, transaction).await {
-                        vm_rows.push(v);
+                    let alt_ctx = (&placeholder_values, &cte_queries, &tmp, self, transaction);
+                    let mut alt_vm = ::vm::VM::construct::<rainstr::RaVmInstruction<S>>(
+                        &ra_expression,
+                        &alt_ctx,
+                    )
+                    .await
+                    .unwrap();
+
+                    let mut alt_rows = Vec::new();
+                    while let Some(r) = alt_vm.next().await {
+                        alt_rows.push(r);
                     }
 
                     #[cfg(debug_assertions)]
                     {
+                        let mut vm = ravm::RaVm::construct::<S::LoadingError>(
+                            &ra_expression,
+                            &placeholder_values,
+                            &cte_queries,
+                            &tmp,
+                        )
+                        .map_err(|e| {
+                            ExecuteBoundError::NotImplemented("Error Constructing RaVm")
+                        })?;
+
+                        let mut vm_rows = Vec::new();
+                        while let Some(v) = vm.get_next(self, transaction).await {
+                            vm_rows.push(v);
+                        }
+
+                        assert_eq!(&alt_rows, &vm_rows);
+
                         #[allow(deprecated)]
                         let (_, rows) = match self
                             .evaluate_ra(
@@ -1168,9 +1187,9 @@ where
                         };
 
                         let ra_rows: Vec<_> = rows.map(|r| r.into_owned()).collect().await;
-                        assert_eq!(&ra_rows, &vm_rows);
+                        assert_eq!(&ra_rows, &alt_rows);
                     }
-                    let result = storage::EntireRelation::from_parts(scheme, vm_rows);
+                    let result = storage::EntireRelation::from_parts(scheme, alt_rows);
 
                     tracing::debug!("RA-Result: {:?}", result);
 
