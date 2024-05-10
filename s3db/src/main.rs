@@ -59,26 +59,18 @@ fn main() {
     });
 
     #[cfg(profiling)]
-    {
-        let pprof_guard = pprof::ProfilerGuardBuilder::default()
+    let pprof_guard = pprof::ProfilerGuardBuilder::default()
             .frequency(500)
             .blocklist(&["libc", "pthread"])
             .build()
             .unwrap();
-        local_set.spawn_local(async move {
-            use pprof::protos::Message;
-            use tokio::io::AsyncWriteExt;
 
-            match tokio::signal::ctrl_c().await {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!("Receiving Signal: {:?}", e);
-                    return;
-                }
-            };
+    local_set.spawn_local(async move {
+        let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+        signal.recv().await;
 
-            tracing::info!("Handling CTRL-C");
-
+        #[cfg(profiling)]
+        {
             if let Ok(rep) = pprof_guard.report().build() {
                 if let Ok(pprof_rep) = rep.pprof() {
                     let mut file = match tokio::fs::File::create("s3db.pb").await {
@@ -100,8 +92,10 @@ fn main() {
                     }
                 }
             }
-        });
-    }
+        }
+
+        std::process::exit(0);
+    });
 
     runtime.block_on(local_set);
 }
