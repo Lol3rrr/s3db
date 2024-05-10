@@ -4,10 +4,12 @@ import signal
 import sys
 import argparse
 import json
+import os
 
 parser = argparse.ArgumentParser(description="Run pgbench benchmarks")
 parser.add_argument("--metrics", action="store_true")
 parser.add_argument("--repo-path", default="./")
+parser.add_argument("--profile", action="store_true")
 
 args = parser.parse_args()
 
@@ -27,8 +29,14 @@ def parse_metrics(raw: str, benchname: str):
     return { benchname: metrics }
 
 print(f"Compiling S3DB in release mode", flush=True)
-build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True, cwd=args.repo_path)
+
+build_env = os.environ.copy()
+if args.profile:
+    build_env["RUSTFLAGS"] = "--cfg profiling=\"1\""
+
+build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True, cwd=args.repo_path, env=build_env)
 if build_res.returncode != 0:
+    print(build_res.stderr)
     sys.exit(-1)
 
 print(f"Starting database", flush=True)
