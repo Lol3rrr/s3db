@@ -11,3 +11,10 @@ bumpalo = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+iai-callgrind = { version = "0.10.2" }
+
+
+[[bench]]
+name = "parse"
+harness = false

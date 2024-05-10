@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use s3db::ra::RaExpression;
+use ra::RaExpression;
 
 use sql::DataType;
 use storage::Schemas;

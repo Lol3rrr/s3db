@@ -1362,6 +1362,8 @@ name = "ra"
 version = "0.1.0"
 dependencies = [
  "bumpalo",
+ "criterion",
+ "iai-callgrind",
  "pretty_assertions",
  "sql",
  "storage",
