@@ -47,11 +47,14 @@ jobs:
           pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: profiling_results
 
-  profile-pgbench:
+  profile-pgbench-matrix:
     permissions:
       pull-requests: write
     name: Profile pgbench benchmark
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        clients: [1, 2, 4]
     steps:
       - name: Extract branch name
         shell: bash
@@ -80,16 +83,42 @@ jobs:
         with:
           path: "current"
       - name: Run benchmark
-        run: python3 pgbench.py --metrics --repo-path ./current/ --profile
+        run: python3 pgbench.py --metrics --repo-path ./current/ --profile --clients ${{ matrix.clients }}
       - name: Print s3db logs
         if: always()
         run: cat s3db.std.log
       - name: Correct profile file path
         run: |
-          mkdir -p target/criterion/pgbench/pgbench/10s/profile/
-          ls
-          ls current/
-          mv current/s3db.pb target/criterion/pgbench/pgbench/10s/profile/profile.pb
+          mkdir -p target/criterion/pgbench/pgbench/${{ matrix.clients }}/profile/
+          mv current/s3db.pb target/criterion/pgbench/pgbench/${{ matrix.clients }}-clients/profile/profile.pb
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: pgbench-results
+          path: target/criterion/pgbench/
+
+  profile-pgbench-comment:
+    permissions:
+      pull-requests: write
+    name: Profile pgbench benchmark
+    runs-on: ubuntu-latest
+    needs: profile-pgbench-matrix
+    steps:
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+      - name: Install Profilecli 
+        run: |
+          curl -fL https://github.com/grafana/pyroscope/releases/download/v1.5.0/profilecli_1.5.0_linux_amd64.tar.gz | tar xvz
+          chmod +x profilecli
+          sudo mv profilecli /usr/local/bin
+      - uses: actions/checkout@v4
+      - name: Download Matrix artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: pgbench-results
+          path: target/criterion/pgbench
       - name: Upload to pyroscope
         run: python3 profiles.py
         env:
@@ -109,3 +138,4 @@ jobs:
           filePath: profile-report.md
           pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: profiling_results_pgbench
+

@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser(description="Run pgbench benchmarks")
 parser.add_argument("--metrics", action="store_true")
 parser.add_argument("--repo-path", default="./")
 parser.add_argument("--profile", action="store_true")
+parser.add_argument("--clients", default=1)
 
 args = parser.parse_args()
 
@@ -54,7 +55,7 @@ if subprocess.run(["pgbench", "-h", "localhost", "-i", "-n"]).returncode != 0:
     sys.exit(-1)
 
 output = ""
-with subprocess.Popen(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_duration}", "--progress", "1"], stdout=subprocess.PIPE) as p:
+with subprocess.Popen(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_duration}", "--progress", "1", "-c", f"{args.clients}"], stdout=subprocess.PIPE) as p:
     while p.poll() is None:
         text = p.stdout.read1().decode('utf-8')
         output = output + text
