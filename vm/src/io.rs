@@ -133,7 +133,8 @@ impl<V> Output<V> {
     pub fn store(&mut self, value: V) -> OutputStoreValueFuture<'_, V> {
         OutputStoreValueFuture {
             output: self,
-            value: Some(value),
+            value: core::mem::MaybeUninit::new(value),
+            run: false,
         }
     }
 
@@ -163,7 +164,8 @@ impl<V> Drop for Output<V> {
 #[doc(hidden)]
 pub struct OutputStoreValueFuture<'o, V> {
     output: &'o mut Output<V>,
-    value: Option<V>,
+    value: core::mem::MaybeUninit<V>,
+    run: bool,
 }
 
 impl<'o, V> core::future::Future for OutputStoreValueFuture<'o, V>
@@ -178,8 +180,13 @@ where
     ) -> std::task::Poll<Self::Output> {
         let self_mut = self.get_mut();
 
-        match self_mut.value.take() {
-            Some(v) => {
+        if self_mut.run {
+            return core::task::Poll::Ready(());
+        }
+
+        let v = unsafe { self_mut.value.assume_init_read() }; 
+        self_mut.run = true;
+
                 let v_ptr = self_mut.output.data.value.get();
                 let _ = core::mem::replace(unsafe { &mut *v_ptr }, Some(v));
 
@@ -202,10 +209,7 @@ where
                     .ignore_pending
                     .store(true, core::sync::atomic::Ordering::Release);
 
-                core::task::Poll::Pending
-            }
-            None => core::task::Poll::Ready(()),
-        }
+                core::task::Poll::Pending 
     }
 }
 
