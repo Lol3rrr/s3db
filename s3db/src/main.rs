@@ -78,6 +78,9 @@ fn main() {
 
         #[cfg(profiling)]
         {
+            use pprof::protos::Message;
+            use tokio::io::AsyncWriteExt;
+
             tracing::info!("Generating Profiling Report");
 
             match pprof_guard.report().build() {

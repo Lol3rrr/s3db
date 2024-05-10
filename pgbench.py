@@ -32,7 +32,7 @@ print(f"Compiling S3DB in release mode", flush=True)
 
 build_env = os.environ.copy()
 if args.profile:
-    build_env["RUSTFLAGS"] = "--cfg profiling=\"1\""
+    build_env["RUSTFLAGS"] = "--cfg profiling"
 
 build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True, cwd=args.repo_path, env=build_env)
 if build_res.returncode != 0:
