@@ -46,3 +46,61 @@ jobs:
           filePath: profile-report.md
           pr_number: ${{ steps.pr-check.outputs.number }}
           comment_tag: profiling_results
+
+  profile:
+    permissions:
+      pull-requests: write
+    name: Profile pgbench benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+        id: extract_branch
+      - name: Install pgbench
+        run: |
+          sudo apt-get update
+          sudo apt install gnupg2 wget nano
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt update
+          sudo apt install postgresql-16 postgresql-client-16
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install Profilecli 
+        run: |
+          curl -fL https://github.com/grafana/pyroscope/releases/download/v1.5.0/profilecli_1.5.0_linux_amd64.tar.gz | tar xvz
+          chmod +x profilecli
+          sudo mv profilecli /usr/local/bin
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          path: "current"
+      - name: Run benchmark
+        run: python3 pgbench.py --metrics --repo-path ./current/ --profile
+      - name: Correct profile file path
+        run: |
+          mkdir -p target/criterion/pgbench/pgbench/10s/profile/
+          mv s3db.pb target/criterion/pgbench/pgbench/10s/profile/profile.pb
+      - name: Upload to pyroscope
+        run: python3 profiles.py
+        env:
+          PROFILECLI_URL: ${{ secrets.PYROSCOPE_URL }}
+          PROFILECLI_USERNAME: ${{ secrets.PYROSCOPE_USERNAME }}
+          PROFILECLI_PASSWORD: ${{ secrets.PYROSCOPE_PASSWORD }}
+          GIT_BRANCH: ${{ steps.extract_branch.outputs.branch }}
+      - id: pr-check
+        uses: 8BitJonny/gh-get-current-pr@3.0.0
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d %H:%M:%S')"
+      - name: Comment artifact results
+        if: steps.pr-check.outputs.pr_found == 'true'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: profile-report.md
+          pr_number: ${{ steps.pr-check.outputs.number }}
+          comment_tag: profiling_results_pgbench

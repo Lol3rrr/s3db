@@ -80,7 +80,7 @@ fn main() {
 
             if let Ok(rep) = pprof_guard.report().build() {
                 if let Ok(pprof_rep) = rep.pprof() {
-                    let mut file = match tokio::fs::File::create("s3db.pprof").await {
+                    let mut file = match tokio::fs::File::create("s3db.pb").await {
                         Ok(f) => f,
                         Err(e) => {
                             tracing::error!("Creating pprof file: {:?}", e);
