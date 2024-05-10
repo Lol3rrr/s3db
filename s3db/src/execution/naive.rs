@@ -28,7 +28,6 @@ mod pattern;
 mod value;
 
 mod rainstr;
-mod ravm;
 
 pub struct NaiveEngine<S> {
     storage: S,
@@ -155,16 +154,10 @@ where
                             .collect(),
                     };
 
-                    let mut vm =
-                        ravm::RaVm::construct::<S::LoadingError>(s, placeholders, ctes, &tmp)
-                            .map_err(|e| {
-                                dbg!(e);
-                                EvaulateRaError::Other("Construct VM")
-                            })?;
-                    let mut rows = Vec::new();
-                    while let Some(r) = vm.get_next(self, transaction).await {
-                        rows.push(r);
-                    }
+                    let ctx = (placeholders, ctes, &tmp, self, transaction);
+                    let evm = ::vm::VM::construct::<rainstr::RaVmInstruction<_>>(s, &ctx).await.unwrap();
+
+                    let rows = evm.collect().await;
 
                     Ok(storage::EntireRelation::from_parts(evaluated_schema, rows))
                 }
@@ -220,20 +213,10 @@ where
                                 .collect(),
                         };
 
-                        let mut vm = ravm::RaVm::construct::<S::LoadingError>(
-                            s,
-                            placeholders,
-                            &inner_cte,
-                            &tmp,
-                        )
-                        .map_err(|e| {
-                            dbg!(e);
-                            EvaulateRaError::Other("Construct VM")
-                        })?;
-                        let mut tmp_rows = Vec::new();
-                        while let Some(r) = vm.get_next(self, transaction).await {
-                            tmp_rows.push(r);
-                        }
+                        let ctx = (placeholders, &inner_cte, &tmp, self, transaction);
+                        let evm = ::vm::VM::construct::<rainstr::RaVmInstruction<_>>(s, &ctx).await.unwrap();
+
+                        let tmp_rows: Vec<_> = evm.collect().await;
 
                         for (column, name) in tmp_schema.rows.iter_mut().zip(columns.iter()) {
                             column.name.clone_from(name);
@@ -503,25 +486,6 @@ where
                         alt_rows.push(r);
                     }
 
-                    #[cfg(debug_assertions)]
-                    {
-                        let mut vm = ravm::RaVm::construct::<S::LoadingError>(
-                            &ra_expression,
-                            &placeholder_values,
-                            &cte_queries,
-                            &tmp,
-                        )
-                        .map_err(|e| {
-                            ExecuteBoundError::NotImplemented("Error Constructing RaVm")
-                        })?;
-
-                        let mut vm_rows = Vec::new();
-                        while let Some(v) = vm.get_next(self, transaction).await {
-                            vm_rows.push(v);
-                        }
-
-                        assert_eq!(&alt_rows, &vm_rows);
-                    }
                     let result = storage::EntireRelation::from_parts(scheme, alt_rows);
 
                     tracing::debug!("RA-Result: {:?}", result);

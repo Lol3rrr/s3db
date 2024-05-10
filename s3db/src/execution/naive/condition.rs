@@ -1,7 +1,7 @@
 use super::{pattern, value, EvaulateRaError};
 
-use futures::{future::FutureExt, stream::StreamExt};
 use std::{borrow::Cow, collections::HashMap};
+use futures::{stream::StreamExt, future::FutureExt};
 
 use crate::ra::{self, AttributeId};
 
@@ -235,14 +235,15 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
+                    let alt_ctx: (&_, &_, &_, &_, &_) = (*placeholders, *ctes, &n_outer, engine, transaction);
+                    let mut alt_vm = ::vm::VM::construct::<super::rainstr::RaVmInstruction<S>>(
                         query,
-                        placeholders,
-                        ctes,
-                        &n_outer,
+                        &alt_ctx,
                     )
-                    .ok()?;
-                    Some(vm.get_next(engine, transaction).await.is_some())
+                    .await
+                    .unwrap();
+
+                    Some(alt_vm.next().await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;
@@ -385,14 +386,15 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
+                    let alt_ctx: (&_, &_, &_, &_, &_) = (*placeholders, *ctes, &n_outer, engine, transaction);
+                    let mut alt_vm = ::vm::VM::construct::<super::rainstr::RaVmInstruction<S>>(
                         query,
-                        placeholders,
-                        ctes,
-                        &n_outer,
+                        &alt_ctx,
                     )
-                    .ok()?;
-                    Some(vm.get_next(engine, transaction).await.is_some())
+                    .await
+                    .unwrap();
+
+                    Some(alt_vm.next().await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;
