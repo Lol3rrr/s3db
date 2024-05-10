@@ -235,14 +235,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
-                        query,
-                        placeholders,
-                        ctes,
-                        &n_outer,
-                    )
-                    .ok()?;
-                    Some(vm.get_next(engine, transaction).await.is_some())
+                    let alt_ctx: (&_, &_, &_, &_, &_) =
+                        (*placeholders, *ctes, &n_outer, engine, transaction);
+                    let mut alt_vm =
+                        ::vm::VM::construct::<super::rainstr::RaVmInstruction<S>>(query, &alt_ctx)
+                            .await
+                            .unwrap();
+
+                    Some(alt_vm.next().await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;
@@ -385,14 +385,14 @@ impl<'expr, 'outer, 'placeholders, 'ctes> super::mapping::MappingInstruction<'ex
                 };
 
                 let local_fut = async {
-                    let mut vm = super::ravm::RaVm::construct::<S::LoadingError>(
-                        query,
-                        placeholders,
-                        ctes,
-                        &n_outer,
-                    )
-                    .ok()?;
-                    Some(vm.get_next(engine, transaction).await.is_some())
+                    let alt_ctx: (&_, &_, &_, &_, &_) =
+                        (*placeholders, *ctes, &n_outer, engine, transaction);
+                    let mut alt_vm =
+                        ::vm::VM::construct::<super::rainstr::RaVmInstruction<S>>(query, &alt_ctx)
+                            .await
+                            .unwrap();
+
+                    Some(alt_vm.next().await.is_some())
                 }
                 .boxed_local();
                 let exists = local_fut.await?;

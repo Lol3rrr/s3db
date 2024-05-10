@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 sql = { path = "../sql" }
 
-futures = "0.3.30"
+futures = { workspace = true }
 tracing = "0.1.40"
 
 [target.'cfg(not(loom))'.dependencies]

@@ -4,10 +4,13 @@ import signal
 import sys
 import argparse
 import json
+import os
 
 parser = argparse.ArgumentParser(description="Run pgbench benchmarks")
 parser.add_argument("--metrics", action="store_true")
 parser.add_argument("--repo-path", default="./")
+parser.add_argument("--profile", action="store_true")
+parser.add_argument("--clients", default=1)
 
 args = parser.parse_args()
 
@@ -27,12 +30,19 @@ def parse_metrics(raw: str, benchname: str):
     return { benchname: metrics }
 
 print(f"Compiling S3DB in release mode", flush=True)
-build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True, cwd=args.repo_path)
+
+build_env = os.environ.copy()
+if args.profile:
+    build_env["RUSTFLAGS"] = "--cfg profiling"
+
+build_res = subprocess.run(["cargo", "build", "--release"], capture_output=True, cwd=args.repo_path, env=build_env)
 if build_res.returncode != 0:
+    print(build_res.stderr)
     sys.exit(-1)
 
 print(f"Starting database", flush=True)
-s3db_process = subprocess.Popen(["target/release/s3db"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=args.repo_path)
+s3db_file = open("s3db.std.log", 'w')
+s3db_process = subprocess.Popen(["target/release/s3db"], stdout=s3db_file, stderr=s3db_file, cwd=args.repo_path)
 
 print(f"Waiting 5 Seconds for database to get up and running", flush=True)
 time.sleep(5)
@@ -45,13 +55,13 @@ if subprocess.run(["pgbench", "-h", "localhost", "-i", "-n"]).returncode != 0:
     sys.exit(-1)
 
 output = ""
-with subprocess.Popen(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_duration}", "--progress", "1"], stdout=subprocess.PIPE) as p:
+with subprocess.Popen(["pgbench", "-h", "localhost", "-n", "-T", f"{bench_duration}", "--progress", "1", "-c", f"{args.clients}"], stdout=subprocess.PIPE) as p:
     while p.poll() is None:
         text = p.stdout.read1().decode('utf-8')
         output = output + text
         print(text, end='', flush=True)
 
-s3db_process.kill()
+s3db_process.terminate()
 
 if args.metrics:
     bench_results = parse_metrics(output, "pgbench/tpc-b")

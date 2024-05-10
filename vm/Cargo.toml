@@ -1,0 +1,11 @@
+[package]
+name = "vm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bumpalo = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1.37.0", features = ["rt"] }

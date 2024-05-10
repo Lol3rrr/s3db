@@ -76,12 +76,6 @@ impl<'d> MessageResponse<'d> {
     where
         W: tokio::io::AsyncWrite + Unpin,
     {
-        {
-            let _span = tracing::trace_span!("sending").entered();
-
-            tracing::trace!("Sending {:?}", self);
-        }
-
         match self {
             Self::DenySSL => {
                 writer.write_u8(b'N').await.map_err(SendError::Write)?;
@@ -244,8 +238,6 @@ impl<'d> MessageResponse<'d> {
                         .map_err(SendError::Write)?;
                 }
 
-                tracing::trace!("Raw-Buffer: {:?}", buffer.as_bytes());
-
                 writer
                     .write(buffer.as_bytes())
                     .await
@@ -293,8 +285,6 @@ impl<'d> MessageResponse<'d> {
                         }
                     };
                 }
-
-                tracing::trace!("Raw-Buffer: {:?}", buffer.as_bytes());
 
                 writer
                     .write(buffer.as_bytes())

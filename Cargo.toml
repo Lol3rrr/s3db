@@ -1,9 +1,10 @@
 [workspace]
-members = ["s3db", "sql", "storage"]
+members = ["s3db", "sql", "storage", "vm"]
 resolver = "2"
 
 [workspace.dependencies]
 bumpalo = {version = "3.16.0", features = ["collections", "boxed"]}
+futures = { version = "0.3.30" }
 
 [profile.release]
 codegen-units = 1
