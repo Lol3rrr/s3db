@@ -3,9 +3,9 @@ macro_rules! parse_error {
         let arena = bumpalo::Bump::new();
         match ::sql::Query::parse($content.as_bytes(), &arena) {
             Ok(v) => panic!("Parsing returned Ok: {:?}", v),
-            Err(_) => {},
+            Err(_) => {}
         };
-    }}
+    }};
 }
 
 #[test]
