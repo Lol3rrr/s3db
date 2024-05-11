@@ -5,10 +5,7 @@ use std::collections::HashMap;
 
 use futures::{stream::StreamExt, FutureExt};
 
-use crate::{
-    execution::algorithms,
-    postgres::FormatCode,
-};
+use crate::{execution::algorithms, postgres::FormatCode};
 
 use ra::{self, AttributeId, RaExpression, RaUpdate};
 use sql::{CompatibleParser, DataType, Query, TypeModifier};

@@ -1,7 +1,7 @@
 use futures::future::{FutureExt, LocalBoxFuture};
 use std::collections::HashMap;
 
-use ra::{AttributeId};
+use ra::AttributeId;
 
 use sql::DataType;
 use storage::{self, Storage};

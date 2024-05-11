@@ -3,7 +3,7 @@ use super::{pattern, value, EvaulateRaError};
 use futures::{future::FutureExt, stream::StreamExt};
 use std::{borrow::Cow, collections::HashMap};
 
-use ra::{AttributeId};
+use ra::AttributeId;
 
 use sql::DataType;
 use storage::{self, Data};

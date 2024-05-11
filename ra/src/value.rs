@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{RaExpression, AggregateExpression};
+use crate::{AggregateExpression, RaExpression};
 use sql::{BinaryOperator, DataType, Literal, ValueExpression};
 
 use super::{error_context, types, AttributeId, ParseSelectError, Scope};
