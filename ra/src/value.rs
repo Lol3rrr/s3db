@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ra::{self, RaExpression};
+use crate::{AggregateExpression, RaExpression};
 use sql::{BinaryOperator, DataType, Literal, ValueExpression};
 
 use super::{error_context, types, AttributeId, ParseSelectError, Scope};
@@ -278,7 +278,7 @@ impl RaValueExpression {
                     .map(|(_, n, t, i)| (n, t, i))
                     .collect::<Vec<_>>();
 
-                let ra_agg = ra::AggregateExpression::parse(
+                let ra_agg = AggregateExpression::parse(
                     &ValueExpression::AggregateExpression({
                         use sql::CompatibleParser;
                         agg_exp.to_static()

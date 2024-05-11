@@ -1,4 +1,4 @@
-use crate::ra::RaExpression;
+use ra::RaExpression;
 
 use super::Optimize;
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use sql::{DataType, FunctionCall, Literal};
 
-use crate::ra::{types, ParseRaError, RaExpression, RaValueExpression, Scope};
+use crate::{types, ParseRaError, RaExpression, RaValueExpression, Scope};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RaFunction {

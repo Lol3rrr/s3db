@@ -1,5 +1,4 @@
 use super::{condition, value};
-use crate::ra;
 
 use std::collections::HashMap;
 
@@ -254,8 +253,8 @@ where
 
                 let grouping_func: Box<dyn Fn(&storage::Row, &storage::Row) -> bool> =
                     match aggregation_condition {
-                        crate::ra::AggregationCondition::Everything => Box::new(|_, _| true),
-                        crate::ra::AggregationCondition::GroupBy { fields } => {
+                        ra::AggregationCondition::Everything => Box::new(|_, _| true),
+                        ra::AggregationCondition::GroupBy { fields } => {
                             let compare_indices: Vec<_> = fields
                                 .iter()
                                 .map(|(_, src_id)| {

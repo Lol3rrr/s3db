@@ -5,12 +5,9 @@ use std::collections::HashMap;
 
 use futures::{stream::StreamExt, FutureExt};
 
-use crate::{
-    execution::algorithms,
-    postgres::FormatCode,
-    ra::{self, AttributeId, RaExpression, RaUpdate},
-};
+use crate::{execution::algorithms, postgres::FormatCode};
 
+use ra::{self, AttributeId, RaExpression, RaUpdate};
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
 use storage::{self, Data, Sequence, Storage, TableSchema};
 
@@ -415,7 +412,7 @@ where
                         .map_err(ExecuteBoundError::StorageError)?;
 
                     let (ra_expression, placeholder_types) =
-                        match crate::ra::RaExpression::parse_select_with_context(
+                        match ra::RaExpression::parse_select_with_context(
                             &select,
                             &schemas,
                             &parse_context,

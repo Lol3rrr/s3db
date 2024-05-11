@@ -1,5 +1,5 @@
 [workspace]
-members = ["s3db", "sql", "storage", "vm"]
+members = [ "ra","s3db", "sql", "storage", "vm"]
 resolver = "2"
 
 [workspace.dependencies]

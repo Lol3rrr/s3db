@@ -1,0 +1,20 @@
+[package]
+name = "ra"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sql = { path = "../sql/" }
+storage = { path = "../storage/" }
+
+bumpalo = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"
+criterion = { version = "0.5.1", features = ["async_tokio"] }
+iai-callgrind = { version = "0.10.2" }
+
+
+[[bench]]
+name = "parse"
+harness = false

@@ -6,4 +6,3 @@ pub mod endpoint;
 pub mod execution;
 pub mod optimizer;
 pub mod postgres;
-pub mod ra;
