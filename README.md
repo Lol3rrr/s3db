@@ -1,4 +1,5 @@
 # S3DB
+[Docs](https://lol3rrr.github.io/s3db/s3db/)
 A toy experimental postgres compatible database using S3 as permanent storage
 
 ## Benchmarking
