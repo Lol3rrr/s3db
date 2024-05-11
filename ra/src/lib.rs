@@ -1,3 +1,4 @@
+//! # RA
 #![feature(variant_count)]
 
 use std::{
@@ -55,16 +56,22 @@ pub struct Attribute<V> {
 
 pub type ProjectionAttribute = Attribute<RaValueExpression>;
 
+/// The High-Level Relational Algebra expressions
 #[derive(Debug, PartialEq, Clone)]
 pub enum RaExpression {
+    /// Simply renames the `inner` [`RaExpression`], which is only really needed for reporting
+    /// errors and checking/constructing the queries, but not for actually executing the query
     Renamed {
         name: String,
         inner: Box<Self>,
     },
+    /// 'Projects' the rows obtained from the `inner` [`RaExpression`] onto new values
     Projection {
         inner: Box<Self>,
         attributes: Vec<ProjectionAttribute>,
     },
+    /// Acts like a 'filter' for the rows obtained from the `inner` [`RaExpression`], by applying
+    /// the `filter` condition on every row
     Selection {
         inner: Box<Self>,
         filter: RaCondition,
