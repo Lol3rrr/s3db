@@ -169,6 +169,14 @@ pub mod postgres {
         let mut prepared_statements = HashMap::new();
         let mut bound_statements = HashMap::new();
 
+        let terminate_span = tracing::info_span!("terminate");
+        let query_span = tracing::info_span!("query");
+        let parse_span = tracing::info_span!("parse");
+        let describe_span = tracing::info_span!("describe");
+        let sync_span = tracing::info_span!("sync");
+        let bind_span = tracing::info_span!("bind");
+        let execute_span = tracing::info_span!("execute");
+
         loop {
             arena.reset();
             execution_arena.reset();
@@ -185,13 +193,13 @@ pub mod postgres {
 
             match msg {
                 postgres::Message::Terminate => {
-                    let _span = tracing::info_span!("terminate").entered();
+                    let _span = terminate_span.enter();
 
                     tracing::info!("Terminating");
                     break;
                 }
                 postgres::Message::Query { query } => {
-                    let _span = tracing::info_span!("query").entered();
+                    let _span = query_span.enter();
 
                     tracing::info!("Handling Raw-Query: {:?}", query);
 
@@ -424,7 +432,7 @@ pub mod postgres {
                     query,
                     data_types,
                 } => {
-                    let _span = tracing::info_span!("parse").entered();
+                    let _span = parse_span.enter();
 
                     tracing::info!("Parsing Query as Prepared Statement");
 
@@ -471,7 +479,7 @@ pub mod postgres {
                     tracing::info!("Send Parse complete");
                 }
                 postgres::Message::Describe { kind, name } => {
-                    let _span = tracing::info_span!("describe").entered();
+                    let _span = describe_span.enter();
 
                     tracing::info!("Describing: {:?} - {:?}", name, kind);
 
@@ -525,7 +533,7 @@ pub mod postgres {
                     };
                 }
                 postgres::Message::Sync_ => {
-                    let _span = tracing::info_span!("sync").entered();
+                    let _span = sync_span.enter();
 
                     tracing::debug!("Sync");
 
@@ -543,7 +551,7 @@ pub mod postgres {
                     parameter_formats,
                     result_column_format_codes,
                 } => {
-                    let _span = tracing::info_span!("bind").entered();
+                    let _span = bind_span.enter();
 
                     tracing::info!("Binding: {:?} - {:?}", destination, statement,);
                     tracing::debug!("Values: {:?}", parameter_values);
@@ -588,7 +596,7 @@ pub mod postgres {
                         .unwrap();
                 }
                 postgres::Message::Execute { portal, max_rows } => {
-                    let _span = tracing::info_span!("execute").entered();
+                    let _span = execute_span.enter();
 
                     tracing::info!("Executing Query: {:?} - {}", portal, max_rows);
 
