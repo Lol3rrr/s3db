@@ -30,7 +30,7 @@ pub mod postgres {
     use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
     use crate::{
-        execution::{self, CopyState, PreparedStatement},
+        execution::{self, CopyState, PreparedStatement, ExecutionError},
         postgres,
     };
 
@@ -341,7 +341,31 @@ pub mod postgres {
                             Err(e) => {
                                 tracing::error!("Executing: {:?}", e);
 
-                                postgres::ErrorResponseBuilder::new(
+                                if implicit_transaction {
+                                    tracing::info!("Commiting implicit query");
+
+                                    engine
+                                        .execute(&Query::CommitTransaction, &mut ctx, &arena)
+                                        .await
+                                        .unwrap();
+                                }
+
+                                match e {
+                                    execution::ExecuteError::Execute(exec) if exec.is_serialize() => {
+                                        tracing::error!("Sendind serialization error");
+
+                                       postgres::ErrorResponseBuilder::new(
+                                    postgres::ErrorSeverities::Error,
+                                    "40001",
+                                )
+                                .message("could not serialize access due to concurrent update")
+                                .build()
+                                .send(&mut connection)
+                                .await
+                                .unwrap(); 
+                                    }
+                                    other => {
+                                        postgres::ErrorResponseBuilder::new(
                                     postgres::ErrorSeverities::Fatal,
                                     "0A000",
                                 )
@@ -350,6 +374,9 @@ pub mod postgres {
                                 .send(&mut connection)
                                 .await
                                 .unwrap();
+                                    }
+                                };
+
 
                                 postgres::MessageResponse::ReadyForQuery {
                                     transaction_state: b'I',

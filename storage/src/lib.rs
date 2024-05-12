@@ -134,6 +134,12 @@ pub trait Sequence {
     fn get_next(&self) -> impl Future<Output = u64>;
 }
 
+#[derive(Debug)]
+pub enum RelationError<I> {
+    Serialization,
+    Inner(I),
+}
+
 pub trait RelationStorage {
     type LoadingError: Debug;
     type TransactionGuard: Debug;
@@ -241,7 +247,7 @@ pub trait RelationStorage {
         name: &str,
         rows: &mut dyn Iterator<Item = (u64, Vec<Data>)>,
         transaction: &Self::TransactionGuard,
-    ) -> impl Future<Output = Result<(), Self::LoadingError>>;
+    ) -> impl Future<Output = Result<(), RelationError<Self::LoadingError>>>;
 
     fn delete_rows(
         &self,

@@ -50,10 +50,14 @@ pub enum ExecuteError<PE, BE, EE> {
     Execute(EE),
 }
 
+pub trait ExecutionError: core::fmt::Debug {
+    fn is_serialize(&self) -> bool;
+}
+
 pub trait Execute<T> {
     type Prepared: PreparedStatement + 'static;
     type PrepareError: Debug;
-    type ExecuteBoundError: Debug;
+    type ExecuteBoundError: ExecutionError;
 
     type CopyState<'e>: CopyState
     where

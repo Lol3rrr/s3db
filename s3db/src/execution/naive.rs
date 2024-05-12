@@ -7,7 +7,7 @@ use futures::{stream::StreamExt, FutureExt};
 
 use crate::{execution::algorithms, postgres::FormatCode};
 
-use ra::{self, AttributeId, RaExpression, RaUpdate};
+use ra::{self, AttributeId, RaUpdate};
 use sql::{CompatibleParser, DataType, Query, TypeModifier};
 use storage::{self, Data, Sequence, Storage, TableSchema};
 
@@ -256,7 +256,14 @@ pub enum ExecuteBoundError<SE> {
     Executing(EvaulateRaError<SE>),
     NotImplemented(&'static str),
     StorageError(SE),
+    StorageSerialize,
     Other(&'static str),
+}
+
+impl<SE> super::ExecutionError for ExecuteBoundError<SE> where SE: core::fmt::Debug {
+    fn is_serialize(&self) -> bool {
+        matches!(self, Self::StorageSerialize)
+    }
 }
 
 impl<S> Execute<S::TransactionGuard> for NaiveEngine<S>
@@ -815,14 +822,21 @@ where
                                 rows_to_update.push((owned_row.id(), owned_row.data));
                             }
 
-                            self.storage
+                            tracing::info!("Updating {} rows", rows_to_update.len());
+
+                            match  self.storage
                                 .update_rows(
                                     update.table.0.as_ref(),
                                     &mut rows_to_update.into_iter(),
                                     transaction,
                                 )
-                                .await
-                                .map_err(ExecuteBoundError::StorageError)?;
+                                .await {
+                                Ok(_) => {}
+                                Err(storage::RelationError::Serialization) => {
+                                    return Err(ExecuteBoundError::StorageSerialize);
+                                }
+                                Err(storage::RelationError::Inner(e)) => return Err(ExecuteBoundError::StorageError(e)),
+                            };
 
                             Ok(ExecuteResult::Update {
                                 updated_rows: count,

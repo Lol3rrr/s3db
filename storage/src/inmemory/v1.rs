@@ -291,7 +291,7 @@ impl RelationStorage for InMemoryStorage {
         name: &str,
         rows: &mut dyn Iterator<Item = (u64, Vec<Data>)>,
         transaction: &Self::TransactionGuard,
-    ) -> Result<(), Self::LoadingError> {
+    ) -> Result<(), crate::RelationError<Self::LoadingError>> {
         <&InMemoryStorage as RelationStorage>::update_rows(&self, name, rows, transaction).await
     }
 
@@ -707,13 +707,13 @@ impl RelationStorage for &InMemoryStorage {
         name: &str,
         rows: &mut dyn Iterator<Item = (u64, Vec<Data>)>,
         transaction: &Self::TransactionGuard,
-    ) -> Result<(), Self::LoadingError> {
+    ) -> Result<(), crate::RelationError<Self::LoadingError>> {
         let mut tables = self
             .tables
             .try_borrow_mut()
-            .map_err(|_| LoadingError::BorrowingTables)?;
+            .map_err(|_| crate::RelationError::Inner(LoadingError::BorrowingTables))?;
 
-        let table = tables.get_mut(name).ok_or(LoadingError::UnknownRelation)?;
+        let table = tables.get_mut(name).ok_or(crate::RelationError::Inner(LoadingError::UnknownRelation))?;
 
         tracing::info!("Rows in DB: {:?}", table.rows.len());
 
@@ -725,7 +725,7 @@ impl RelationStorage for &InMemoryStorage {
                 .flat_map(|p| p)
                 .filter(|r| r.expired == 0)
                 .find(|row| row.data.id() == row_id)
-                .ok_or(LoadingError::Other("Could not find Row"))?;
+                .ok_or(crate::RelationError::Inner(LoadingError::Other("Could not find Row")))?;
 
             row.expired = transaction.id;
 
