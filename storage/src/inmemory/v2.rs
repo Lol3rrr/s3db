@@ -74,8 +74,9 @@ impl RelationStorage for InMemoryStorage {
         let mut active_ids = self.active_tids.try_borrow_mut().unwrap();
         active_ids.remove(&guard.id);
 
-        self.latest_commit.fetch_max(guard.id, atomic::Ordering::AcqRel);
-        
+        self.latest_commit
+            .fetch_max(guard.id, atomic::Ordering::AcqRel);
+
         Ok(())
     }
     async fn abort_transaction(
@@ -185,12 +186,14 @@ impl RelationStorage for InMemoryStorage {
         rows: &mut dyn Iterator<Item = (u64, Vec<crate::Data>)>,
         transaction: &Self::TransactionGuard,
     ) -> Result<(), crate::RelationError<Self::LoadingError>> {
-        let tmp: Arc<internal::RelationList> = self
-            .relations
-            .borrow()
-            .get(name)
-            .cloned()
-            .ok_or(crate::RelationError::Inner(LoadingError::Other("Borrow Relations")))?;
+        let tmp: Arc<internal::RelationList> =
+            self.relations
+                .borrow()
+                .get(name)
+                .cloned()
+                .ok_or(crate::RelationError::Inner(LoadingError::Other(
+                    "Borrow Relations",
+                )))?;
 
         let handle = loop {
             match internal::RelationList::try_get_handle(tmp.clone()) {

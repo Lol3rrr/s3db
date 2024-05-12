@@ -30,7 +30,7 @@ pub mod postgres {
     use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
     use crate::{
-        execution::{self, CopyState, PreparedStatement, ExecutionError},
+        execution::{self, CopyState, ExecutionError, PreparedStatement},
         postgres,
     };
 
@@ -335,26 +335,28 @@ pub mod postgres {
                             continue;
                         }
 
-                        let result = match engine.execute(&query, &mut ctx, &execution_arena).await
-                        {
-                            Ok(r) => r,
-                            Err(e) => {
-                                tracing::error!("Executing: {:?}", e);
+                        let result =
+                            match engine.execute(&query, &mut ctx, &execution_arena).await {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    tracing::error!("Executing: {:?}", e);
 
-                                if implicit_transaction {
-                                    tracing::info!("Commiting implicit query");
+                                    if implicit_transaction {
+                                        tracing::info!("Commiting implicit query");
 
-                                    engine
-                                        .execute(&Query::CommitTransaction, &mut ctx, &arena)
-                                        .await
-                                        .unwrap();
-                                }
+                                        engine
+                                            .execute(&Query::CommitTransaction, &mut ctx, &arena)
+                                            .await
+                                            .unwrap();
+                                    }
 
-                                match e {
-                                    execution::ExecuteError::Execute(exec) if exec.is_serialize() => {
-                                        tracing::error!("Sendind serialization error");
+                                    match e {
+                                        execution::ExecuteError::Execute(exec)
+                                            if exec.is_serialize() =>
+                                        {
+                                            tracing::error!("Sendind serialization error");
 
-                                       postgres::ErrorResponseBuilder::new(
+                                            postgres::ErrorResponseBuilder::new(
                                     postgres::ErrorSeverities::Error,
                                     "40001",
                                 )
@@ -362,32 +364,31 @@ pub mod postgres {
                                 .build()
                                 .send(&mut connection)
                                 .await
-                                .unwrap(); 
-                                    }
-                                    other => {
-                                        postgres::ErrorResponseBuilder::new(
-                                    postgres::ErrorSeverities::Fatal,
-                                    "0A000",
-                                )
-                                .message("Failed to execute Query")
-                                .build()
-                                .send(&mut connection)
-                                .await
                                 .unwrap();
+                                        }
+                                        other => {
+                                            postgres::ErrorResponseBuilder::new(
+                                                postgres::ErrorSeverities::Fatal,
+                                                "0A000",
+                                            )
+                                            .message("Failed to execute Query")
+                                            .build()
+                                            .send(&mut connection)
+                                            .await
+                                            .unwrap();
+                                        }
+                                    };
+
+                                    postgres::MessageResponse::ReadyForQuery {
+                                        transaction_state: b'I',
                                     }
-                                };
+                                    .send(&mut connection)
+                                    .await
+                                    .unwrap();
 
-
-                                postgres::MessageResponse::ReadyForQuery {
-                                    transaction_state: b'I',
+                                    continue;
                                 }
-                                .send(&mut connection)
-                                .await
-                                .unwrap();
-
-                                continue;
-                            }
-                        };
+                            };
 
                         if implicit_transaction {
                             tracing::info!("Commiting implicit query");

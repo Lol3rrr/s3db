@@ -71,7 +71,8 @@ where
         name: &str,
         rows: &mut dyn Iterator<Item = (u64, Vec<crate::Data>)>,
         transaction: &Self::TransactionGuard,
-    ) -> impl futures::prelude::Future<Output = Result<(), crate::RelationError<Self::LoadingError>>> {
+    ) -> impl futures::prelude::Future<Output = Result<(), crate::RelationError<Self::LoadingError>>>
+    {
         RS::update_rows(&self.relations, name, rows, transaction)
     }
     fn delete_rows(

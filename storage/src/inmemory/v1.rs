@@ -713,7 +713,9 @@ impl RelationStorage for &InMemoryStorage {
             .try_borrow_mut()
             .map_err(|_| crate::RelationError::Inner(LoadingError::BorrowingTables))?;
 
-        let table = tables.get_mut(name).ok_or(crate::RelationError::Inner(LoadingError::UnknownRelation))?;
+        let table = tables
+            .get_mut(name)
+            .ok_or(crate::RelationError::Inner(LoadingError::UnknownRelation))?;
 
         tracing::info!("Rows in DB: {:?}", table.rows.len());
 
@@ -725,7 +727,9 @@ impl RelationStorage for &InMemoryStorage {
                 .flat_map(|p| p)
                 .filter(|r| r.expired == 0)
                 .find(|row| row.data.id() == row_id)
-                .ok_or(crate::RelationError::Inner(LoadingError::Other("Could not find Row")))?;
+                .ok_or(crate::RelationError::Inner(LoadingError::Other(
+                    "Could not find Row",
+                )))?;
 
             row.expired = transaction.id;
 
