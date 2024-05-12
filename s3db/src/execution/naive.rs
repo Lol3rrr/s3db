@@ -699,9 +699,9 @@ where
 
                     let transaction = ctx.transaction.as_ref().unwrap();
 
-                    let relation = self
+                    let (relation, mut relation_stream) = self
                         .storage
-                        .get_entire_relation(&update.table.0, transaction)
+                        .stream_relation(&update.table.0, transaction)
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
 
@@ -710,8 +710,6 @@ where
                         .schemas()
                         .await
                         .map_err(ExecuteBoundError::StorageError)?;
-
-                    // tracing::info!("Relation");
 
                     let (ra_update, ra_placeholders) = RaUpdate::parse(&update, &schemas)
                         .map_err(ExecuteBoundError::ParseRelationAlgebra)?;
@@ -736,10 +734,10 @@ where
                     tracing::info!("Placerholder Types: {:?}", ra_placeholders);
 
                     let table_columns: Vec<_> = relation
-                        .columns
+                        .rows
                         .iter()
                         .enumerate()
-                        .map(|(i, c)| (c.0.clone(), c.1.clone(), AttributeId::new(i)))
+                        .map(|(i, c)| (c.name.clone(), c.ty.clone(), AttributeId::new(i)))
                         .collect();
 
                     match ra_update {
@@ -770,17 +768,10 @@ where
                             let mut count = 0;
 
                             let mut rows_to_update = Vec::new();
-                            for mut row in
-                                relation.parts.into_iter().flat_map(|p| p.rows.into_iter())
-                            {
+                            while let Some(row) = relation_stream.next().await {
                                 let should_update = match mapper.as_ref() {
                                     Some(mapper) => mapper
-                                        .evaluate(
-                                            &storage::RowCow::Borrowed((&row).into()),
-                                            self,
-                                            transaction,
-                                            arena,
-                                        )
+                                        .evaluate(&row, self, transaction, arena)
                                         .await
                                         .ok_or_else(|| ExecuteBoundError::Other("Testing"))?,
                                     None => true,
@@ -795,37 +786,33 @@ where
                                 let mut field_values = Vec::with_capacity(field_mappers.len());
                                 for mapping in field_mappers.iter_mut() {
                                     let value = mapping
-                                        .evaluate_mut(
-                                            &storage::RowCow::Borrowed((&row).into()),
-                                            self,
-                                            transaction,
-                                            arena,
-                                        )
+                                        .evaluate_mut(&row, self, transaction, arena)
                                         .await
                                         .ok_or_else(|| ExecuteBoundError::Other("Testing"))?;
 
                                     field_values.push(value);
                                 }
 
+                                let mut owned_row = row.into_owned();
                                 for (name, value) in fields
                                     .iter()
                                     .zip(field_values.into_iter())
                                     .map(|(first, val)| (&first.field, val))
                                 {
                                     let idx = relation
-                                        .columns
+                                        .rows
                                         .iter()
                                         .enumerate()
-                                        .find(|(_, (n, _, _))| n == name)
+                                        .find(|(_, c)| &c.name == name)
                                         .map(|(i, _)| i)
                                         .ok_or(ExecuteBoundError::Other(
                                             "Unknown Attribute to update",
                                         ))?;
 
-                                    row.data[idx] = value;
+                                    owned_row.data[idx] = value;
                                 }
 
-                                rows_to_update.push((row.id(), row.data));
+                                rows_to_update.push((owned_row.id(), owned_row.data));
                             }
 
                             self.storage
