@@ -74,20 +74,8 @@ impl RelationStorage for InMemoryStorage {
         let mut active_ids = self.active_tids.try_borrow_mut().unwrap();
         active_ids.remove(&guard.id);
 
-        loop {
-            let value = self.latest_commit.load(atomic::Ordering::Acquire);
-            let n_value = core::cmp::max(value, guard.id);
-
-            match self.latest_commit.compare_exchange(
-                value,
-                n_value,
-                atomic::Ordering::SeqCst,
-                atomic::Ordering::SeqCst,
-            ) {
-                Ok(_) => break,
-                Err(_) => continue,
-            };
-        }
+        self.latest_commit
+            .fetch_max(guard.id, atomic::Ordering::AcqRel);
 
         Ok(())
     }
@@ -197,13 +185,15 @@ impl RelationStorage for InMemoryStorage {
         name: &str,
         rows: &mut dyn Iterator<Item = (u64, Vec<crate::Data>)>,
         transaction: &Self::TransactionGuard,
-    ) -> Result<(), Self::LoadingError> {
-        let tmp: Arc<internal::RelationList> = self
-            .relations
-            .borrow()
-            .get(name)
-            .cloned()
-            .ok_or(LoadingError::Other("Borrow Relations"))?;
+    ) -> Result<(), crate::RelationError<Self::LoadingError>> {
+        let tmp: Arc<internal::RelationList> =
+            self.relations
+                .borrow()
+                .get(name)
+                .cloned()
+                .ok_or(crate::RelationError::Inner(LoadingError::Other(
+                    "Borrow Relations",
+                )))?;
 
         let handle = loop {
             match internal::RelationList::try_get_handle(tmp.clone()) {
@@ -235,8 +225,8 @@ impl RelationStorage for InMemoryStorage {
                     ) {
                         Ok(_) => {}
                         Err(_) => {
-                            // TODO
                             // Someone else also updated this row
+                            return Err(crate::RelationError::Serialization);
                         }
                     };
                     break;
@@ -502,7 +492,7 @@ impl InMemoryStorage {
                 tables: table_schemas,
             }),
             relations: RefCell::new(relations),
-            latest_commit: atomic::AtomicU64::new(0),
+            latest_commit: atomic::AtomicU64::new(1),
             aborted_tids: RefCell::new(HashSet::new()),
             active_tids: RefCell::new(HashSet::new()),
             current_tid: atomic::AtomicU64::new(1),
